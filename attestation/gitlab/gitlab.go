@@ -27,8 +27,6 @@ const (
 	Name    = "gitlab"
 	Type    = "https://witness.dev/attestations/gitlab/v0.1"
 	RunType = attestation.PreRunType
-
-	jwksUrl = "https://gitlab.com/-/jwks"
 )
 
 func init() {
@@ -57,6 +55,7 @@ type Attestor struct {
 	ProjectUrl   string        `json:"projecturl"`
 	RunnerID     string        `json:"runnerid"`
 	CIHost       string        `json:"cihost"`
+	CIServerUrl  string        `json:"ciserverurl"`
 
 	subjects map[string]cryptoutil.DigestSet
 }
@@ -84,6 +83,8 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return ErrNotGitlab{}
 	}
 
+	a.CIServerUrl = os.Getenv("CI_SERVER_URL")
+	jwksUrl := fmt.Sprintf("%s/-/jwks", a.CIServerUrl)
 	jwtString := os.Getenv("CI_JOB_JWT")
 	if jwtString != "" {
 		a.JWT = jwt.New(jwt.WithToken(jwtString), jwt.WithJWKSUrl(jwksUrl))
