@@ -1,6 +1,6 @@
 module github.com/testifysec/go-witness
 
-go 1.17
+go 1.18
 
 require (
 	github.com/anchore/stereoscope v0.0.0-20220307154759-8a5a70c227d3
@@ -12,6 +12,7 @@ require (
 	github.com/owenrumney/go-sarif v1.1.1
 	github.com/sigstore/rekor v0.4.1-0.20220114213500-23f583409af3
 	github.com/spiffe/go-spiffe/v2 v2.0.0-beta.12
+	github.com/spiffe/spire-api-sdk v1.3.2
 	github.com/stretchr/testify v1.7.1
 	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad
 	google.golang.org/grpc v1.46.0
