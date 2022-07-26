@@ -33,16 +33,34 @@ type Attestor interface {
 	Attest(ctx *AttestationContext) error
 }
 
+// Subjecter allows attestors to expose bits of information that will be added to
+// the in-toto statement as subjects. External services such as Rekor and Archivist
+// use in-toto subjects as indexes back to attestations.
 type Subjecter interface {
 	Subjects() map[string]cryptoutil.DigestSet
 }
 
+// Materialer allows attestors to communicate about materials that were observed
+// while the attestor executed. For example the material attestor records the hashes
+// of all files before a command is run.
 type Materialer interface {
 	Materials() map[string]cryptoutil.DigestSet
 }
 
+// Producer allows attestors to communicate that some product was created while the
+// attestor executed. For example the product attestor runs after a command run and
+// finds files that did not exist in the working directory prior to the command's
+// execution.
 type Producer interface {
 	Products() map[string]Product
+}
+
+// BackReffer allows attestors to indicate which of their subjects are good candidates
+// to find related attestations.  For example the git attestor's commit hash subject
+// is a good candidate to find all attestation collections that also refer to a specific
+// git commit.
+type BackReffer interface {
+	BackRefs() map[string]cryptoutil.DigestSet
 }
 
 type AttestorFactory func() Attestor
