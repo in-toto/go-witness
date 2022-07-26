@@ -35,9 +35,16 @@ const (
 	Name    = "oci"
 	Type    = "https://witness.dev/attestations/oci/v0.1"
 	RunType = attestation.PostRunType
+
+	mimeTypes = "application/octet-stream application/x-tar"
 )
 
-const mimeTypes = "application/octet-stream application/x-tar"
+// This is a hacky way to create a compile time error in case the attestor
+// doesn't implement the expected interfaces.
+var (
+	_ attestation.Attestor  = &Attestor{}
+	_ attestation.Subjecter = &Attestor{}
+)
 
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {

@@ -99,3 +99,12 @@ type ErrConstraintCheckFailed struct {
 func (e ErrConstraintCheckFailed) Error() string {
 	return fmt.Sprintf("cert failed constraints check: %+q", e.errs)
 }
+
+type ErrInvalidOption struct {
+	Option string
+	Reason string
+}
+
+func (e ErrInvalidOption) Error() string {
+	return fmt.Sprintf("invalid option (%v): %v", e.Option, e.Reason)
+}

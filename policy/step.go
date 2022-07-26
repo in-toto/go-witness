@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/testifysec/go-witness/attestation"
+	"github.com/testifysec/go-witness/source"
 )
 
 type Step struct {
@@ -49,7 +50,7 @@ type RegoPolicy struct {
 // Rejected contains the rejected collections and the error that caused them to be rejected.
 type StepResult struct {
 	Step     string
-	Passed   []attestation.Collection
+	Passed   []source.VerifiedCollection
 	Rejected []RejectedCollection
 }
 
@@ -71,21 +72,21 @@ func (r StepResult) Error() string {
 }
 
 type RejectedCollection struct {
-	Collection attestation.Collection
+	Collection source.VerifiedCollection
 	Reason     error
 }
 
 // validateAttestations will test each collection against to ensure the expected attestations
 // appear in the collection as well as that any rego policies pass for the step.
-func (s Step) validateAttestations(attestCollections []attestation.Collection) StepResult {
+func (s Step) validateAttestations(verifiedCollections []source.VerifiedCollection) StepResult {
 	result := StepResult{Step: s.Name}
-	if len(attestCollections) <= 0 {
+	if len(verifiedCollections) <= 0 {
 		return result
 	}
 
-	for _, collection := range attestCollections {
+	for _, collection := range verifiedCollections {
 		found := make(map[string]attestation.Attestor)
-		for _, attestation := range collection.Attestations {
+		for _, attestation := range collection.Collection.Attestations {
 			found[attestation.Type] = attestation.Attestation
 		}
 

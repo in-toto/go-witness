@@ -31,6 +31,12 @@ const (
 	RunType = attestation.Internal
 )
 
+// This is a hacky way to create a compile time error in case the attestor
+// doesn't implement the expected interfaces.
+var (
+	_ attestation.Attestor = &CommandRun{}
+)
+
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()

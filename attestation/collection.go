@@ -130,3 +130,16 @@ func (c *Collection) Materials() map[string]cryptoutil.DigestSet {
 
 	return materials
 }
+
+func (c *Collection) BackRefs() map[string]cryptoutil.DigestSet {
+	backRefs := make(map[string]cryptoutil.DigestSet)
+	for _, attestation := range c.Attestations {
+		if backReffer, ok := attestation.Attestation.(BackReffer); ok {
+			for backRef, digest := range backReffer.BackRefs() {
+				backRefs[fmt.Sprintf("%v/%v", attestation.Type, backRef)] = digest
+			}
+		}
+	}
+
+	return backRefs
+}
