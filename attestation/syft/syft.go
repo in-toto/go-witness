@@ -33,10 +33,16 @@ const (
 	RunType = attestation.PostRunType
 )
 
-var candidateMimeTypes = map[string]struct{}{
-	"application/octet-stream": {},
-	"application/x-tar":        {},
-}
+// This is a hacky way to create a compile time error in case the attestor
+// doesn't implement the expected interfaces.
+var (
+	_ attestation.Attestor = &Attestor{}
+
+	candidateMimeTypes = map[string]struct{}{
+		"application/octet-stream": {},
+		"application/x-tar":        {},
+	}
+)
 
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {

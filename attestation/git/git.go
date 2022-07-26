@@ -29,6 +29,14 @@ const (
 	RunType = attestation.PreRunType
 )
 
+// This is a hacky way to create a compile time error in case the attestor
+// doesn't implement the expected interfaces.
+var (
+	_ attestation.Attestor   = &Attestor{}
+	_ attestation.Subjecter  = &Attestor{}
+	_ attestation.BackReffer = &Attestor{}
+)
+
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
@@ -111,6 +119,10 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 			crypto.SHA1: a.CommitHash,
 		},
 	}
+}
+
+func (a *Attestor) BackRefs() map[string]cryptoutil.DigestSet {
+	return a.Subjects()
 }
 
 func statusCodeString(statusCode git.StatusCode) string {

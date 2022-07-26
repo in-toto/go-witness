@@ -15,6 +15,7 @@
 package policy
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -30,6 +31,7 @@ import (
 	"github.com/testifysec/go-witness/attestation/commandrun"
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/intoto"
+	"github.com/testifysec/go-witness/source"
 )
 
 func init() {
@@ -128,19 +130,45 @@ deny[msg] {
 	step1Collection := attestation.NewCollection("step1", []attestation.Attestor{commandRun})
 	step1CollectionJson, err := json.Marshal(&step1Collection)
 	require.NoError(t, err)
-	intotoStatement, err := intoto.NewStatement(attestation.CollectionType, step1CollectionJson, map[string]cryptoutil.DigestSet{})
+	intotoStatement, err := intoto.NewStatement(attestation.CollectionType, step1CollectionJson, map[string]cryptoutil.DigestSet{"dummy": {crypto.SHA256: "dummy"}})
 	require.NoError(t, err)
-	assert.NoError(t, policy.Verify([]VerifiedStatement{
-		{
-			Verifiers: []cryptoutil.Verifier{verifier},
-			Statement: intotoStatement,
-		},
-	}))
-	assert.Error(t, policy.Verify([]VerifiedStatement{
-		{
-			Statement: intotoStatement,
-		},
-	}))
+
+	_, err = policy.Verify(
+		context.Background(),
+		WithSubjectDigests([]string{"dummy"}),
+		WithVerifiedSource(
+			newDummyVerifiedSourcer([]source.VerifiedCollection{
+				{
+					Verifiers: []cryptoutil.Verifier{verifier},
+					CollectionEnvelope: source.CollectionEnvelope{
+						Statement:  intotoStatement,
+						Collection: step1Collection,
+						Reference:  "1",
+					},
+				},
+			}),
+		),
+	)
+	assert.NoError(t, err)
+
+	_, err = policy.Verify(
+		context.Background(),
+		WithSubjectDigests([]string{"dummy"}),
+		WithVerifiedSource(
+			newDummyVerifiedSourcer([]source.VerifiedCollection{
+				{
+					Verifiers: []cryptoutil.Verifier{},
+					CollectionEnvelope: source.CollectionEnvelope{
+						Statement:  intotoStatement,
+						Collection: step1Collection,
+						Reference:  "1",
+					},
+				},
+			}),
+		),
+	)
+	assert.Error(t, err)
+	assert.IsType(t, ErrPolicyDenied{}, err)
 }
 
 func TestArtifacts(t *testing.T) {
@@ -204,16 +232,29 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 	intotoStatement2, err := intoto.NewStatement(attestation.CollectionType, step2CollectionJson, map[string]cryptoutil.DigestSet{})
 	require.NoError(t, err)
-	assert.NoError(t, policy.Verify([]VerifiedStatement{
-		{
-			Verifiers: []cryptoutil.Verifier{verifier},
-			Statement: intotoStatement1,
-		},
-		{
-			Verifiers: []cryptoutil.Verifier{verifier},
-			Statement: intotoStatement2,
-		},
-	}))
+	_, err = policy.Verify(
+		context.Background(),
+		WithSubjectDigests([]string{dummySha}),
+		WithVerifiedSource(newDummyVerifiedSourcer([]source.VerifiedCollection{
+			{
+				Verifiers: []cryptoutil.Verifier{verifier},
+				CollectionEnvelope: source.CollectionEnvelope{
+					Statement:  intotoStatement1,
+					Collection: step1Collection,
+					Reference:  "1",
+				},
+			},
+			{
+				Verifiers: []cryptoutil.Verifier{verifier},
+				CollectionEnvelope: source.CollectionEnvelope{
+					Statement:  intotoStatement2,
+					Collection: step2Collection,
+					Reference:  "2",
+				},
+			},
+		})),
+	)
+	assert.NoError(t, err)
 
 	mats[path][crypto.SHA256] = "badhash"
 	step2Collection = attestation.NewCollection("step2", []attestation.Attestor{DummyMaterialer{mats}})
@@ -221,16 +262,30 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 	intotoStatement2, err = intoto.NewStatement(attestation.CollectionType, step2CollectionJson, map[string]cryptoutil.DigestSet{})
 	require.NoError(t, err)
-	assert.Error(t, policy.Verify([]VerifiedStatement{
-		{
-			Verifiers: []cryptoutil.Verifier{verifier},
-			Statement: intotoStatement1,
-		},
-		{
-			Verifiers: []cryptoutil.Verifier{verifier},
-			Statement: intotoStatement2,
-		},
-	}))
+	_, err = policy.Verify(
+		context.Background(),
+		WithSubjectDigests([]string{dummySha}),
+		WithVerifiedSource(newDummyVerifiedSourcer([]source.VerifiedCollection{
+			{
+				Verifiers: []cryptoutil.Verifier{verifier},
+				CollectionEnvelope: source.CollectionEnvelope{
+					Statement:  intotoStatement1,
+					Collection: step1Collection,
+					Reference:  "1",
+				},
+			},
+			{
+				Verifiers: []cryptoutil.Verifier{verifier},
+				CollectionEnvelope: source.CollectionEnvelope{
+					Statement:  intotoStatement2,
+					Collection: step2Collection,
+					Reference:  "2",
+				},
+			},
+		})),
+	)
+	assert.Error(t, err)
+	assert.IsType(t, ErrPolicyDenied{}, err)
 }
 
 type DummyMaterialer struct {
@@ -279,4 +334,16 @@ func (DummyProducer) Attest(*attestation.AttestationContext) error {
 
 func (m DummyProducer) Products() map[string]attestation.Product {
 	return m.P
+}
+
+type dummyVerifiedSourcer struct {
+	verifiedCollections []source.VerifiedCollection
+}
+
+func newDummyVerifiedSourcer(verifiedCollections []source.VerifiedCollection) *dummyVerifiedSourcer {
+	return &dummyVerifiedSourcer{verifiedCollections}
+}
+
+func (s *dummyVerifiedSourcer) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]source.VerifiedCollection, error) {
+	return s.verifiedCollections, nil
 }

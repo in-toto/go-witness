@@ -15,6 +15,7 @@
 package witness
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
@@ -22,9 +23,8 @@ import (
 
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
-	"github.com/testifysec/go-witness/intoto"
-	"github.com/testifysec/go-witness/log"
 	"github.com/testifysec/go-witness/policy"
+	"github.com/testifysec/go-witness/source"
 )
 
 func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelope, error) {
@@ -39,29 +39,33 @@ func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelo
 }
 
 type verifyOptions struct {
-	policyEnvelope      dsse.Envelope
-	policyVerifiers     []cryptoutil.Verifier
-	collectionEnvelopes []CollectionEnvelope
-}
-
-type CollectionEnvelope struct {
-	Envelope  dsse.Envelope
-	Reference string
+	policyEnvelope   dsse.Envelope
+	policyVerifiers  []cryptoutil.Verifier
+	collectionSource source.Sourcer
+	subjectDigests   []string
 }
 
 type VerifyOption func(*verifyOptions)
 
-// VerifyWithPolicy verifies a dsse envelopes against a policy
-func VerifyWithCollectionEnvelopes(collectionEnvelopes []CollectionEnvelope) VerifyOption {
+func VerifyWithSubjectDigests(subjectDigests []cryptoutil.DigestSet) VerifyOption {
 	return func(vo *verifyOptions) {
-		vo.collectionEnvelopes = collectionEnvelopes
+		for _, set := range subjectDigests {
+			for _, digest := range set {
+				vo.subjectDigests = append(vo.subjectDigests, digest)
+			}
+		}
 	}
 }
 
-// VerifyE verifies a dsse envelopes against a policy and returns the envelopes on success
-func Verify(policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) ([]CollectionEnvelope, error) {
-	verifiedEnvelopes := make([]CollectionEnvelope, 0)
+func VerifyWithCollectionSource(source source.Sourcer) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.collectionSource = source
+	}
+}
 
+// Verify verifies a set of attestations against a provided policy. The set of attestations that satisfy the policy will be returned
+// if verifiation is successful.
+func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (map[string][]source.VerifiedCollection, error) {
 	vo := verifyOptions{
 		policyEnvelope:  policyEnvelope,
 		policyVerifiers: policyVerifiers,
@@ -102,41 +106,11 @@ func Verify(policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier,
 		intermediates = append(intermediates, intermediates...)
 	}
 
-	verifiedStatements := make([]policy.VerifiedStatement, 0)
-	for _, env := range vo.collectionEnvelopes {
-		passedVerifiers, err := env.Envelope.Verify(dsse.WithVerifiers(pubkeys), dsse.WithRoots(roots), dsse.WithIntermediates(intermediates))
-		if err != nil {
-			log.Debugf("(verify) skipping envelope: couldn't verify enveloper's signature with the policy's verifiers: %+v", err)
-			continue
-		}
-
-		statement := intoto.Statement{}
-		if err := json.Unmarshal(env.Envelope.Payload, &statement); err != nil {
-			log.Debugf("(verify) skipping envelope: couldn't unmarshal envelope payload into in-toto statement: %+v", err)
-			continue
-		}
-
-		verifiedStatements = append(verifiedStatements, policy.VerifiedStatement{
-			Statement: statement,
-			Verifiers: passedVerifiers,
-			Reference: env.Reference,
-		})
-	}
-
-	err = pol.Verify(verifiedStatements)
+	verifiedSource := source.NewVerifiedSource(vo.collectionSource, dsse.WithVerifiers(pubkeys), dsse.WithRoots(roots), dsse.WithIntermediates(intermediates))
+	accepted, err := pol.Verify(ctx, policy.WithSubjectDigests(vo.subjectDigests), policy.WithVerifiedSource(verifiedSource))
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify policy: %w", err)
 	}
 
-	for _, env := range vo.collectionEnvelopes {
-		for _, statement := range verifiedStatements {
-			if statement.Reference == env.Reference {
-				verifiedEnvelopes = append(verifiedEnvelopes, CollectionEnvelope{
-					Envelope:  env.Envelope,
-					Reference: env.Reference,
-				})
-			}
-		}
-	}
-	return verifiedEnvelopes, nil
+	return accepted, nil
 }
