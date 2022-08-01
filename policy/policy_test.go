@@ -67,6 +67,10 @@ func TestVerify(t *testing.T) {
 	require.NoError(t, err)
 	keyID, err := verifier.KeyID()
 	require.NoError(t, err)
+	_, verifier2, pubKeyPem2, err := createTestKey()
+	require.NoError(t, err)
+	keyID2, err := verifier2.KeyID()
+	require.NoError(t, err)
 	commandPolicy := []byte(`package test
 deny[msg] {
 	input.cmd != ["go", "build", "./"]
@@ -84,6 +88,10 @@ deny[msg] {
 			keyID: {
 				KeyID: keyID,
 				Key:   pubKeyPem,
+			},
+			keyID2: {
+				KeyID: keyID2,
+				Key:   pubKeyPem2,
 			},
 		},
 		Steps: map[string]Step{

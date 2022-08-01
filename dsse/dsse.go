@@ -37,6 +37,21 @@ func (e ErrNoMatchingSigs) Error() string {
 	return "no valid signatures for the provided verifiers found"
 }
 
+type ErrThresholdNotMet struct {
+	Theshold int
+	Acutal   int
+}
+
+func (e ErrThresholdNotMet) Error() string {
+	return fmt.Sprintf("envelope did not meet verifier threshold. expected %v valid verifiers but got %v", e.Theshold, e.Acutal)
+}
+
+type ErrInvalidThreshold int
+
+func (e ErrInvalidThreshold) Error() string {
+	return fmt.Sprintf("invalid threshold (%v). thresholds must be greater than 0", int(e))
+}
+
 const PemTypeCertificate = "CERTIFICATE"
 
 type Envelope struct {
@@ -114,6 +129,7 @@ type verificationOptions struct {
 	roots         []*x509.Certificate
 	intermediates []*x509.Certificate
 	verifiers     []cryptoutil.Verifier
+	threshold     int
 }
 
 func WithRoots(roots []*x509.Certificate) VerificationOption {
@@ -134,10 +150,23 @@ func WithVerifiers(verifiers []cryptoutil.Verifier) VerificationOption {
 	}
 }
 
+func WithThreshold(threshold int) VerificationOption {
+	return func(vo *verificationOptions) {
+		vo.threshold = threshold
+	}
+}
+
 func (e Envelope) Verify(opts ...VerificationOption) ([]cryptoutil.Verifier, error) {
-	options := &verificationOptions{}
+	options := &verificationOptions{
+		threshold: 1,
+	}
+
 	for _, opt := range opts {
 		opt(options)
+	}
+
+	if options.threshold <= 0 {
+		return nil, ErrInvalidThreshold(options.threshold)
 	}
 
 	pae := preauthEncode(e.PayloadType, e.Payload)
@@ -170,9 +199,7 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]cryptoutil.Verifier, err
 				return nil, err
 			}
 
-			if err := verifier.Verify(bytes.NewReader(pae), sig.Signature); err != nil {
-				return nil, err
-			} else {
+			if err := verifier.Verify(bytes.NewReader(pae), sig.Signature); err == nil {
 				passedVerifiers = append(passedVerifiers, verifier)
 				matchingSigFound = true
 			}
@@ -180,10 +207,7 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]cryptoutil.Verifier, err
 
 		for _, verifier := range options.verifiers {
 			if verifier != nil {
-
-				if err := verifier.Verify(bytes.NewReader(pae), sig.Signature); err != nil {
-					return nil, err
-				} else {
+				if err := verifier.Verify(bytes.NewReader(pae), sig.Signature); err == nil {
 					passedVerifiers = append(passedVerifiers, verifier)
 					matchingSigFound = true
 				}
@@ -193,6 +217,10 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]cryptoutil.Verifier, err
 
 	if !matchingSigFound {
 		return nil, ErrNoMatchingSigs{}
+	}
+
+	if len(passedVerifiers) < options.threshold {
+		return passedVerifiers, ErrThresholdNotMet{Theshold: options.threshold, Acutal: len(passedVerifiers)}
 	}
 
 	return passedVerifiers, nil
