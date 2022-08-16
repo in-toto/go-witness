@@ -88,7 +88,7 @@ func (p *ptraceContext) runTrace() error {
 	}
 
 	procInfo := p.getProcInfo(p.parentPid)
-	procInfo.Program = p.mainProgram
+	procInfo.Binary = p.mainProgram
 	if err := unix.PtraceSyscall(p.parentPid, 0); err != nil {
 		return err
 	}
@@ -152,11 +152,10 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 
 		program, err := p.readSyscallReg(pid, argArray[0], MAX_PATH_LEN)
 		if err == nil {
-			procInfo.Program = program
+			procInfo.Binary = program
 		}
 
 		exeLocation := fmt.Sprintf("/proc/%d/exe", procInfo.ProcessID)
-		commLocation := fmt.Sprintf("/proc/%d/comm", procInfo.ProcessID)
 		envinLocation := fmt.Sprintf("/proc/%d/environ", procInfo.ProcessID)
 		cmdlineLocation := fmt.Sprintf("/proc/%d/cmdline", procInfo.ProcessID)
 		status := fmt.Sprintf("/proc/%d/status", procInfo.ProcessID)
@@ -164,16 +163,10 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 		// read status file and set attributes on success
 		statusFile, err := os.ReadFile(status)
 		if err == nil {
-			procInfo.SpecBypassIsVuln = getSpecBypassIsVulnFromStatus(statusFile)
 			ppid, err := getPPIDFromStatus(statusFile)
 			if err == nil {
 				procInfo.ParentPID = ppid
 			}
-		}
-
-		comm, err := os.ReadFile(commLocation)
-		if err == nil {
-			procInfo.Comm = cleanString(string(comm))
 		}
 
 		environ, err := os.ReadFile(envinLocation)
@@ -187,37 +180,29 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 			procInfo.Environ = strings.Join(filteredEnviron, " ")
 		}
 
-		cmdline, err := os.ReadFile(cmdlineLocation)
+		args, err := os.ReadFile(cmdlineLocation)
 		if err == nil {
-			procInfo.Cmdline = cleanString(string(cmdline))
+			procInfo.Args = cleanString(string(args))
 		}
 
 		exeDigest, err := cryptoutil.CalculateDigestSetFromFile(exeLocation, p.hash)
 		if err == nil {
-			procInfo.ExeDigest = exeDigest
-		}
-
-		if program != "" {
-			programDigest, err := cryptoutil.CalculateDigestSetFromFile(program, p.hash)
-			if err == nil {
-				procInfo.ProgramDigest = programDigest
-			}
-
+			procInfo.BinaryDigest = exeDigest
 		}
 
 	case unix.SYS_OPENAT:
-		file, err := p.readSyscallReg(pid, argArray[1], MAX_PATH_LEN)
-		if err != nil {
-			return err
-		}
+		//file, err := p.readSyscallReg(pid, argArray[1], MAX_PATH_LEN)
+		// if err != nil {
+		// 	return err
+		// }
 
-		procInfo := p.getProcInfo(pid)
-		digestSet, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
-		if err != nil {
-			return err
-		}
+		//procInfo := p.getProcInfo(pid)
+		//digestSet, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
+		// if err != nil {
+		// 	return err
+		// }
 
-		procInfo.OpenedFiles[file] = digestSet
+		//procInfo.OpenedFiles[file] = digestSet
 	}
 
 	return nil
@@ -227,8 +212,8 @@ func (ctx *ptraceContext) getProcInfo(pid int) *ProcessInfo {
 	procInfo, ok := ctx.processes[pid]
 	if !ok {
 		procInfo = &ProcessInfo{
-			ProcessID:   pid,
-			OpenedFiles: make(map[string]cryptoutil.DigestSet),
+			ProcessID: pid,
+			//OpenedFiles: make(map[string]cryptoutil.DigestSet),
 		}
 
 		ctx.processes[pid] = procInfo

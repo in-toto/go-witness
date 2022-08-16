@@ -19,6 +19,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
+	"syscall"
+	"time"
 
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/environment"
@@ -63,6 +66,13 @@ func WithSilent(silent bool) Option {
 	}
 }
 
+func WithTetragon(address string, watchPrefix []string) Option {
+	return func(cr *CommandRun) {
+		cr.tetragonAddress = address
+		cr.tetragonWatchPrefix = watchPrefix
+	}
+}
+
 func WithEnvironmentBlockList(blockList map[string]struct{}) Option {
 	return func(cr *CommandRun) {
 		cr.environmentBlockList = blockList
@@ -81,31 +91,88 @@ func New(opts ...Option) *CommandRun {
 	return cr
 }
 
-type ProcessInfo struct {
-	Program          string                          `json:"program,omitempty"`
-	ProcessID        int                             `json:"processid"`
-	ParentPID        int                             `json:"parentpid"`
-	ProgramDigest    cryptoutil.DigestSet            `json:"programdigest,omitempty"`
-	Comm             string                          `json:"comm,omitempty"`
-	Cmdline          string                          `json:"cmdline,omitempty"`
-	ExeDigest        cryptoutil.DigestSet            `json:"exedigest,omitempty"`
-	OpenedFiles      map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
-	Environ          string                          `json:"environ,omitempty"`
-	SpecBypassIsVuln bool                            `json:"specbypassisvuln,omitempty"`
-}
-
 type CommandRun struct {
-	Cmd       []string      `json:"cmd"`
-	Stdout    string        `json:"stdout,omitempty"`
-	Stderr    string        `json:"stderr,omitempty"`
-	ExitCode  int           `json:"exitcode"`
-	Processes []ProcessInfo `json:"processes,omitempty"`
-
+	Cmd                  []string      `json:"cmd"`
+	Stdout               string        `json:"stdout,omitempty"`
+	Stderr               string        `json:"stderr,omitempty"`
+	ExitCode             int           `json:"exitcode"`
+	Processes            []ProcessInfo `json:"processes,omitempty"`
+	Files                []FileInfo    `json:"files,omitempty"`
+	Sockets              []SocketInfo  `json:"sockets,omitempty"`
+	WitnessPID           int           `json:"witnesspid"`
 	silent               bool
 	materials            map[string]cryptoutil.DigestSet
 	enableTracing        bool
 	environmentBlockList map[string]struct{}
+	tetragonAddress      string
+	tetragonWatchPrefix  []string
 }
+
+type ProcessInfo struct {
+	Binary           string               `json:"program,omitempty"`
+	Args             string               `json:"args,omitempty"`
+	ProcessID        int                  `json:"processid"`
+	ParentPID        int                  `json:"parentpid"`
+	BinaryDigest     cryptoutil.DigestSet `json:"programdigest,omitempty"`
+	StartTime        time.Time            `json:"starttime,omitempty"`
+	StopTime         time.Time            `json:"stoptime,omitempty"`
+	UID              int                  `json:"uid,omitempty"`
+	Environ          string               `json:"environ,omitempty"`
+	Flags            string               `json:"flags,omitempty"`
+	processEventType EventType
+}
+
+type EventType string
+
+const (
+	EventTypeExec = "exec"
+	EventTypeExit = "exit"
+)
+
+type FileInfo struct {
+	Path   string       `json:"path"`
+	Access []FileAccess `json:"access"`
+	PIDs   []int        `json:"pids"`
+}
+
+type FileAccess struct {
+	ProcessPID int        `json:"pid"`
+	Time       time.Time  `json:"time"`
+	AccessType AccessType `json:"type"`
+	//calculate digest on file open, close or when the calling process is killed
+	Digest cryptoutil.DigestSet `json:"digest"`
+}
+
+type AccessType string
+
+const (
+	AccessTypeRead  AccessType = "read"
+	AccessTypeWrite AccessType = "write"
+	AccessTypeOpen  AccessType = "open"
+	AccessTypeClose AccessType = "close"
+)
+
+type SocketAccess struct {
+	ProcessPID int        `json:"pid"`
+	Time       time.Time  `json:"time"`
+	Type       AccessType `json:"type"`
+}
+
+type SocketInfo struct {
+	RemoteAddress string         `json:"remoteaddress"`
+	LocalAddress  string         `json:"address"`
+	LocalPort     int            `json:"port"`
+	RemotePort    int            `json:"remoteport"`
+	SocketType    string         `json:"sockettype"`
+	SocketAccess  []SocketAccess `json:"socketaccess"`
+}
+
+type SocketType string
+
+const (
+	SocketTypeTCP SocketType = "tcp"
+	SocketTypeUDP SocketType = "udp"
+)
 
 func (rc *CommandRun) Attest(ctx *attestation.AttestationContext) error {
 	if len(rc.Cmd) == 0 {
@@ -135,6 +202,10 @@ func (rc *CommandRun) RunType() attestation.RunType {
 }
 
 func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
+	var err error
+
+	r.WitnessPID = os.Getpid()
+
 	c := exec.Command(r.Cmd[0], r.Cmd[1:]...)
 	c.Dir = ctx.WorkingDir()
 	stdoutBuffer := bytes.Buffer{}
@@ -154,15 +225,39 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		enableTracing(c)
 	}
 
+	runtime.LockOSThread()
+
 	if err := c.Start(); err != nil {
 		return err
 	}
 
-	var err error
+	if r.tetragonAddress != "" {
+		syscall.Kill(c.Process.Pid, syscall.SIGSTOP)
+		tc, err := NewTC(ctx, r, c.Process.Pid)
+		if err != nil {
+			return err
+		}
+		err = tc.Start()
+		if err != nil {
+			return err
+		}
+		defer tc.Stop(r)
+		time.Sleep(time.Second * 1)
+		syscall.Kill(c.Process.Pid, syscall.SIGCONT)
+	}
+
+	runtime.UnlockOSThread()
+
 	if r.enableTracing {
-		r.Processes, err = r.trace(c, ctx)
+		t, err := r.trace(c, ctx)
+		if err != nil {
+			return err
+		}
+		r.Processes = t
+
 	} else {
-		err = c.Wait()
+		err := c.Wait()
+		time.Sleep(time.Second * 1)
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			r.ExitCode = exitErr.ExitCode()
 		}
@@ -170,5 +265,6 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 
 	r.Stdout = stdoutBuffer.String()
 	r.Stderr = stderrBuffer.String()
+
 	return err
 }

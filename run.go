@@ -36,6 +36,8 @@ type runOptions struct {
 	tracing         bool
 	attestors       []string
 	command         []string
+	tetragonAddress string
+	watchPrefix     []string
 	attestationOpts []attestation.AttestationContextOption
 }
 
@@ -44,6 +46,13 @@ type RunOption func(ro *runOptions)
 func RunWithTracing(tracing bool) RunOption {
 	return func(ro *runOptions) {
 		ro.tracing = tracing
+	}
+}
+
+func RunWithTetragon(tetragonAddress string, watchPrefix []string) RunOption {
+	return func(ro *runOptions) {
+		ro.tetragonAddress = tetragonAddress
+		ro.watchPrefix = watchPrefix
 	}
 }
 
@@ -98,6 +107,7 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 				commandrun.New(
 					commandrun.WithCommand(ro.command),
 					commandrun.WithTracing(ro.tracing),
+					commandrun.WithTetragon(ro.tetragonAddress, ro.watchPrefix),
 				),
 			),
 			attestation.WithMaterialAttestor(material.New()),
