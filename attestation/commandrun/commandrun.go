@@ -19,7 +19,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -225,7 +224,7 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		enableTracing(c)
 	}
 
-	runtime.LockOSThread()
+	//runtime.LockOSThread()
 
 	if err := c.Start(); err != nil {
 		return err
@@ -242,11 +241,9 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 			return err
 		}
 		defer tc.Stop(r)
-		time.Sleep(time.Second * 1)
 		syscall.Kill(c.Process.Pid, syscall.SIGCONT)
 	}
-
-	runtime.UnlockOSThread()
+	//runtime.UnlockOSThread()
 
 	if r.enableTracing {
 		t, err := r.trace(c, ctx)
@@ -257,7 +254,6 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 
 	} else {
 		err := c.Wait()
-		time.Sleep(time.Second * 1)
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			r.ExitCode = exitErr.ExitCode()
 		}
