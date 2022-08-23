@@ -30,7 +30,7 @@ import (
 
 const (
 	Name    = "command-run"
-	Type    = "https://witness.dev/attestations/command-run/v0.1"
+	Type    = "https://witness.dev/attestations/command-run/v0.2"
 	RunType = attestation.Internal
 )
 
