@@ -91,14 +91,14 @@ func New(opts ...Option) *CommandRun {
 }
 
 type CommandRun struct {
-	Cmd                  []string      `json:"cmd"`
-	Stdout               string        `json:"stdout,omitempty"`
-	Stderr               string        `json:"stderr,omitempty"`
-	ExitCode             int           `json:"exitcode"`
-	Processes            []ProcessInfo `json:"processes,omitempty"`
-	Files                []FileInfo    `json:"files,omitempty"`
-	Sockets              []SocketInfo  `json:"sockets,omitempty"`
-	WitnessPID           int           `json:"witnesspid"`
+	Cmd                  []string             `json:"cmd"`
+	Stdout               string               `json:"stdout,omitempty"`
+	Stderr               string               `json:"stderr,omitempty"`
+	ExitCode             int                  `json:"exitcode"`
+	Processes            []ProcessInfo        `json:"processes,omitempty"`
+	Files                map[string]*FileInfo `json:"files,omitempty"`
+	Sockets              []SocketInfo         `json:"sockets,omitempty"`
+	WitnessPID           int                  `json:"witnesspid"`
 	silent               bool
 	materials            map[string]cryptoutil.DigestSet
 	enableTracing        bool
@@ -129,14 +129,13 @@ const (
 )
 
 type FileInfo struct {
-	Path   string       `json:"path"`
 	Access []FileAccess `json:"access"`
-	PIDs   []int        `json:"pids"`
 }
 
 type FileAccess struct {
-	ProcessPID int        `json:"pid"`
+	PID        int        `json:"pid"`
 	Time       time.Time  `json:"time"`
+	HashTime   time.Time  `json:"hashtime,omitempty"`
 	AccessType AccessType `json:"type"`
 	//calculate digest on file open, close or when the calling process is killed
 	Digest cryptoutil.DigestSet `json:"digest"`
@@ -224,8 +223,6 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		enableTracing(c)
 	}
 
-	//runtime.LockOSThread()
-
 	if err := c.Start(); err != nil {
 		return err
 	}
@@ -243,7 +240,6 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		defer tc.Stop(r)
 		syscall.Kill(c.Process.Pid, syscall.SIGCONT)
 	}
-	//runtime.UnlockOSThread()
 
 	if r.enableTracing {
 		t, err := r.trace(c, ctx)
