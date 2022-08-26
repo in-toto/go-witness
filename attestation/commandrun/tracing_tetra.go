@@ -3,7 +3,6 @@ package commandrun
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -72,41 +71,41 @@ func NewTC(ctx *attestation.AttestationContext, cr *CommandRun, pid int) (*Trace
 
 	tc.policies = append(tc.policies, GetKProbePolicy(uint(pid), cr.tetragonWatchPrefix))
 
-	binary, err := os.Readlink("/proc/" + fmt.Sprintf("%d", pid) + "/exe")
-	if err != nil {
-		return nil, err
-	}
+	// binary, err := os.Readlink("/proc/" + fmt.Sprintf("%d", pid) + "/exe")
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	var argsStr string
-	args, err := os.ReadFile("/proc/" + fmt.Sprintf("%d", pid) + "/cmdline")
-	if err == nil {
-		argsStr = cleanString(string(args))
-		argsSlice := strings.Split(argsStr, " ")
-		//remove first entry which is the binary name
-		argsSlice = argsSlice[1:]
-		argsStr = strings.Join(argsSlice, " ")
-	}
+	// var argsStr string
+	// args, err := os.ReadFile("/proc/" + fmt.Sprintf("%d", pid) + "/cmdline")
+	// if err == nil {
+	// 	argsStr = cleanString(string(args))
+	// 	argsSlice := strings.Split(argsStr, " ")
+	// 	//remove first entry which is the binary name
+	// 	argsSlice = argsSlice[1:]
+	// 	argsStr = strings.Join(argsSlice, " ")
+	// }
 
-	digest, err := cryptoutil.CalculateDigestSetFromFile(binary, tc.ctx.Hashes())
-	if err != nil {
-		return nil, err
-	}
+	// digest, err := cryptoutil.CalculateDigestSetFromFile(binary, tc.ctx.Hashes())
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	firstEvent := &ProcessInfo{
-		Binary:           binary,
-		Args:             argsStr,
-		ProcessID:        pid,
-		ParentPID:        cr.WitnessPID,
-		BinaryDigest:     digest,
-		StartTime:        time.Now().UTC(),
-		StopTime:         time.Time{},
-		UID:              os.Getuid(),
-		Environ:          "",
-		Flags:            "",
-		processEventType: "",
-	}
+	// firstEvent := &ProcessInfo{
+	// 	Binary:           binary,
+	// 	Args:             argsStr,
+	// 	ProcessID:        pid,
+	// 	ParentPID:        cr.WitnessPID,
+	// 	BinaryDigest:     digest,
+	// 	StartTime:        time.Now().UTC(),
+	// 	StopTime:         time.Time{},
+	// 	UID:              os.Getuid(),
+	// 	Environ:          "",
+	// 	Flags:            "",
+	// 	processEventType: "",
+	// }
 
-	tc.pi.processInfos = append(tc.pi.processInfos, firstEvent)
+	// tc.pi.processInfos = append(tc.pi.processInfos, firstEvent)
 
 	return &tc, nil
 }
@@ -260,6 +259,7 @@ func (tc *TraceContext) ProcessKprobe(e *tetragon.ProcessKprobe, t time.Time) {
 }
 
 func (tc *TraceContext) ProcessFileEvent(e *tetragon.ProcessKprobe, t time.Time) {
+
 	if int(e.Process.Pid.Value) == tc.cr.WitnessPID {
 		return
 	}
@@ -361,6 +361,8 @@ func (tc *TraceContext) storeProcessExitEvent(e *tetragon.ProcessExit, eventTime
 }
 
 func (tc *TraceContext) storeProcessExecEvent(e *tetragon.ProcessExec) {
+	log.Debugf("ProcessEvent: PID: %d, Name: %s", e.Process.Pid.Value, e.Process.Binary)
+
 	if int(e.Process.Pid.Value) == tc.pid {
 		log.Debugf("Pid: %d, Binary: %s, Args: %s", e.Process.Pid.Value, e.Process.Binary, e.Process.Arguments)
 	}

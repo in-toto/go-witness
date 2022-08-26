@@ -19,12 +19,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"syscall"
 	"time"
 
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/environment"
 	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/testifysec/go-witness/log"
 )
 
 const (
@@ -224,15 +226,32 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		enableTracing(c)
 	}
 
-	//runtime.LockOSThread()
-
-	if err := c.Start(); err != nil {
-		return err
-	}
+	var tc *TraceContext
 
 	if r.tetragonAddress != "" {
-		syscall.Kill(c.Process.Pid, syscall.SIGSTOP)
-		tc, err := NewTC(ctx, r, c.Process.Pid)
+		runtime.LockOSThread()
+
+		c.SysProcAttr = &syscall.SysProcAttr{
+			Ptrace: true,
+		}
+
+		log.Debugf("Tetragon enabled, connecting to %s", r.tetragonAddress)
+		if err := c.Start(); err != nil {
+			return err
+		}
+
+		wpid := c.Process.Pid
+		_, err := syscall.Getpgid(c.Process.Pid)
+		if err != nil {
+			log.Errorf("Failed to get pgid for pid %d: %v", c.Process.Pid, err)
+		}
+		err = syscall.PtraceSetOptions(c.Process.Pid, syscall.PTRACE_O_TRACECLONE)
+
+		if err != nil {
+			log.Errorf("Failed to set options for pid %d: %v", c.Process.Pid, err)
+		}
+
+		tc, err = NewTC(ctx, r, c.Process.Pid)
 		if err != nil {
 			return err
 		}
@@ -240,10 +259,13 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		if err != nil {
 			return err
 		}
-		defer tc.Stop(r)
-		syscall.Kill(c.Process.Pid, syscall.SIGCONT)
+
+		syscall.PtraceDetach(wpid)
+		if err != nil {
+			return err
+		}
+
 	}
-	//runtime.UnlockOSThread()
 
 	if r.enableTracing {
 		t, err := r.trace(c, ctx)
@@ -253,6 +275,7 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		r.Processes = t
 
 	} else {
+		tc.Stop(r)
 		err := c.Wait()
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			r.ExitCode = exitErr.ExitCode()
