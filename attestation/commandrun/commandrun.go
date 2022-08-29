@@ -135,14 +135,13 @@ const (
 )
 
 type FileInfo struct {
-	Path   string       `json:"path"`
 	Access []FileAccess `json:"access"`
-	PIDs   []int        `json:"pids"`
 }
 
 type FileAccess struct {
-	ProcessPID int        `json:"pid"`
+	PID        int        `json:"pid"`
 	Time       time.Time  `json:"time"`
+	HashTime   time.Time  `json:"hashtime,omitempty"`
 	AccessType AccessType `json:"type"`
 	//calculate digest on file open, close or when the calling process is killed
 	Digest cryptoutil.DigestSet `json:"digest"`
@@ -231,6 +230,7 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	}
 
 	var tc *TraceContext
+
 
 	if r.tetragonAddress != "" {
 		runtime.LockOSThread()

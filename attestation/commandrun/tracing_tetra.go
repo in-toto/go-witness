@@ -218,7 +218,6 @@ func (tc *TraceContext) Start() error {
 
 	tc.client = c
 
-ADD_POLICY:
 	for _, p := range tc.policies {
 		j, err := json.Marshal(p)
 		if err != nil {
@@ -232,7 +231,9 @@ ADD_POLICY:
 		if err != nil {
 			if strings.Contains(err.Error(), "already exists") {
 				RemoveTrace(tc.ctx.Context(), tc.client, p.Metadata.Name)
-				goto ADD_POLICY
+
+				//try again
+				tc.Start()
 			} else {
 				return err
 			}
@@ -240,6 +241,11 @@ ADD_POLICY:
 	}
 
 	events := make(chan *tetragon.GetEventsResponse, 1000)
+	go tc.GetEvents(events)
+	if err != nil {
+		return err
+	}
+
 	go tc.GetEvents(events)
 	go tc.ProcessEvents(events)
 	return nil
@@ -356,6 +362,7 @@ func (tc *TraceContext) ProcessFileEvent(e *tetragon.ProcessKprobe, t time.Time)
 	}
 
 	var digest cryptoutil.DigestSet
+	hashTime := time.Time{}
 
 	if eventType == "open" || eventType == "close" {
 		if path == "" {
@@ -376,21 +383,22 @@ func (tc *TraceContext) ProcessFileEvent(e *tetragon.ProcessKprobe, t time.Time)
 			if err != nil {
 				log.Errorf("Error calculating digest for file %s: %s", path, err)
 			}
+			hashTime = time.Now().UTC()
 		}
 	}
 
 	fileAccess := FileAccess{
-		ProcessPID: int(e.Process.Pid.Value),
+		PID:        int(e.Process.Pid.Value),
 		Time:       t,
 		AccessType: eventType,
 		Digest:     digest,
+		HashTime:   hashTime,
 	}
 
 	tc.fi.mutex.Lock()
 
 	if fi, ok := tc.fi.fileInfos[path]; !ok {
 		tc.fi.fileInfos[path] = &FileInfo{
-			Path:   path,
 			Access: []FileAccess{fileAccess},
 		}
 	} else {
@@ -673,14 +681,4 @@ func GetKProbePolicy(pid uint, paths []string) *Policy {
 		Metadata:   MetaData{Name: "witness-trace-kprobe"},
 		Spec:       *specKprobe,
 	}
-}
-
-func contains(i []int, j int) bool {
-	for _, v := range i {
-		if v == j {
-			return true
-		}
-	}
-
-	return false
 }
