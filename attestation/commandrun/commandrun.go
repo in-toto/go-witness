@@ -16,10 +16,13 @@ package commandrun
 
 import (
 	"bytes"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -93,20 +96,21 @@ func New(opts ...Option) *CommandRun {
 }
 
 type CommandRun struct {
-	Cmd                  []string      `json:"cmd"`
-	Stdout               string        `json:"stdout,omitempty"`
-	Stderr               string        `json:"stderr,omitempty"`
-	ExitCode             int           `json:"exitcode"`
-	Processes            []ProcessInfo `json:"processes,omitempty"`
-	Files                []FileInfo    `json:"files,omitempty"`
-	Sockets              []SocketInfo  `json:"sockets,omitempty"`
-	WitnessPID           int           `json:"witnesspid"`
+	Cmd                  []string             `json:"cmd"`
+	Stdout               string               `json:"stdout,omitempty"`
+	Stderr               string               `json:"stderr,omitempty"`
+	ExitCode             int                  `json:"exitcode"`
+	Processes            []ProcessInfo        `json:"processes,omitempty"`
+	Files                map[string]*FileInfo `json:"files,omitempty"`
+	Sockets              []SocketInfo         `json:"sockets,omitempty"`
+	WitnessPID           int                  `json:"witnesspid"`
 	silent               bool
 	materials            map[string]cryptoutil.DigestSet
 	enableTracing        bool
 	environmentBlockList map[string]struct{}
 	tetragonAddress      string
 	tetragonWatchPrefix  []string
+	cleanedup            bool
 }
 
 type ProcessInfo struct {
@@ -240,43 +244,75 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 			return err
 		}
 
-		wpid := c.Process.Pid
-		_, err := syscall.Getpgid(c.Process.Pid)
-		if err != nil {
-			log.Errorf("Failed to get pgid for pid %d: %v", c.Process.Pid, err)
-		}
-		err = syscall.PtraceSetOptions(c.Process.Pid, syscall.PTRACE_O_TRACECLONE)
-
-		if err != nil {
-			log.Errorf("Failed to set options for pid %d: %v", c.Process.Pid, err)
-		}
-
 		tc, err = NewTC(ctx, r, c.Process.Pid)
 		if err != nil {
 			return err
 		}
+
 		err = tc.Start()
 		if err != nil {
 			return err
 		}
 
-		syscall.PtraceDetach(wpid)
+		log.Debugf("Proc PID: %d", c.Process.Pid)
+
+		runtime.UnlockOSThread()
+
+		log.Debugf("Tetragon enabled, waiting for %s", r.tetragonAddress)
+
+		syscall.PtraceDetach(c.Process.Pid)
 		if err != nil {
 			return err
 		}
 
 	}
 
-	if r.enableTracing {
-		t, err := r.trace(c, ctx)
+	// if r.enableTracing {
+	// 	t, err := r.trace(c, ctx)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	r.Processes = t
+
+	// } else {
+	// 	err := c.Wait()
+	// 	if exitErr, ok := err.(*exec.ExitError); ok {
+	// 		r.ExitCode = exitErr.ExitCode()
+	// 	}
+	// }
+
+	//check if process is running
+	for {
+		procStatus, err := getProcStatus(c.Process.Pid)
 		if err != nil {
 			return err
 		}
-		r.Processes = t
 
-	} else {
-		tc.Stop(r)
-		err := c.Wait()
+		log.Debugf("Proc status: %s", procStatus)
+		if procStatus == "Z" {
+			log.Debugf("Process %d exited", c.Process.Pid)
+
+			//make sure we get all of the exit events
+			time.Sleep(time.Millisecond * 100)
+			err = tc.Stop(r)
+			if err != nil {
+				return err
+			}
+			log.Debugf("Tetragon stopped")
+
+			//wait for all exit events to for dependent processes
+			for {
+				if r.cleanedup {
+					break
+				}
+			}
+			break
+		}
+		time.Sleep(time.Millisecond * 100)
+
+	}
+
+	if err := c.Wait(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			r.ExitCode = exitErr.ExitCode()
 		}
@@ -286,4 +322,23 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	r.Stderr = stderrBuffer.String()
 
 	return err
+}
+
+func getProcStatus(pid int) (string, error) {
+	statusFile := fmt.Sprintf("/proc/%d/status", pid)
+	status, err := ioutil.ReadFile(statusFile)
+	if err != nil {
+		return "", err
+	}
+
+	parsedStatus := strings.Split(string(status), "\n")
+	for _, line := range parsedStatus {
+		if strings.HasPrefix(line, "State:") {
+			p := strings.TrimSpace(line[6:])
+			q := strings.Split(p, " ")
+			return q[0], nil
+		}
+	}
+
+	return "", fmt.Errorf("state not found in %s", statusFile)
 }

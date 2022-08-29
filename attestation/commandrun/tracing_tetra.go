@@ -3,7 +3,9 @@ package commandrun
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +19,7 @@ import (
 	cillium "github.com/cilium/tetragon/pkg/k8s/apis/cilium.io/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 type fileInfos struct {
@@ -27,16 +30,6 @@ type fileInfos struct {
 type processInfos struct {
 	processInfos []*ProcessInfo
 	mutex        sync.RWMutex
-}
-
-func GetDescendentPIDs(parentPID uint, decedents []uint, allPIDs []uint) []uint {
-	for i, pid := range allPIDs {
-		if pid == parentPID {
-			decedents = append(decedents, pid)
-			decedents = GetDescendentPIDs(pid, decedents, allPIDs[i+1:])
-		}
-	}
-	return decedents
 }
 
 type socketInfos struct {
@@ -71,41 +64,42 @@ func NewTC(ctx *attestation.AttestationContext, cr *CommandRun, pid int) (*Trace
 
 	tc.policies = append(tc.policies, GetKProbePolicy(uint(pid), cr.tetragonWatchPrefix))
 
-	// binary, err := os.Readlink("/proc/" + fmt.Sprintf("%d", pid) + "/exe")
-	// if err != nil {
-	// 	return nil, err
-	// }
+	binary, err := os.Readlink("/proc/" + fmt.Sprintf("%d", pid) + "/exe")
+	if err != nil {
+		return nil, err
+	}
 
-	// var argsStr string
-	// args, err := os.ReadFile("/proc/" + fmt.Sprintf("%d", pid) + "/cmdline")
-	// if err == nil {
-	// 	argsStr = cleanString(string(args))
-	// 	argsSlice := strings.Split(argsStr, " ")
-	// 	//remove first entry which is the binary name
-	// 	argsSlice = argsSlice[1:]
-	// 	argsStr = strings.Join(argsSlice, " ")
-	// }
+	var argsStr string
+	args, err := os.ReadFile("/proc/" + fmt.Sprintf("%d", pid) + "/cmdline")
+	if err == nil {
+		argsStr = cleanString(string(args))
+		argsSlice := strings.Split(argsStr, " ")
+		//remove first entry which is the binary name
+		argsSlice = argsSlice[1:]
+		argsStr = strings.Join(argsSlice, " ")
+	}
 
-	// digest, err := cryptoutil.CalculateDigestSetFromFile(binary, tc.ctx.Hashes())
-	// if err != nil {
-	// 	return nil, err
-	// }
+	digest, err := cryptoutil.CalculateDigestSetFromFile(binary, tc.ctx.Hashes())
+	if err != nil {
+		digest = nil
 
-	// firstEvent := &ProcessInfo{
-	// 	Binary:           binary,
-	// 	Args:             argsStr,
-	// 	ProcessID:        pid,
-	// 	ParentPID:        cr.WitnessPID,
-	// 	BinaryDigest:     digest,
-	// 	StartTime:        time.Now().UTC(),
-	// 	StopTime:         time.Time{},
-	// 	UID:              os.Getuid(),
-	// 	Environ:          "",
-	// 	Flags:            "",
-	// 	processEventType: "",
-	// }
+	}
 
-	// tc.pi.processInfos = append(tc.pi.processInfos, firstEvent)
+	firstEvent := &ProcessInfo{
+		Binary:           binary,
+		Args:             argsStr,
+		ProcessID:        pid,
+		ParentPID:        cr.WitnessPID,
+		BinaryDigest:     digest,
+		StartTime:        time.Now().UTC(),
+		StopTime:         time.Time{},
+		UID:              os.Getuid(),
+		Environ:          "",
+		Flags:            "",
+		processEventType: "",
+	}
+
+	tc.pi.processInfos = append(tc.pi.processInfos, firstEvent)
 
 	return &tc, nil
 }
@@ -140,9 +134,80 @@ func (tc *TraceContext) Stop(cr *CommandRun) error {
 		return err
 	}
 
-	tc.done <- true
+	log.Debugf("Stopping trace context")
 
+	tc.done <- true
 	return nil
+}
+
+func (tc *TraceContext) GetDescendentPIDs() []*ProcessInfo {
+	//Grab everything with a parent pid of self (witness)
+	descendants := []*ProcessInfo{}
+
+	//starttime+pid is unique
+	cleaned := map[string]*ProcessInfo{}
+
+	log.Debugf("Proc Info Length: %d", len(tc.pi.processInfos))
+	for _, p := range tc.pi.processInfos {
+		if p.ParentPID == int(tc.cr.WitnessPID) || p.ProcessID == int(tc.cr.WitnessPID) || p.ProcessID == tc.pid {
+			descendants = append(descendants, p)
+		}
+	}
+
+	log.Debugf("Descendent Length1: %d", len(descendants))
+
+	for _, p := range tc.pi.processInfos {
+		for _, d := range descendants {
+			if p.StartTime.Equal(d.StartTime) {
+				continue
+			}
+			if p.ParentPID == d.ProcessID || p.ProcessID == d.ProcessID {
+				if !p.StartTime.IsZero() {
+					cleaned[p.StartTime.String()+strconv.Itoa(p.ProcessID)] = p
+				}
+			}
+		}
+	}
+
+	ret := []*ProcessInfo{}
+	for _, v := range cleaned {
+		ret = append(ret, v)
+	}
+	log.Debugf("Descendent Length2: %d", len(ret))
+
+	return ret
+}
+
+func (tc *TraceContext) MatchExitTimes() ([]*ProcessInfo, int) {
+	descendants := tc.GetDescendentPIDs()
+	cleaned := []*ProcessInfo{}
+
+	for _, p := range descendants {
+		for _, d := range tc.pi.processInfos {
+			if p.StartTime.Equal(d.StartTime) {
+				continue
+			}
+			if p.StopTime.IsZero() && p.ProcessID == d.ProcessID {
+				p.StopTime = d.StopTime
+			}
+		}
+	}
+
+	num := 0
+
+	for _, p := range descendants {
+		if p.StopTime.IsZero() {
+			num++
+			continue
+		}
+
+		if p.StartTime.IsZero() {
+			continue
+		}
+		cleaned = append(cleaned, p)
+	}
+	return cleaned, num
+
 }
 
 func (tc *TraceContext) Start() error {
@@ -181,6 +246,7 @@ ADD_POLICY:
 }
 
 func (tc *TraceContext) RemoveAllTraces() error {
+
 	names := []string{}
 	for _, p := range tc.policies {
 		names = append(names, p.Metadata.Name)
@@ -216,6 +282,7 @@ func RemoveTrace(ctx context.Context, client tetragon.FineGuidanceSensorsClient,
 }
 
 func (tc *TraceContext) ProcessSocketEvent(e *tetragon.ProcessKprobe, t time.Time) {
+
 	sa := e.Args[0].GetSockArg()
 
 	access := SocketAccess{
@@ -247,13 +314,13 @@ func (tc *TraceContext) ProcessKprobe(e *tetragon.ProcessKprobe, t time.Time) {
 	case "tcp_connect":
 		tc.ProcessSocketEvent(e, t)
 	case "fd_install":
-		go tc.ProcessFileEvent(e, t)
+		tc.ProcessFileEvent(e, t)
 	case "__x64_sys_close":
-		go tc.ProcessFileEvent(e, t)
+		tc.ProcessFileEvent(e, t)
 	case "__x64_sys_write":
-		go tc.ProcessFileEvent(e, t)
+		tc.ProcessFileEvent(e, t)
 	case "__x64_sys_read":
-		go tc.ProcessFileEvent(e, t)
+		tc.ProcessFileEvent(e, t)
 	}
 
 }
@@ -261,6 +328,7 @@ func (tc *TraceContext) ProcessKprobe(e *tetragon.ProcessKprobe, t time.Time) {
 func (tc *TraceContext) ProcessFileEvent(e *tetragon.ProcessKprobe, t time.Time) {
 
 	if int(e.Process.Pid.Value) == tc.cr.WitnessPID {
+		fmt.Errorf("Witness process %d is not allowed to write to the file system", tc.cr.WitnessPID)
 		return
 	}
 
@@ -334,6 +402,7 @@ func (tc *TraceContext) ProcessFileEvent(e *tetragon.ProcessKprobe, t time.Time)
 }
 
 func (tc *TraceContext) storeProcessExitEvent(e *tetragon.ProcessExit, eventTime time.Time) {
+
 	ppid := -1
 
 	if e.Parent != nil {
@@ -361,16 +430,13 @@ func (tc *TraceContext) storeProcessExitEvent(e *tetragon.ProcessExit, eventTime
 }
 
 func (tc *TraceContext) storeProcessExecEvent(e *tetragon.ProcessExec) {
-	log.Debugf("ProcessEvent: PID: %d, Name: %s", e.Process.Pid.Value, e.Process.Binary)
-
-	if int(e.Process.Pid.Value) == tc.pid {
-		log.Debugf("Pid: %d, Binary: %s, Args: %s", e.Process.Pid.Value, e.Process.Binary, e.Process.Arguments)
-	}
 
 	if e.Parent == nil {
 		log.Debugf("Nil Parent: Pid: %d, Binary: %s, Args: %s", e.Process.Pid.Value, e.Process.Binary, e.Process.Arguments)
 		return
 	}
+
+	log.Debugf("ProcessEvent: Parent: %d PID: %d, Name: %s, Flags: %s", e.Parent.Pid.Value, e.Process.Pid.Value, e.Process.Binary, e.Process.Flags)
 
 	digest, err := cryptoutil.CalculateDigestSetFromFile(e.Process.Binary, tc.ctx.Hashes())
 	if err != nil {
@@ -398,6 +464,7 @@ func (tc *TraceContext) storeProcessExecEvent(e *tetragon.ProcessExec) {
 }
 
 func (tc *TraceContext) ProcessEvents(events chan *tetragon.GetEventsResponse) {
+
 	for r := range events {
 
 		if r == nil {
@@ -406,17 +473,20 @@ func (tc *TraceContext) ProcessEvents(events chan *tetragon.GetEventsResponse) {
 
 		switch r.Event.(type) {
 		case *tetragon.GetEventsResponse_ProcessExec:
+
 			e := r.GetProcessExec()
 			go tc.storeProcessExecEvent(e)
 
 		case *tetragon.GetEventsResponse_ProcessKprobe:
+
 			e := r.GetProcessKprobe()
 			go tc.ProcessKprobe(e, r.Time.AsTime())
 
 		case *tetragon.GetEventsResponse_ProcessTracepoint:
-			log.Debugf("Unsupported Tracepoint event: %v", r.GetProcessTracepoint())
+			go log.Debugf("Unsupported Tracepoint event: %v", r.GetProcessTracepoint())
 
 		case *tetragon.GetEventsResponse_ProcessExit:
+
 			e := r.GetProcessExit()
 			go tc.storeProcessExitEvent(e, r.Time.AsTime())
 
@@ -424,12 +494,22 @@ func (tc *TraceContext) ProcessEvents(events chan *tetragon.GetEventsResponse) {
 			log.Debugf("Unknown event: %v", r.Event)
 
 		}
+
 	}
+
 }
 
 func (tc *TraceContext) GetEvents(events chan *tetragon.GetEventsResponse) error {
 	log.Info("Getting BPF Events from Tetragon")
-	stream, err := tc.client.GetEvents(tc.ctx.Context(), &tetragon.GetEventsRequest{})
+	stream, err := tc.client.GetEvents(tc.ctx.Context(), &tetragon.GetEventsRequest{
+		AggregationOptions: &tetragon.AggregationOptions{
+			WindowSize: &durationpb.Duration{
+				//200ms in nanos
+				Nanos: 200000000,
+			},
+			ChannelBufferSize: 10000,
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -443,42 +523,13 @@ func (tc *TraceContext) GetEvents(events chan *tetragon.GetEventsResponse) error
 		select {
 		case events <- r:
 		case <-tc.done:
-			stream.Context().Done()
+
+			log.Debug("Stopping GetEvents")
 			tc.pi.mutex.RLock()
 			defer tc.pi.mutex.RUnlock()
 
-			procInfo := tc.pi.processInfos
-
-			descendent := make([]*ProcessInfo, 0)
-
-			//Grab everything with a parent pid of self (witness)
-			for _, p := range procInfo {
-				if p.ParentPID == int(tc.cr.WitnessPID) {
-					descendent = append(descendent, p)
-				}
-			}
-
-			//Grab everything with a parent pid of the descendent
-			for _, p := range procInfo {
-				for _, d := range descendent {
-					if p.ParentPID == d.ProcessID {
-						descendent = append(descendent, p)
-
-					}
-				}
-			}
-
-			cleaned := make([]*ProcessInfo, 0)
-
-			//Get stop time for each descendent
-			for _, p := range descendent {
-				for _, d := range descendent {
-					if p.StopTime.IsZero() && p.ProcessID == d.ProcessID {
-						p.StopTime = d.StopTime
-						cleaned = append(cleaned, p)
-					}
-				}
-			}
+			cleaned, num := tc.MatchExitTimes()
+			log.Debugf("Cleaned %d processes, %d remaining", len(cleaned), num)
 
 			for _, p := range cleaned {
 				tc.cr.Processes = append(tc.cr.Processes, *p)
@@ -497,11 +548,8 @@ func (tc *TraceContext) GetEvents(events chan *tetragon.GetEventsResponse) error
 
 			}
 
-			for _, fi := range tc.fi.fileInfos {
-
-				tc.cr.Files = append(tc.cr.Files, *fi)
-
-			}
+			tc.cr.Files = tc.fi.fileInfos
+			tc.cr.cleanedup = true
 
 		}
 	}
