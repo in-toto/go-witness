@@ -163,3 +163,25 @@ func TestX509(t *testing.T) {
 	err = verifier.Verify(bytes.NewReader(data), sig)
 	assert.Error(t, err)
 }
+
+func TestX509KeyIDs(t *testing.T) {
+	cert, priv, err := createRoot()
+	require.NoError(t, err)
+	verifier, err := NewVerifier(cert)
+	require.NoError(t, err)
+	assert.IsType(t, &X509Verifier{}, verifier)
+	signer, err := NewSigner(priv, SignWithCertificate(cert))
+	require.NoError(t, err)
+	assert.IsType(t, &X509Signer{}, signer)
+	signerWithoutCert, err := NewSigner(priv)
+	require.NoError(t, err)
+	assert.IsType(t, &RSASigner{}, signerWithoutCert)
+	verifierId, err := verifier.KeyID()
+	require.NoError(t, err)
+	signerId, err := signer.KeyID()
+	require.NoError(t, err)
+	signerWithoutCertId, err := signerWithoutCert.KeyID()
+	require.NoError(t, err)
+	assert.Equal(t, signerId, verifierId)
+	assert.Equal(t, signerWithoutCertId, verifierId)
+}
