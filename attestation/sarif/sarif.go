@@ -17,7 +17,7 @@ package sarif
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"strings"
 
@@ -99,7 +99,7 @@ func (a *Attestor) getCanidate(ctx *attestation.AttestationContext) error {
 			return fmt.Errorf("error opening file: %s", path)
 		}
 
-		reportBytes, err := ioutil.ReadAll(f)
+		reportBytes, err := io.ReadAll(f)
 		if err != nil {
 			return fmt.Errorf("error reading file: %s", path)
 		}

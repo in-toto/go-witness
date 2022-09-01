@@ -51,14 +51,14 @@ type CollectionEnvelope struct {
 
 type VerifyOption func(*verifyOptions)
 
-//VerifyWithPolicy verifies a dsse envelopes against a policy
+// VerifyWithPolicy verifies a dsse envelopes against a policy
 func VerifyWithCollectionEnvelopes(collectionEnvelopes []CollectionEnvelope) VerifyOption {
 	return func(vo *verifyOptions) {
 		vo.collectionEnvelopes = collectionEnvelopes
 	}
 }
 
-//VerifyE verifies a dsse envelopes against a policy and returns the envelopes on success
+// VerifyE verifies a dsse envelopes against a policy and returns the envelopes on success
 func Verify(policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) ([]CollectionEnvelope, error) {
 	verifiedEnvelopes := make([]CollectionEnvelope, 0)
 

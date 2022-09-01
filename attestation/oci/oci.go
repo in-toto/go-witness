@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
@@ -256,7 +255,7 @@ func (m *Manifest) getLayerDIFFIDs(ctx *attestation.AttestationContext, tarFileP
 						return nil, err
 					}
 					defer breader.Close()
-					c, err := ioutil.ReadAll(breader)
+					c, err := io.ReadAll(breader)
 					if err != nil {
 						return nil, err
 					}
