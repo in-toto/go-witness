@@ -18,7 +18,6 @@ import (
 	"crypto"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -68,7 +67,7 @@ func TestNew(t *testing.T) {
 }
 
 func SetupTest(t *testing.T, b64tarFile string) *os.File {
-	file, err := ioutil.TempFile("", "test.tar")
+	file, err := os.CreateTemp("", "test.tar")
 	if err != nil {
 		t.Fatal(err)
 	}

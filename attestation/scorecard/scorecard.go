@@ -18,7 +18,7 @@ import (
 	"crypto"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"strings"
 
@@ -103,7 +103,7 @@ func (a *Attestor) getCanidate(ctx *attestation.AttestationContext) error {
 			return fmt.Errorf("error opening file: %s", path)
 		}
 
-		reportBytes, err := ioutil.ReadAll(f)
+		reportBytes, err := io.ReadAll(f)
 		if err != nil {
 			return fmt.Errorf("error reading file: %s", path)
 		}
@@ -142,7 +142,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	return subj
 }
 
-//Copy Pasted from https://github.com/ossf/scorecard/blob/main/pkg/json.go
+// Copy Pasted from https://github.com/ossf/scorecard/blob/main/pkg/json.go
 type jsonScorecardResultV2 struct {
 	Date           string              `json:"date"`
 	Repo           jsonRepoV2          `json:"repo"`

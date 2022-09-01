@@ -37,7 +37,7 @@ const (
 	RunType = attestation.PreRunType
 )
 
-//These will be configurable in the future
+// These will be configurable in the future
 const (
 	docPath = "instance-identity/document"
 	sigPath = "instance-identity/signature"
