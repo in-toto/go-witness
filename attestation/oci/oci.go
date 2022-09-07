@@ -179,14 +179,27 @@ func (a *Attestor) parseMaifest(ctx *attestation.AttestationContext) error {
 
 	f, err := os.Open(a.tarFilePath)
 	if err != nil {
+		err = fmt.Errorf("error opening tar file: %s", err)
 		return err
 	}
+
+	// err = f.Sync()
+	// if err != nil {
+	// 	err = fmt.Errorf("error syncing tar file: %s", err)
+	// 	return err
+	// }
+
 	tarReader := tar.NewReader(f)
 	for {
 		h, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+
 		if err != nil {
 			return err
 		}
+
 		if h.FileInfo().IsDir() {
 			continue
 		}
