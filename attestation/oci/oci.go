@@ -28,6 +28,7 @@ import (
 
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/testifysec/go-witness/log"
 )
 
 const (
@@ -90,7 +91,7 @@ func (m *Manifest) getImageID(ctx *attestation.AttestationContext, tarFilePath s
 
 			imageID, err := cryptoutil.CalculateDigestSetFromBytes(b, ctx.Hashes())
 			if err != nil {
-				fmt.Printf("error calculating image id: %s\n", err)
+				log.Debugf("(attestation/oci) error calculating image id: %v", err)
 				return nil, err
 			}
 
@@ -117,19 +118,19 @@ func (a *Attestor) RunType() attestation.RunType {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	if err := a.getCanidate(ctx); err != nil {
-		fmt.Printf("error getting canidate: %s\n", err)
+	if err := a.getCandidate(ctx); err != nil {
+		log.Debugf("(attestation/oci) error getting candidate: %v", err)
 		return err
 	}
 
 	if err := a.parseMaifest(ctx); err != nil {
-		fmt.Printf("error parsing manifest: %s\n", err)
+		log.Debugf("(attestation/oci) error parsing manifest: %v", err)
 		return err
 	}
 
 	imageID, err := a.Manifest[0].getImageID(ctx, a.tarFilePath)
 	if err != nil {
-		fmt.Printf("error getting image id: %s\n", err)
+		log.Debugf("(attestation/oci) error getting image id: %v", err)
 		return err
 	}
 
@@ -145,7 +146,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	return nil
 }
 
-func (a *Attestor) getCanidate(ctx *attestation.AttestationContext) error {
+func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 	products := ctx.Products()
 
 	if len(products) == 0 {
@@ -163,7 +164,7 @@ func (a *Attestor) getCanidate(ctx *attestation.AttestationContext) error {
 		}
 
 		if !newDigestSet.Equal(product.Digest) {
-			return fmt.Errorf("integrity error: product digest set does not match canidate digest set")
+			return fmt.Errorf("integrity error: product digest set does not match candidate digest set")
 		}
 
 		a.TarDigest = product.Digest

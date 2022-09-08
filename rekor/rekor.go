@@ -84,7 +84,7 @@ func (r *wrappedRekorClient) StoreArtifact(artifactBytes, pubkeyBytes []byte) (*
 	})
 
 	if err != nil {
-		fmt.Println("error creating entry:", err)
+		log.Debugf("(rekor) error creating entry: %v", err)
 		return nil, err
 	}
 
