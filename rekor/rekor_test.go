@@ -20,7 +20,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -126,7 +125,7 @@ func Test_wrappedRekorClient_StoreArtifact(t *testing.T) {
 	require.NoError(t, err)
 
 	signedBytes, err := json.MarshalIndent(result.SignedEnvelope, "", "  ")
-	fmt.Println(string(signedBytes))
+	t.Logf("signed bytes: %v\b", string(signedBytes))
 	require.NoError(t, err)
 
 	require.NoError(t, err)
@@ -175,7 +174,7 @@ func Test_FindEvidence(t *testing.T) {
 
 	entry, err := rc.FindEvidence([]cryptoutil.DigestSet{ds}, policyEnvelope, []cryptoutil.Verifier{verifier}, []witness.CollectionEnvelope{}, 2)
 	for _, e := range entry {
-		fmt.Println(e.Reference)
+		t.Logf("reference: %v\n", e.Reference)
 	}
 
 	require.NoError(t, err)

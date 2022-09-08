@@ -29,6 +29,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/testifysec/go-witness/log"
 )
 
 const (
@@ -197,7 +198,7 @@ func (a *Attestor) Verify() error {
 
 	err = rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, docHash[:], sigBytes)
 	if err != nil {
-		fmt.Printf("failed to verify signature: %v", err)
+		log.Debugf("(attestation/aws-iid) failed to verify signature: %v", err)
 		return nil
 	}
 
