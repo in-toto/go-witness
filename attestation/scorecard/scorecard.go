@@ -24,6 +24,7 @@ import (
 
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/testifysec/go-witness/log"
 )
 
 const (
@@ -71,18 +72,17 @@ func (a *Attestor) RunType() attestation.RunType {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-
 	a.hashes = ctx.Hashes()
 
-	if err := a.getCanidate(ctx); err != nil {
-		fmt.Printf("error getting canidate: %s\n", err)
+	if err := a.getCandidate(ctx); err != nil {
+		log.Debug("(attestation/scorecard) error getting candidate: %v", err)
 		return err
 	}
 
 	return nil
 }
 
-func (a *Attestor) getCanidate(ctx *attestation.AttestationContext) error {
+func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 	products := ctx.Products()
 
 	if len(products) == 0 {
@@ -102,7 +102,7 @@ func (a *Attestor) getCanidate(ctx *attestation.AttestationContext) error {
 		}
 
 		if !newDigestSet.Equal(product.Digest) {
-			return fmt.Errorf("integrity error: product digest set does not match canidate digest set")
+			return fmt.Errorf("integrity error: product digest set does not match candidate digest set")
 		}
 
 		f, err := os.Open(path)
@@ -117,7 +117,7 @@ func (a *Attestor) getCanidate(ctx *attestation.AttestationContext) error {
 
 		//check to see if we can unmarshal into scorecard type
 		if err := json.Unmarshal(reportBytes, &a.Scorecard); err != nil {
-			fmt.Printf("error unmarshaling report: %s\n", err)
+			log.Debug("(attestation/scorecard) error unmarshaling report: %v", err)
 			continue
 		}
 

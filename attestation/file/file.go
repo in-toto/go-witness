@@ -17,9 +17,11 @@ package file
 import (
 	"crypto"
 	"io/fs"
+	"os"
 	"path/filepath"
 
 	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/testifysec/go-witness/log"
 )
 
 // recordArtifacts will walk basePath and record the digests of each file with each of the functions in hashes.
@@ -44,7 +46,10 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 		if info.Mode()&fs.ModeSymlink != 0 {
 			// if this is a symlink, eval the true path and eval any artifacts in the symlink. we record every symlink we've visited to prevent infinite loops
 			linkedPath, err := filepath.EvalSymlinks(path)
-			if err != nil {
+			if os.IsNotExist(err) {
+				log.Debugf("(file) broken symlink detected: %v", path)
+				return nil
+			} else if err != nil {
 				return err
 			}
 
