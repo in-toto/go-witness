@@ -133,3 +133,17 @@ func TryParseKeyFromReader(r io.Reader) (interface{}, error) {
 	pemBlock, _ := pem.Decode(bytes)
 	return TryParsePEMBlock(pemBlock)
 }
+
+func TryParseCertificate(data []byte) (*x509.Certificate, error) {
+	possibleCert, err := TryParseKeyFromReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+
+	cert, ok := possibleCert.(*x509.Certificate)
+	if !ok {
+		return nil, fmt.Errorf("data was a valid verifier but not a certificate")
+	}
+
+	return cert, nil
+}

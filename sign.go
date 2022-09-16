@@ -23,7 +23,7 @@ import (
 )
 
 func Sign(r io.Reader, dataType string, w io.Writer, signers ...cryptoutil.Signer) error {
-	env, err := dsse.Sign(dataType, r, signers...)
+	env, err := dsse.Sign(dataType, r, dsse.SignWithSigners(signers...))
 	if err != nil {
 		return err
 	}

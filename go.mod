@@ -6,6 +6,7 @@ require (
 	github.com/anchore/stereoscope v0.0.0-20220708133445-777471f38c5b
 	github.com/anchore/syft v0.53.0
 	github.com/davecgh/go-spew v1.1.1
+	github.com/digitorus/timestamp v0.0.0-20220704143351-8225fba02d52
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/open-policy-agent/opa v0.43.1
 	github.com/owenrumney/go-sarif v1.1.1
@@ -36,6 +37,7 @@ require (
 	github.com/containerd/containerd v1.6.6 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.12.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.2.0 // indirect
+	github.com/digitorus/pkcs7 v0.0.0-20220704143225-a9c8106cbfc6 // indirect
 	github.com/docker/cli v20.10.17+incompatible // indirect
 	github.com/docker/distribution v2.8.1+incompatible // indirect
 	github.com/docker/docker v20.10.17+incompatible // indirect
