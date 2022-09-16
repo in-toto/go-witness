@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
-	"fmt"
 	"time"
 
 	"github.com/testifysec/go-witness/attestation"
@@ -30,10 +29,11 @@ import (
 const PolicyPredicate = "https://witness.testifysec.com/policy/v0.1"
 
 type Policy struct {
-	Expires    time.Time            `json:"expires"`
-	Roots      map[string]Root      `json:"roots,omitempty"`
-	PublicKeys map[string]PublicKey `json:"publickeys,omitempty"`
-	Steps      map[string]Step      `json:"steps"`
+	Expires              time.Time            `json:"expires"`
+	Roots                map[string]Root      `json:"roots,omitempty"`
+	TimestampAuthorities map[string]Root      `json:"timestampauthorities,omitempty"`
+	PublicKeys           map[string]PublicKey `json:"publickeys,omitempty"`
+	Steps                map[string]Step      `json:"steps"`
 }
 
 type Root struct {
@@ -80,17 +80,25 @@ type TrustBundle struct {
 
 // TrustBundles returns the policy's x509 roots and intermediates grouped by the root's ID
 func (p Policy) TrustBundles() (map[string]TrustBundle, error) {
+	return trustBundlesFromRoots(p.Roots)
+}
+
+func (p Policy) TimestampAuthorityTrustBundles() (map[string]TrustBundle, error) {
+	return trustBundlesFromRoots(p.TimestampAuthorities)
+}
+
+func trustBundlesFromRoots(roots map[string]Root) (map[string]TrustBundle, error) {
 	bundles := make(map[string]TrustBundle)
-	for id, root := range p.Roots {
+	for id, root := range roots {
 		bundle := TrustBundle{}
 		var err error
-		bundle.Root, err = parseCertificate(root.Certificate)
+		bundle.Root, err = cryptoutil.TryParseCertificate(root.Certificate)
 		if err != nil {
 			return bundles, err
 		}
 
 		for _, intBytes := range root.Intermediates {
-			cert, err := parseCertificate(intBytes)
+			cert, err := cryptoutil.TryParseCertificate(intBytes)
 			if err != nil {
 				return bundles, err
 			}
@@ -102,20 +110,6 @@ func (p Policy) TrustBundles() (map[string]TrustBundle, error) {
 	}
 
 	return bundles, nil
-}
-
-func parseCertificate(data []byte) (*x509.Certificate, error) {
-	possibleCert, err := cryptoutil.TryParseKeyFromReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-
-	cert, ok := possibleCert.(*x509.Certificate)
-	if !ok {
-		return nil, fmt.Errorf("value is not an x509 certificate")
-	}
-
-	return cert, nil
 }
 
 type VerifyOption func(*verifyOptions)

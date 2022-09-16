@@ -25,6 +25,7 @@ import (
 	"github.com/testifysec/go-witness/dsse"
 	"github.com/testifysec/go-witness/policy"
 	"github.com/testifysec/go-witness/source"
+	"github.com/testifysec/go-witness/timestamp"
 )
 
 func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelope, error) {
@@ -34,7 +35,7 @@ func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelo
 		return envelope, fmt.Errorf("failed to parse dsse envelope: %v", err)
 	}
 
-	_, err := envelope.Verify(dsse.WithVerifiers(verifiers))
+	_, err := envelope.Verify(dsse.VerifyWithVerifiers(verifiers...))
 	return envelope, err
 }
 
@@ -75,7 +76,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		opt(&vo)
 	}
 
-	if _, err := vo.policyEnvelope.Verify(dsse.WithVerifiers(vo.policyVerifiers)); err != nil {
+	if _, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...)); err != nil {
 		return nil, fmt.Errorf("could not verify policy: %w", err)
 	}
 
@@ -106,7 +107,25 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		intermediates = append(intermediates, intermediates...)
 	}
 
-	verifiedSource := source.NewVerifiedSource(vo.collectionSource, dsse.WithVerifiers(pubkeys), dsse.WithRoots(roots), dsse.WithIntermediates(intermediates))
+	timestampAuthoritiesById, err := pol.TimestampAuthorityTrustBundles()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load policy timestamp authorities: %w", err)
+	}
+
+	timestampVerifiers := make([]dsse.TimestampVerifier, 0)
+	for _, timestampAuthority := range timestampAuthoritiesById {
+		certs := []*x509.Certificate{timestampAuthority.Root}
+		certs = append(certs, timestampAuthority.Intermediates...)
+		timestampVerifiers = append(timestampVerifiers, timestamp.NewVerifier(timestamp.VerifyWithCerts(certs)))
+	}
+
+	verifiedSource := source.NewVerifiedSource(
+		vo.collectionSource,
+		dsse.VerifyWithVerifiers(pubkeys...),
+		dsse.VerifyWithRoots(roots...),
+		dsse.VerifyWithIntermediates(intermediates...),
+		dsse.VerifyWithTimestampVerifiers(timestampVerifiers...),
+	)
 	accepted, err := pol.Verify(ctx, policy.WithSubjectDigests(vo.subjectDigests), policy.WithVerifiedSource(verifiedSource))
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify policy: %w", err)

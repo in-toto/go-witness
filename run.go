@@ -151,5 +151,5 @@ func signCollection(collection attestation.Collection, signer cryptoutil.Signer)
 		return dsse.Envelope{}, err
 	}
 
-	return dsse.Sign(intoto.PayloadType, bytes.NewReader(stmtJson), signer)
+	return dsse.Sign(intoto.PayloadType, bytes.NewReader(stmtJson), dsse.SignWithSigners(signer))
 }

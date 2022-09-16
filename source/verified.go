@@ -48,10 +48,15 @@ func (s *VerifiedSource) Search(ctx context.Context, collectionName string, subj
 
 	verified := make([]VerifiedCollection, 0)
 	for _, toVerify := range unverified {
-		passedVerifiers, err := toVerify.Envelope.Verify(s.verifyOpts...)
+		envelopeVerifiers, err := toVerify.Envelope.Verify(s.verifyOpts...)
 		if err != nil {
 			log.Debugf("(verified source) skipping envelope: couldn't verify enveloper's signature with the policy's verifiers: %+v", err)
 			continue
+		}
+
+		passedVerifiers := make([]cryptoutil.Verifier, 0)
+		for _, verifier := range envelopeVerifiers {
+			passedVerifiers = append(passedVerifiers, verifier.Verifier)
 		}
 
 		verified = append(verified, VerifiedCollection{
