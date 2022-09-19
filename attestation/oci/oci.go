@@ -60,6 +60,7 @@ type Attestor struct {
 	ImageID      cryptoutil.DigestSet   `json:"imageid"`
 	ManifestRaw  []byte                 `json:"manifestraw"`
 	tarFilePath  string                 `json:"-"`
+	hashes       []crypto.Hash          `json:"-"`
 }
 
 type Manifest struct {
@@ -125,6 +126,8 @@ func (a *Attestor) RunType() attestation.RunType {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
+	a.hashes = ctx.Hashes()
+
 	if err := a.getCandidate(ctx); err != nil {
 		log.Debugf("(attestation/oci) error getting candidate: %v", err)
 		return err
@@ -227,6 +230,17 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 
 	subj[fmt.Sprintf("tardigest:%s", a.TarDigest[crypto.SHA256])] = a.TarDigest
 	subj[fmt.Sprintf("imageid:%s", a.ImageID[crypto.SHA256])] = a.ImageID
+	//image tags
+	for _, tag := range a.ImageTags {
+		hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(tag), a.hashes)
+		if err != nil {
+			log.Debugf("(attestation/oci) error calculating image tag: %v", err)
+			continue
+		}
+		subj[fmt.Sprintf("imagetag:%s", tag)] = hash
+	}
+
+	//diff ids
 	for layer := range a.LayerDiffIDs {
 		subj[fmt.Sprintf("layerdiffid%02d:%s", layer, a.LayerDiffIDs[layer][crypto.SHA256])] = a.LayerDiffIDs[layer]
 	}
