@@ -26,6 +26,7 @@ import (
 	_ "github.com/testifysec/go-witness/attestation/maven"
 	_ "github.com/testifysec/go-witness/attestation/oci"
 	_ "github.com/testifysec/go-witness/attestation/sarif"
+	_ "github.com/testifysec/go-witness/attestation/sbom"
 	_ "github.com/testifysec/go-witness/attestation/scorecard"
 	_ "github.com/testifysec/go-witness/attestation/syft"
 )
