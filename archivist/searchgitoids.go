@@ -14,13 +14,17 @@
 
 package archivist
 
-import "context"
+import (
+	"context"
+
+	archivistapi "github.com/testifysec/archivist-api"
+)
 
 type searchGitoidResponse struct {
 	Dsses struct {
 		Edges []struct {
 			Node struct {
-				Gitoid string `json:"gitoid_sha256"`
+				Gitoid string `json:"gitoidSha256"`
 			} `json:"node"`
 		} `json:"edges"`
 	} `json:"dsses"`
@@ -55,13 +59,13 @@ func (c *Client) SearchGitoids(ctx context.Context, vars SearchGitoidVariables) 
   ) {
     edges {
       node {
-        gitoid_sha256
+        gitoidSha256
       }
     }
   }
 }`
 
-	response, err := executeGraphQlQuery[searchGitoidResponse](ctx, c.graphQlUrl, query, vars)
+	response, err := archivistapi.GraphQlQuery[searchGitoidResponse](ctx, c.url, query, vars)
 	if err != nil {
 		return nil, err
 	}
