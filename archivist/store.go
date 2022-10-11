@@ -17,43 +17,15 @@ package archivist
 import (
 	"context"
 
-	"github.com/testifysec/archivist-api/pkg/api/archivist"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	archivistapi "github.com/testifysec/archivist-api"
+	"github.com/testifysec/go-witness/dsse"
 )
 
-func (c *Client) Store(ctx context.Context, signedBytes []byte) (string, error) {
-	conn, err := grpc.Dial(c.grpcUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func (c *Client) Store(ctx context.Context, env dsse.Envelope) (string, error) {
+	resp, err := archivistapi.Store(ctx, c.url, env)
 	if err != nil {
 		return "", err
 	}
 
-	client := archivist.NewCollectorClient(conn)
-	size := len(signedBytes)
-	chunk := &archivist.Chunk{}
-	stream, err := client.Store(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	for curr := 0; curr < size; curr += c.grpcChunkSize {
-		var chunkBytes []byte
-		if curr+c.grpcChunkSize >= size {
-			chunkBytes = signedBytes[curr:]
-		} else {
-			chunkBytes = signedBytes[curr : curr+c.grpcChunkSize]
-		}
-
-		chunk.Chunk = chunkBytes
-		if err := stream.Send(chunk); err != nil {
-			return "", err
-		}
-	}
-
-	resp, err := stream.CloseAndRecv()
-	if err != nil {
-		return "", err
-	}
-
-	return resp.GetGitoid(), nil
+	return resp.Gitoid, nil
 }

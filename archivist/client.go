@@ -15,15 +15,11 @@
 package archivist
 
 type Client struct {
-	graphQlUrl    string
-	grpcUrl       string
-	grpcChunkSize int
+	url string
 }
 
-func New(graphQlUrl, grpcUrl string) *Client {
+func New(url string) *Client {
 	return &Client{
-		graphQlUrl:    graphQlUrl,
-		grpcUrl:       grpcUrl,
-		grpcChunkSize: 64 * 1024,
+		url,
 	}
 }

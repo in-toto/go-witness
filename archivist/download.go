@@ -16,42 +16,11 @@ package archivist
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
-	"net/url"
 
+	archivistapi "github.com/testifysec/archivist-api"
 	"github.com/testifysec/go-witness/dsse"
 )
 
 func (c *Client) Download(ctx context.Context, gitoid string) (dsse.Envelope, error) {
-	downloadUrl, err := url.JoinPath(c.graphQlUrl, "download", gitoid)
-	if err != nil {
-		return dsse.Envelope{}, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "GET", downloadUrl, nil)
-	if err != nil {
-		return dsse.Envelope{}, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	hc := &http.Client{}
-	resp, err := hc.Do(req)
-	if err != nil {
-		return dsse.Envelope{}, nil
-	}
-
-	defer resp.Body.Close()
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return dsse.Envelope{}, err
-	}
-
-	env := dsse.Envelope{}
-	if err := json.Unmarshal(bodyBytes, &env); err != nil {
-		return dsse.Envelope{}, err
-	}
-
-	return env, nil
+	return archivistapi.Download(ctx, c.url, gitoid)
 }

@@ -11,7 +11,7 @@ require (
 	github.com/owenrumney/go-sarif v1.1.1
 	github.com/spiffe/go-spiffe/v2 v2.1.1
 	github.com/stretchr/testify v1.8.0
-	github.com/testifysec/archivist-api v0.0.0-20220719182744-ef1778aa0dba
+	github.com/testifysec/archivist-api v0.0.0-20221012004029-f5ceac2d8a3b
 	golang.org/x/sys v0.0.0-20220731174439-a90be440212d
 	google.golang.org/grpc v1.48.0
 	gopkg.in/square/go-jose.v2 v2.6.0
