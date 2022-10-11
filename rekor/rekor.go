@@ -32,7 +32,7 @@ import (
 	"github.com/sigstore/rekor/pkg/generated/client/index"
 	"github.com/sigstore/rekor/pkg/generated/models"
 	"github.com/sigstore/rekor/pkg/types"
-	rekordsse "github.com/sigstore/rekor/pkg/types/dsse/v0.0.1"
+	rekordsse "github.com/sigstore/rekor/pkg/types/intoto/v0.0.2"
 	witness "github.com/testifysec/go-witness"
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
@@ -78,9 +78,9 @@ func New(rekorServer string) (RekorClient, error) {
 }
 
 func (r *wrappedRekorClient) StoreArtifact(artifactBytes, pubkeyBytes []byte) (*entries.CreateLogEntryCreated, error) {
-	entry, err := types.NewProposedEntry(context.Background(), "dsse", "0.0.1", types.ArtifactProperties{
+	entry, err := types.NewProposedEntry(context.Background(), "intoto", "0.0.2", types.ArtifactProperties{
 		ArtifactBytes:  artifactBytes,
-		PublicKeyBytes: pubkeyBytes,
+		PublicKeyBytes: [][]byte{pubkeyBytes},
 	})
 
 	if err != nil {
@@ -269,24 +269,24 @@ func ParseEnvelopeFromEntry(entry *models.LogEntryAnon) (dsse.Envelope, error) {
 		return env, fmt.Errorf("couldn't parse rekor entry: %w", err)
 	}
 
-	baseModel := models.Dsse{}
+	baseModel := models.Intoto{}
 	if err := baseModel.UnmarshalJSON(decodedBody); err != nil {
 		return env, fmt.Errorf("failed to parse rekor entry: %w", err)
 	}
 
-	eimpl, err := types.NewEntry(pe)
+	eimpl, err := types.CreateVersionedEntry(pe)
 	if err != nil {
 		return env, fmt.Errorf("failed to get entry from rekor: %w", err)
 	}
 
-	dsseEntry, ok := eimpl.(*rekordsse.V001Entry)
+	dsseEntry, ok := eimpl.(*rekordsse.V002Entry)
 	if !ok {
 		return env, errors.New("rekor entry isn't a dsse entry")
 	}
 
 	env.Payload = entry.Attestation.Data
-	env.PayloadType = *dsseEntry.DsseObj.PayloadType
-	for _, sig := range dsseEntry.DsseObj.Signatures {
+	env.PayloadType = *dsseEntry.IntotoObj.Content.Envelope.PayloadType
+	for _, sig := range dsseEntry.IntotoObj.Content.Envelope.Signatures {
 		decodedSig, err := base64.StdEncoding.DecodeString(string(sig.Sig))
 		if err != nil {
 			return env, fmt.Errorf("failed to decode signature: %w", err)
@@ -302,14 +302,14 @@ func ParseEnvelopeFromEntry(entry *models.LogEntryAnon) (dsse.Envelope, error) {
 		_, ok := verifier.(*cryptoutil.X509Verifier)
 		if ok {
 			envSig.Certificate = sig.PublicKey
-			for _, intermediate := range sig.Intermediates {
-				decoded, err := base64.StdEncoding.DecodeString(string(intermediate))
-				if err != nil {
-					continue
-				}
+			// for _, intermediate := range sig.Intermediates {
+			// 	decoded, err := base64.StdEncoding.DecodeString(string(intermediate))
+			// 	if err != nil {
+			// 		continue
+			// 	}
 
-				envSig.Intermediates = append(envSig.Intermediates, decoded)
-			}
+			// 	envSig.Intermediates = append(envSig.Intermediates, decoded)
+			// }
 		}
 
 		env.Signatures = append(env.Signatures, envSig)
