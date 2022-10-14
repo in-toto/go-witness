@@ -95,6 +95,8 @@ func DefaultBlockList() map[string]struct{} {
 		"TOKEN":                          {},
 		"VULTR_ACCESS":                   {},
 		"VULTR_SECRET":                   {},
+		"ACTIONS_RUNTIME_TOKEN":          {},
+		"ACTIONS_ID_TOKEN_REQUEST_TOKEN": {},
 	}
 }
 
