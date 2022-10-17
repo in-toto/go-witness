@@ -18,12 +18,11 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
 )
 
-func Sign(r io.Reader, dataType string, w io.Writer, signers ...cryptoutil.Signer) error {
-	env, err := dsse.Sign(dataType, r, dsse.SignWithSigners(signers...))
+func Sign(r io.Reader, dataType string, w io.Writer, opts ...dsse.SignOption) error {
+	env, err := dsse.Sign(dataType, r, opts...)
 	if err != nil {
 		return err
 	}
