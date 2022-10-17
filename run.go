@@ -37,6 +37,7 @@ type runOptions struct {
 	attestors       []string
 	command         []string
 	attestationOpts []attestation.AttestationContextOption
+	timestampers    []dsse.Timestamper
 }
 
 type RunOption func(ro *runOptions)
@@ -62,6 +63,12 @@ func RunWithAttestationOpts(opts ...attestation.AttestationContextOption) RunOpt
 func RunWithCommand(command []string) RunOption {
 	return func(ro *runOptions) {
 		ro.command = command
+	}
+}
+
+func RunWithTimestampers(ts ...dsse.Timestamper) RunOption {
+	return func(ro *runOptions) {
+		ro.timestampers = ts
 	}
 }
 
@@ -115,7 +122,7 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 	}
 
 	result.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
-	result.SignedEnvelope, err = signCollection(result.Collection, ro.signer)
+	result.SignedEnvelope, err = signCollection(result.Collection, dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
 	if err != nil {
 		return result, fmt.Errorf("failed to sign collection: %w", err)
 	}
@@ -135,7 +142,7 @@ func validateRunOpts(ro runOptions) error {
 	return nil
 }
 
-func signCollection(collection attestation.Collection, signer cryptoutil.Signer) (dsse.Envelope, error) {
+func signCollection(collection attestation.Collection, opts ...dsse.SignOption) (dsse.Envelope, error) {
 	data, err := json.Marshal(&collection)
 	if err != nil {
 		return dsse.Envelope{}, err
@@ -151,5 +158,5 @@ func signCollection(collection attestation.Collection, signer cryptoutil.Signer)
 		return dsse.Envelope{}, err
 	}
 
-	return dsse.Sign(intoto.PayloadType, bytes.NewReader(stmtJson), dsse.SignWithSigners(signer))
+	return dsse.Sign(intoto.PayloadType, bytes.NewReader(stmtJson), opts...)
 }

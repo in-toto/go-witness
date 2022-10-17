@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/pem"
+	"fmt"
 	"io"
 
 	"github.com/testifysec/go-witness/cryptoutil"
@@ -48,11 +49,15 @@ func SignWithTimestampers(timestampers ...Timestamper) SignOption {
 
 func Sign(bodyType string, body io.Reader, opts ...SignOption) (Envelope, error) {
 	so := &signOptions{}
+	env := Envelope{}
 	for _, opt := range opts {
 		opt(so)
 	}
 
-	env := Envelope{}
+	if len(so.signers) == 0 {
+		return env, fmt.Errorf("must have at least one signer, have %v", len(so.signers))
+	}
+
 	bodyBytes, err := io.ReadAll(body)
 	if err != nil {
 		return env, err
