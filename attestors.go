@@ -21,6 +21,7 @@ import (
 	_ "github.com/testifysec/go-witness/attestation/environment"
 	_ "github.com/testifysec/go-witness/attestation/gcp-iit"
 	_ "github.com/testifysec/go-witness/attestation/git"
+	_ "github.com/testifysec/go-witness/attestation/github"
 	_ "github.com/testifysec/go-witness/attestation/gitlab"
 	_ "github.com/testifysec/go-witness/attestation/jwt"
 	_ "github.com/testifysec/go-witness/attestation/maven"

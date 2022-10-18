@@ -1,0 +1,175 @@
+// Copyright 2021 The Witness Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package github
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"os"
+
+	"github.com/testifysec/go-witness/attestation"
+	"github.com/testifysec/go-witness/attestation/jwt"
+	"github.com/testifysec/go-witness/cryptoutil"
+)
+
+const (
+	Name    = "github"
+	Type    = "https://witness.dev/attestations/github/v0.1"
+	RunType = attestation.PreRunType
+)
+
+// This is a hacky way to create a compile time error in case the attestor
+// doesn't implement the expected interfaces.
+var (
+	_ attestation.Attestor   = &Attestor{}
+	_ attestation.Subjecter  = &Attestor{}
+	_ attestation.BackReffer = &Attestor{}
+)
+
+func init() {
+	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
+		return New()
+	})
+}
+
+type ErrNotGitlab struct{}
+
+func (e ErrNotGitlab) Error() string {
+	return "not in a gitlab ci job"
+}
+
+type Attestor struct {
+	JWT          *jwt.Attestor `json:"jwt,omitempty"`
+	CIConfigPath string        `json:"ciconfigpath"`
+	PipelineID   string        `json:"pipelineid"`
+	PipelineName string        `json:"pipelinename"`
+	PipelineUrl  string        `json:"pipelineurl"`
+	ProjectUrl   string        `json:"projecturl"`
+	RunnerID     string        `json:"runnerid"`
+	CIHost       string        `json:"cihost"`
+	CIServerUrl  string        `json:"ciserverurl"`
+	RunnerArch   string        `json:"runnerarch"`
+	RunnerOS     string        `json:"runneros"`
+
+	subjects map[string]cryptoutil.DigestSet
+}
+
+func New() *Attestor {
+	return &Attestor{
+		subjects: make(map[string]cryptoutil.DigestSet),
+	}
+}
+
+func (a *Attestor) Name() string {
+	return Name
+}
+
+func (a *Attestor) Type() string {
+	return Type
+}
+
+func (a *Attestor) RunType() attestation.RunType {
+	return RunType
+}
+
+func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
+	if os.Getenv("GITHUB_ACTIONS") != "true" {
+		return ErrNotGitlab{}
+	}
+
+	jwksUrl := "https://token.actions.githubusercontent.com/.well-known/jwks"
+	jwtString, err := fetchToken(os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL"), os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN"), "witness")
+	if err != nil {
+		return err
+	}
+
+	if jwtString != "" {
+		a.JWT = jwt.New(jwt.WithToken(jwtString), jwt.WithJWKSUrl(jwksUrl))
+		if err := a.JWT.Attest(ctx); err != nil {
+			return err
+		}
+	}
+
+	a.CIServerUrl = os.Getenv("GITHUB_SERVER_URL")
+	a.CIConfigPath = os.Getenv("GITHUB_ACTION_PATH")
+
+	a.PipelineID = os.Getenv("GITHUB_RUN_ID")
+	a.PipelineName = os.Getenv("GITHUB_WORKFLOW")
+
+	a.ProjectUrl = fmt.Sprintf("%s/%s", a.CIServerUrl, os.Getenv("GITHUB_REPOSITORY"))
+	a.RunnerID = os.Getenv("RUNNER_NAME")
+	a.RunnerArch = os.Getenv("RUNNER_ARCH")
+	a.RunnerOS = os.Getenv("RUNNER_OS")
+	a.PipelineUrl = fmt.Sprintf("%s/actions/runs/%s", a.ProjectUrl, a.PipelineID)
+
+	pipelineSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.PipelineUrl), ctx.Hashes())
+	if err != nil {
+		return err
+	}
+	a.subjects[fmt.Sprintf("pipelineurl:%v", a.PipelineUrl)] = pipelineSubj
+
+	projectSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectUrl), ctx.Hashes())
+	if err != nil {
+		return err
+	}
+	a.subjects[fmt.Sprintf("projecturl:%v", a.ProjectUrl)] = projectSubj
+	return nil
+}
+
+func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
+	return a.subjects
+}
+
+func (a *Attestor) BackRefs() map[string]cryptoutil.DigestSet {
+	backRefs := make(map[string]cryptoutil.DigestSet)
+	pipelineUrl := fmt.Sprintf("pipelineurl:%v", a.PipelineUrl)
+	backRefs[pipelineUrl] = a.subjects[pipelineUrl]
+	return backRefs
+}
+
+func fetchToken(tokenURL string, bearer string, audience string) (string, error) {
+	client := &http.Client{}
+	reqURL := fmt.Sprintf("%s&audience=%s", tokenURL, audience)
+
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Add("Authorization", "bearer "+bearer)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var tokenResponse GithubTokenResponse
+	err = json.Unmarshal(body, &tokenResponse)
+	if err != nil {
+		return "", err
+	}
+
+	return tokenResponse.Value, nil
+}
+
+type GithubTokenResponse struct {
+	Count int    `json:"count"`
+	Value string `json:"value"`
+}
