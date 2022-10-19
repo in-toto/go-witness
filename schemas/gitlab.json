@@ -1,1 +1,618 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://witness.dev/attestations/gitlab/v0.1","properties":{"claims":{"type":"object"},"verifiedBy":{"properties":{"jwksUrl":{"type":"string"},"jwk":{"properties":{"Key":true,"KeyID":{"type":"string"},"Algorithm":{"type":"string"},"Use":{"type":"string"},"Certificates":{"items":{"properties":{"Raw":{"type":"string","contentEncoding":"base64"},"RawTBSCertificate":{"type":"string","contentEncoding":"base64"},"RawSubjectPublicKeyInfo":{"type":"string","contentEncoding":"base64"},"RawSubject":{"type":"string","contentEncoding":"base64"},"RawIssuer":{"type":"string","contentEncoding":"base64"},"Signature":{"type":"string","contentEncoding":"base64"},"SignatureAlgorithm":{"type":"integer"},"PublicKeyAlgorithm":{"type":"integer"},"PublicKey":true,"Version":{"type":"integer"},"SerialNumber":{"properties":{},"additionalProperties":false,"type":"object"},"Issuer":{"properties":{"Country":{"items":{"type":"string"},"type":"array"},"Organization":{"items":{"type":"string"},"type":"array"},"OrganizationalUnit":{"items":{"type":"string"},"type":"array"},"Locality":{"items":{"type":"string"},"type":"array"},"Province":{"items":{"type":"string"},"type":"array"},"StreetAddress":{"items":{"type":"string"},"type":"array"},"PostalCode":{"items":{"type":"string"},"type":"array"},"SerialNumber":{"type":"string"},"CommonName":{"type":"string"},"Names":{"items":{"properties":{"Type":{"items":{"type":"integer"},"type":"array"},"Value":true},"additionalProperties":false,"type":"object","required":["Type","Value"]},"type":"array"},"ExtraNames":{"items":{"properties":{"Type":{"items":{"type":"integer"},"type":"array"},"Value":true},"additionalProperties":false,"type":"object","required":["Type","Value"]},"type":"array"}},"additionalProperties":false,"type":"object","required":["Country","Organization","OrganizationalUnit","Locality","Province","StreetAddress","PostalCode","SerialNumber","CommonName","Names","ExtraNames"]},"Subject":{"properties":{"Country":{"items":{"type":"string"},"type":"array"},"Organization":{"items":{"type":"string"},"type":"array"},"OrganizationalUnit":{"items":{"type":"string"},"type":"array"},"Locality":{"items":{"type":"string"},"type":"array"},"Province":{"items":{"type":"string"},"type":"array"},"StreetAddress":{"items":{"type":"string"},"type":"array"},"PostalCode":{"items":{"type":"string"},"type":"array"},"SerialNumber":{"type":"string"},"CommonName":{"type":"string"},"Names":{"items":{"properties":{"Type":{"items":{"type":"integer"},"type":"array"},"Value":true},"additionalProperties":false,"type":"object","required":["Type","Value"]},"type":"array"},"ExtraNames":{"items":{"properties":{"Type":{"items":{"type":"integer"},"type":"array"},"Value":true},"additionalProperties":false,"type":"object","required":["Type","Value"]},"type":"array"}},"additionalProperties":false,"type":"object","required":["Country","Organization","OrganizationalUnit","Locality","Province","StreetAddress","PostalCode","SerialNumber","CommonName","Names","ExtraNames"]},"NotBefore":{"type":"string","format":"date-time"},"NotAfter":{"type":"string","format":"date-time"},"KeyUsage":{"type":"integer"},"Extensions":{"items":{"properties":{"Id":{"items":{"type":"integer"},"type":"array"},"Critical":{"type":"boolean"},"Value":{"type":"string","contentEncoding":"base64"}},"additionalProperties":false,"type":"object","required":["Id","Critical","Value"]},"type":"array"},"ExtraExtensions":{"items":{"properties":{"Id":{"items":{"type":"integer"},"type":"array"},"Critical":{"type":"boolean"},"Value":{"type":"string","contentEncoding":"base64"}},"additionalProperties":false,"type":"object","required":["Id","Critical","Value"]},"type":"array"},"UnhandledCriticalExtensions":{"items":{"items":{"type":"integer"},"type":"array"},"type":"array"},"ExtKeyUsage":{"items":{"type":"integer"},"type":"array"},"UnknownExtKeyUsage":{"items":{"items":{"type":"integer"},"type":"array"},"type":"array"},"BasicConstraintsValid":{"type":"boolean"},"IsCA":{"type":"boolean"},"MaxPathLen":{"type":"integer"},"MaxPathLenZero":{"type":"boolean"},"SubjectKeyId":{"type":"string","contentEncoding":"base64"},"AuthorityKeyId":{"type":"string","contentEncoding":"base64"},"OCSPServer":{"items":{"type":"string"},"type":"array"},"IssuingCertificateURL":{"items":{"type":"string"},"type":"array"},"DNSNames":{"items":{"type":"string"},"type":"array"},"EmailAddresses":{"items":{"type":"string"},"type":"array"},"IPAddresses":{"items":{"type":"string","format":"ipv4"},"type":"array"},"URIs":{"items":{"type":"string","format":"uri"},"type":"array"},"PermittedDNSDomainsCritical":{"type":"boolean"},"PermittedDNSDomains":{"items":{"type":"string"},"type":"array"},"ExcludedDNSDomains":{"items":{"type":"string"},"type":"array"},"PermittedIPRanges":{"items":{"properties":{"IP":{"type":"string","format":"ipv4"},"Mask":{"type":"string","contentEncoding":"base64"}},"additionalProperties":false,"type":"object","required":["IP","Mask"]},"type":"array"},"ExcludedIPRanges":{"items":{"properties":{"IP":{"type":"string","format":"ipv4"},"Mask":{"type":"string","contentEncoding":"base64"}},"additionalProperties":false,"type":"object","required":["IP","Mask"]},"type":"array"},"PermittedEmailAddresses":{"items":{"type":"string"},"type":"array"},"ExcludedEmailAddresses":{"items":{"type":"string"},"type":"array"},"PermittedURIDomains":{"items":{"type":"string"},"type":"array"},"ExcludedURIDomains":{"items":{"type":"string"},"type":"array"},"CRLDistributionPoints":{"items":{"type":"string"},"type":"array"},"PolicyIdentifiers":{"items":{"items":{"type":"integer"},"type":"array"},"type":"array"}},"additionalProperties":false,"type":"object","required":["Raw","RawTBSCertificate","RawSubjectPublicKeyInfo","RawSubject","RawIssuer","Signature","SignatureAlgorithm","PublicKeyAlgorithm","PublicKey","Version","SerialNumber","Issuer","Subject","NotBefore","NotAfter","KeyUsage","Extensions","ExtraExtensions","UnhandledCriticalExtensions","ExtKeyUsage","UnknownExtKeyUsage","BasicConstraintsValid","IsCA","MaxPathLen","MaxPathLenZero","SubjectKeyId","AuthorityKeyId","OCSPServer","IssuingCertificateURL","DNSNames","EmailAddresses","IPAddresses","URIs","PermittedDNSDomainsCritical","PermittedDNSDomains","ExcludedDNSDomains","PermittedIPRanges","ExcludedIPRanges","PermittedEmailAddresses","ExcludedEmailAddresses","PermittedURIDomains","ExcludedURIDomains","CRLDistributionPoints","PolicyIdentifiers"]},"type":"array"},"CertificatesURL":{"type":"string","format":"uri"},"CertificateThumbprintSHA1":{"type":"string","contentEncoding":"base64"},"CertificateThumbprintSHA256":{"type":"string","contentEncoding":"base64"}},"additionalProperties":false,"type":"object","required":["Key","KeyID","Algorithm","Use","Certificates","CertificatesURL","CertificateThumbprintSHA1","CertificateThumbprintSHA256"]}},"additionalProperties":false,"type":"object","required":["jwksUrl","jwk"]}},"additionalProperties":false,"type":"object","required":["claims"],"title":"gitlab attestation","description":"gitlab pre type attestation"}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://witness.dev/attestations/gitlab/v0.1",
+  "properties": {
+    "claims": {
+      "type": "object"
+    },
+    "verifiedBy": {
+      "properties": {
+        "jwksUrl": {
+          "type": "string"
+        },
+        "jwk": {
+          "properties": {
+            "Key": true,
+            "KeyID": {
+              "type": "string"
+            },
+            "Algorithm": {
+              "type": "string"
+            },
+            "Use": {
+              "type": "string"
+            },
+            "Certificates": {
+              "items": {
+                "properties": {
+                  "Raw": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                  },
+                  "RawTBSCertificate": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                  },
+                  "RawSubjectPublicKeyInfo": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                  },
+                  "RawSubject": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                  },
+                  "RawIssuer": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                  },
+                  "Signature": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                  },
+                  "SignatureAlgorithm": {
+                    "type": "integer"
+                  },
+                  "PublicKeyAlgorithm": {
+                    "type": "integer"
+                  },
+                  "PublicKey": true,
+                  "Version": {
+                    "type": "integer"
+                  },
+                  "SerialNumber": {
+                    "properties": {},
+                    "additionalProperties": false,
+                    "type": "object"
+                  },
+                  "Issuer": {
+                    "properties": {
+                      "Country": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "Organization": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "OrganizationalUnit": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "Locality": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "Province": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "StreetAddress": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "PostalCode": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "SerialNumber": {
+                        "type": "string"
+                      },
+                      "CommonName": {
+                        "type": "string"
+                      },
+                      "Names": {
+                        "items": {
+                          "properties": {
+                            "Type": {
+                              "items": {
+                                "type": "integer"
+                              },
+                              "type": "array"
+                            },
+                            "Value": true
+                          },
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "Type",
+                            "Value"
+                          ]
+                        },
+                        "type": "array"
+                      },
+                      "ExtraNames": {
+                        "items": {
+                          "properties": {
+                            "Type": {
+                              "items": {
+                                "type": "integer"
+                              },
+                              "type": "array"
+                            },
+                            "Value": true
+                          },
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "Type",
+                            "Value"
+                          ]
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "Country",
+                      "Organization",
+                      "OrganizationalUnit",
+                      "Locality",
+                      "Province",
+                      "StreetAddress",
+                      "PostalCode",
+                      "SerialNumber",
+                      "CommonName",
+                      "Names",
+                      "ExtraNames"
+                    ]
+                  },
+                  "Subject": {
+                    "properties": {
+                      "Country": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "Organization": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "OrganizationalUnit": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "Locality": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "Province": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "StreetAddress": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "PostalCode": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "SerialNumber": {
+                        "type": "string"
+                      },
+                      "CommonName": {
+                        "type": "string"
+                      },
+                      "Names": {
+                        "items": {
+                          "properties": {
+                            "Type": {
+                              "items": {
+                                "type": "integer"
+                              },
+                              "type": "array"
+                            },
+                            "Value": true
+                          },
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "Type",
+                            "Value"
+                          ]
+                        },
+                        "type": "array"
+                      },
+                      "ExtraNames": {
+                        "items": {
+                          "properties": {
+                            "Type": {
+                              "items": {
+                                "type": "integer"
+                              },
+                              "type": "array"
+                            },
+                            "Value": true
+                          },
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "Type",
+                            "Value"
+                          ]
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "Country",
+                      "Organization",
+                      "OrganizationalUnit",
+                      "Locality",
+                      "Province",
+                      "StreetAddress",
+                      "PostalCode",
+                      "SerialNumber",
+                      "CommonName",
+                      "Names",
+                      "ExtraNames"
+                    ]
+                  },
+                  "NotBefore": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "NotAfter": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "KeyUsage": {
+                    "type": "integer"
+                  },
+                  "Extensions": {
+                    "items": {
+                      "properties": {
+                        "Id": {
+                          "items": {
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        },
+                        "Critical": {
+                          "type": "boolean"
+                        },
+                        "Value": {
+                          "type": "string",
+                          "contentEncoding": "base64"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "Id",
+                        "Critical",
+                        "Value"
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  "ExtraExtensions": {
+                    "items": {
+                      "properties": {
+                        "Id": {
+                          "items": {
+                            "type": "integer"
+                          },
+                          "type": "array"
+                        },
+                        "Critical": {
+                          "type": "boolean"
+                        },
+                        "Value": {
+                          "type": "string",
+                          "contentEncoding": "base64"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "Id",
+                        "Critical",
+                        "Value"
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  "UnhandledCriticalExtensions": {
+                    "items": {
+                      "items": {
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "type": "array"
+                  },
+                  "ExtKeyUsage": {
+                    "items": {
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "UnknownExtKeyUsage": {
+                    "items": {
+                      "items": {
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "type": "array"
+                  },
+                  "BasicConstraintsValid": {
+                    "type": "boolean"
+                  },
+                  "IsCA": {
+                    "type": "boolean"
+                  },
+                  "MaxPathLen": {
+                    "type": "integer"
+                  },
+                  "MaxPathLenZero": {
+                    "type": "boolean"
+                  },
+                  "SubjectKeyId": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                  },
+                  "AuthorityKeyId": {
+                    "type": "string",
+                    "contentEncoding": "base64"
+                  },
+                  "OCSPServer": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "IssuingCertificateURL": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "DNSNames": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "EmailAddresses": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "IPAddresses": {
+                    "items": {
+                      "type": "string",
+                      "format": "ipv4"
+                    },
+                    "type": "array"
+                  },
+                  "URIs": {
+                    "items": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "type": "array"
+                  },
+                  "PermittedDNSDomainsCritical": {
+                    "type": "boolean"
+                  },
+                  "PermittedDNSDomains": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "ExcludedDNSDomains": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "PermittedIPRanges": {
+                    "items": {
+                      "properties": {
+                        "IP": {
+                          "type": "string",
+                          "format": "ipv4"
+                        },
+                        "Mask": {
+                          "type": "string",
+                          "contentEncoding": "base64"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "IP",
+                        "Mask"
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  "ExcludedIPRanges": {
+                    "items": {
+                      "properties": {
+                        "IP": {
+                          "type": "string",
+                          "format": "ipv4"
+                        },
+                        "Mask": {
+                          "type": "string",
+                          "contentEncoding": "base64"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "IP",
+                        "Mask"
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  "PermittedEmailAddresses": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "ExcludedEmailAddresses": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "PermittedURIDomains": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "ExcludedURIDomains": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "CRLDistributionPoints": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "PolicyIdentifiers": {
+                    "items": {
+                      "items": {
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "type": "array"
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "Raw",
+                  "RawTBSCertificate",
+                  "RawSubjectPublicKeyInfo",
+                  "RawSubject",
+                  "RawIssuer",
+                  "Signature",
+                  "SignatureAlgorithm",
+                  "PublicKeyAlgorithm",
+                  "PublicKey",
+                  "Version",
+                  "SerialNumber",
+                  "Issuer",
+                  "Subject",
+                  "NotBefore",
+                  "NotAfter",
+                  "KeyUsage",
+                  "Extensions",
+                  "ExtraExtensions",
+                  "UnhandledCriticalExtensions",
+                  "ExtKeyUsage",
+                  "UnknownExtKeyUsage",
+                  "BasicConstraintsValid",
+                  "IsCA",
+                  "MaxPathLen",
+                  "MaxPathLenZero",
+                  "SubjectKeyId",
+                  "AuthorityKeyId",
+                  "OCSPServer",
+                  "IssuingCertificateURL",
+                  "DNSNames",
+                  "EmailAddresses",
+                  "IPAddresses",
+                  "URIs",
+                  "PermittedDNSDomainsCritical",
+                  "PermittedDNSDomains",
+                  "ExcludedDNSDomains",
+                  "PermittedIPRanges",
+                  "ExcludedIPRanges",
+                  "PermittedEmailAddresses",
+                  "ExcludedEmailAddresses",
+                  "PermittedURIDomains",
+                  "ExcludedURIDomains",
+                  "CRLDistributionPoints",
+                  "PolicyIdentifiers"
+                ]
+              },
+              "type": "array"
+            },
+            "CertificatesURL": {
+              "type": "string",
+              "format": "uri"
+            },
+            "CertificateThumbprintSHA1": {
+              "type": "string",
+              "contentEncoding": "base64"
+            },
+            "CertificateThumbprintSHA256": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "Key",
+            "KeyID",
+            "Algorithm",
+            "Use",
+            "Certificates",
+            "CertificatesURL",
+            "CertificateThumbprintSHA1",
+            "CertificateThumbprintSHA256"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "jwksUrl",
+        "jwk"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "claims"
+  ],
+  "title": "gitlab attestation",
+  "description": "gitlab pre type attestation"
+}

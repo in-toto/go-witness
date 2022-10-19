@@ -1,1 +1,153 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://witness.dev/attestations/sbom/v0.1","properties":{"spdxVersion":{"type":"string"},"dataLicense":{"type":"string"},"SPDXID":{"type":"string"},"name":{"type":"string"},"documentNamespace":{"type":"string"},"creationInfo":{"properties":{"comment":{"type":"string"},"created":{"type":"string"},"creators":{"items":{"type":"string"},"type":"array"},"licenseListVersion":{"type":"string"}},"additionalProperties":false,"type":"object"},"packages":{"items":{"properties":{"name":{"type":"string"},"SPDXID":{"type":"string"},"versionInfo":{"type":"string"},"supplier":{"type":"string"},"downloadLocation":{"type":"string"},"filesAnalyzed":{"type":"boolean"},"checksums":{"items":{"properties":{"algorithm":{"type":"string"},"checksumValue":{"type":"string"}},"additionalProperties":false,"type":"object","required":["algorithm","checksumValue"]},"type":"array"},"homepage":{"type":"string"},"licenseConcluded":{"type":"string"},"licenseDeclared":{"type":"string"},"copyrightText":{"type":"string"},"licenseComments":{"type":"string"},"comment":{"type":"string"}},"additionalProperties":false,"type":"object","required":["filesAnalyzed","checksums"]},"type":"array"},"relationships":{"items":{"properties":{"spdxElementId":{"type":"string"},"relatedSpdxElement":{"type":"string"},"relationshipType":{"type":"string"}},"additionalProperties":false,"type":"object"},"type":"array"},"hasExtractedLicensingInfos":{"items":{"properties":{"licenseId":{"type":"string"},"extractedText":{"type":"string"},"name":{"type":"string"},"comment":{"type":"string"}},"additionalProperties":false,"type":"object"},"type":"array"}},"additionalProperties":false,"type":"object","title":"sbom attestation","description":"sbom pre type attestation"}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://witness.dev/attestations/sbom/v0.1",
+  "properties": {
+    "spdxVersion": {
+      "type": "string"
+    },
+    "dataLicense": {
+      "type": "string"
+    },
+    "SPDXID": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "documentNamespace": {
+      "type": "string"
+    },
+    "creationInfo": {
+      "properties": {
+        "comment": {
+          "type": "string"
+        },
+        "created": {
+          "type": "string"
+        },
+        "creators": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "licenseListVersion": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "packages": {
+      "items": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "SPDXID": {
+            "type": "string"
+          },
+          "versionInfo": {
+            "type": "string"
+          },
+          "supplier": {
+            "type": "string"
+          },
+          "downloadLocation": {
+            "type": "string"
+          },
+          "filesAnalyzed": {
+            "type": "boolean"
+          },
+          "checksums": {
+            "items": {
+              "properties": {
+                "algorithm": {
+                  "type": "string"
+                },
+                "checksumValue": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "algorithm",
+                "checksumValue"
+              ]
+            },
+            "type": "array"
+          },
+          "homepage": {
+            "type": "string"
+          },
+          "licenseConcluded": {
+            "type": "string"
+          },
+          "licenseDeclared": {
+            "type": "string"
+          },
+          "copyrightText": {
+            "type": "string"
+          },
+          "licenseComments": {
+            "type": "string"
+          },
+          "comment": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "filesAnalyzed",
+          "checksums"
+        ]
+      },
+      "type": "array"
+    },
+    "relationships": {
+      "items": {
+        "properties": {
+          "spdxElementId": {
+            "type": "string"
+          },
+          "relatedSpdxElement": {
+            "type": "string"
+          },
+          "relationshipType": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "hasExtractedLicensingInfos": {
+      "items": {
+        "properties": {
+          "licenseId": {
+            "type": "string"
+          },
+          "extractedText": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "comment": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "title": "sbom attestation",
+  "description": "sbom pre type attestation"
+}

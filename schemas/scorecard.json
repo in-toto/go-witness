@@ -1,1 +1,131 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://witness.dev/attestations/scorecard/v0.1","properties":{"scorecard":{"properties":{"date":{"type":"string"},"repo":{"properties":{"name":{"type":"string"},"commit":{"type":"string"}},"additionalProperties":false,"type":"object","required":["name","commit"]},"scorecard":{"properties":{"version":{"type":"string"},"commit":{"type":"string"}},"additionalProperties":false,"type":"object","required":["version","commit"]},"score":{"type":"number"},"checks":{"items":{"properties":{"details":{"items":{"type":"string"},"type":"array"},"score":{"type":"integer"},"reason":{"type":"string"},"name":{"type":"string"},"documentation":{"properties":{"url":{"type":"string"},"short":{"type":"string"}},"additionalProperties":false,"type":"object","required":["url","short"]}},"additionalProperties":false,"type":"object","required":["details","score","reason","name","documentation"]},"type":"array"},"metadata":{"items":{"type":"string"},"type":"array"}},"additionalProperties":false,"type":"object","required":["date","repo","scorecard","score","checks","metadata"]},"reportFileName":{"type":"string"},"reportDigestSet":{"patternProperties":{".*":{"type":"string"}},"type":"object"}},"additionalProperties":false,"type":"object","required":["scorecard","reportFileName","reportDigestSet"],"title":"scorecard attestation","description":"scorecard post type attestation"}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://witness.dev/attestations/scorecard/v0.1",
+  "properties": {
+    "scorecard": {
+      "properties": {
+        "date": {
+          "type": "string"
+        },
+        "repo": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "commit": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "name",
+            "commit"
+          ]
+        },
+        "scorecard": {
+          "properties": {
+            "version": {
+              "type": "string"
+            },
+            "commit": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "version",
+            "commit"
+          ]
+        },
+        "score": {
+          "type": "number"
+        },
+        "checks": {
+          "items": {
+            "properties": {
+              "details": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "score": {
+                "type": "integer"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "documentation": {
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "short": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "url",
+                  "short"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "details",
+              "score",
+              "reason",
+              "name",
+              "documentation"
+            ]
+          },
+          "type": "array"
+        },
+        "metadata": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "date",
+        "repo",
+        "scorecard",
+        "score",
+        "checks",
+        "metadata"
+      ]
+    },
+    "reportFileName": {
+      "type": "string"
+    },
+    "reportDigestSet": {
+      "patternProperties": {
+        ".*": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "scorecard",
+    "reportFileName",
+    "reportDigestSet"
+  ],
+  "title": "scorecard attestation",
+  "description": "scorecard post type attestation"
+}

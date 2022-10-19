@@ -1,1 +1,9 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://witness.dev/attestations/syft/v0.1","properties":{},"additionalProperties":false,"type":"object","title":"syft attestation","description":"syft post type attestation"}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://witness.dev/attestations/syft/v0.1",
+  "properties": {},
+  "additionalProperties": false,
+  "type": "object",
+  "title": "syft attestation",
+  "description": "syft post type attestation"
+}
