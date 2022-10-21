@@ -43,6 +43,10 @@ jobs:
         run: test -z $(go fmt ./...)
       - name: Install GoKart
         run: go install github.com/praetorian-inc/gokart@latest
+      - name: ls
+        run: ls -la
+      - name: Run GoKart
+        run: gokart scan . -o sarif-results.json -s
       - name: Static Analysis
         uses: testifysec/testify-run-action@main
         with:
