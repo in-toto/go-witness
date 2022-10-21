@@ -46,7 +46,7 @@ jobs:
       - name: ls
         run: ls -la
       - name: Run GoKart
-        run: gokart scan . -o sarif-results.json -s
+        run: gokart scan . -s
       - name: Static Analysis
         uses: testifysec/testify-run-action@main
         with:
