@@ -48,7 +48,7 @@ jobs:
         with:
           step-name: "Static Analysis"
           attestors: "github sarif"
-          command: gokart scan ./... --s      
+          command: gokart scan ./... -v -s > sarif-results.json
       - name: Test
         uses: testifysec/testify-run-action@main
         with: 
