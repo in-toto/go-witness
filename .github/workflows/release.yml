@@ -38,8 +38,20 @@ jobs:
             ${{ runner.os }}-go-
       - name: Format Unix
         run: test -z $(go fmt ./...)
+      - name: Install GoKart
+        run: go install github.com/praetorian-inc/gokart@latest
+      - name: Static Analysis
+        uses: testifysec/testify-run-action@main
+        with:
+          step-name: "Static Analysis"
+          attestors: "github sarif"
+          command: gokart scan ./... --s      
       - name: Test
-        run: go test -covermode atomic -coverprofile='profile.cov' ./...
+        uses: testifysec/testify-run-action@main
+        with: 
+          step-name: "Test"
+          attestors: "github sarif"
+          command: go test -v -coverprofile=coverage.txt -covermode=atomic ./...
       - name: Send coverage
         env:
           COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
