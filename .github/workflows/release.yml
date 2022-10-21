@@ -47,15 +47,15 @@ jobs:
       - name: Static Analysis
         uses: testifysec/testify-run-action@main
         with:
-          step-name: static-analysis-sbom
-          attestors: "github sarif sbom"
+          step-name: static-analysis-sbom-scorecard
+          attestors: "github sarif sbom scorecard"
           command: gokart scan . -o sarif-results.json -s
 
       - name: Test
         uses: testifysec/testify-run-action@main
         with: 
           step-name: "Test"
-          attestors: "github sarif"
+          attestors: "github"
           command: go test -v -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: Send coverage
