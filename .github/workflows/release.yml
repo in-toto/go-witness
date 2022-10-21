@@ -45,7 +45,7 @@ jobs:
         run: go install github.com/praetorian-inc/gokart@latest
 
       - name: Static Analysis
-        uses: testifysec/testify-run-action@fix/trace
+        uses: testifysec/testify-run-action@main
         with:
           step-name: static-analysis-sbom-scorecard
           attestors: "github sarif sbom"
