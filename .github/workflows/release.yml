@@ -46,7 +46,7 @@ jobs:
       - name: Static Analysis
         uses: testifysec/testify-run-action@main
         with:
-          step-name: "Static Analysis"
+          step-name: static-analysis
           attestors: "github sarif"
           command: gokart scan . -s > sarif-results.json
       - name: Test
