@@ -505,6 +505,8 @@ github.com/dsnet/golib v0.0.0-20171103203638-1ea166775780/go.mod h1:Lj+Z9rebOhdf
 github.com/dustin/go-humanize v0.0.0-20171111073723-bb3d318650d4/go.mod h1:HtrtbFcZ19U5GC7JDqmcUSB87Iq5E25KnS6fMYU6eOk=
 github.com/dustin/go-humanize v1.0.0 h1:VSnTsYCnlFHaM2/igO1h6X3HA71jcobQuxemgkq4zYo=
 github.com/dustin/go-humanize v1.0.0/go.mod h1:HtrtbFcZ19U5GC7JDqmcUSB87Iq5E25KnS6fMYU6eOk=
+github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d h1:4l+Uq5zFWSagXgGFaKRRVWJrnlzeathyagWgYUltCgY=
+github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d/go.mod h1:WxWwA3EYuCQjlR5EBUX3uaTS8bh9BOa7BcqVREHQ0uQ=
 github.com/ekzhu/minhash-lsh v0.0.0-20171225071031-5c06ee8586a1 h1:/7G7q8SDJdrah5jDYqZI8pGFjSqiCzfSEO+NgqKCYX0=
 github.com/ekzhu/minhash-lsh v0.0.0-20171225071031-5c06ee8586a1/go.mod h1:yEtCVi+QamvzjEH4U/m6ZGkALIkF2xfQnFp0BcKmIOk=
 github.com/elazarl/goproxy v0.0.0-20180725130230-947c36da3153/go.mod h1:/Zj4wYkgs4iZTTu3o/KG3Itv/qCCa8VVMlb3i9OVuzc=

@@ -16,7 +16,6 @@ package intoto
 
 import (
 	"encoding/json"
-
 	"github.com/testifysec/go-witness/cryptoutil"
 )
 

@@ -169,7 +169,7 @@ func TestAttestor_Subjects(t *testing.T) {
 
 	imageid := sha256.Sum256([]byte("ami-5fb8c835"))
 	digest := res["imageid:ami-5fb8c835"]
-	h := digest[crypto.SHA256]
+	h := digest[cryptoutil.DigestValue{Hash: crypto.SHA256}]
 	h2 := hex.EncodeToString(imageid[:])
 	if h != h2 {
 		t.Errorf("Expected %s, got %s", h, h2)

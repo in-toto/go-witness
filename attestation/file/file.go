@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/edwarnicke/gitoid"
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/log"
 )
@@ -78,6 +79,31 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 		if err != nil {
 			return err
 		}
+
+		fileReader, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+
+		goidSha1, err := gitoid.New(fileReader)
+		if err != nil {
+			return err
+		}
+
+		goidSha256, err := gitoid.New(fileReader, gitoid.WithSha256())
+		if err != nil {
+			return err
+		}
+
+		artifact[cryptoutil.DigestValue{
+			Hash:   crypto.SHA1,
+			GitOID: true,
+		}] = goidSha1.URI()
+
+		artifact[cryptoutil.DigestValue{
+			Hash:   crypto.SHA256,
+			GitOID: true,
+		}] = goidSha256.URI()
 
 		if shouldRecord(relPath, artifact, baseArtifacts) {
 			artifacts[relPath] = artifact

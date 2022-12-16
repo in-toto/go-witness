@@ -17,12 +17,11 @@ package product
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"os"
-
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/file"
 	"github.com/testifysec/go-witness/cryptoutil"
+	"net/http"
+	"os"
 )
 
 const (
@@ -63,12 +62,12 @@ func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attesta
 			f.Close()
 		}
 
-		defer f.Close()
 		products[fileName] = attestation.Product{
 			MimeType: mimeType,
 			Digest:   digestSet,
 		}
 	}
+
 	return products
 }
 

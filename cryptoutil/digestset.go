@@ -25,14 +25,42 @@ import (
 )
 
 var (
-	hashNames = map[crypto.Hash]string{
-		crypto.SHA256: "sha256",
-		crypto.SHA1:   "sha1",
+	hashNames = map[DigestValue]string{
+		{
+			Hash:   crypto.SHA256,
+			GitOID: false,
+		}: "sha256",
+		{
+			Hash:   crypto.SHA1,
+			GitOID: false,
+		}: "sha1",
+		{
+			Hash:   crypto.SHA256,
+			GitOID: true,
+		}: "gitoid:sha256",
+		{
+			Hash:   crypto.SHA1,
+			GitOID: true,
+		}: "gitoid:sha1",
 	}
 
-	hashesByName = map[string]crypto.Hash{
-		"sha256": crypto.SHA256,
-		"sha1":   crypto.SHA1,
+	hashesByName = map[string]DigestValue{
+		"sha256": {
+			crypto.SHA256,
+			false,
+		},
+		"sha1": {
+			crypto.SHA1,
+			false,
+		},
+		"gitoid:sha256": {
+			crypto.SHA256,
+			true,
+		},
+		"gitoid:sha1": {
+			crypto.SHA1,
+			true,
+		},
 	}
 )
 
@@ -42,10 +70,15 @@ func (e ErrUnsupportedHash) Error() string {
 	return fmt.Sprintf("unsupported hash function: %v", string(e))
 }
 
-type DigestSet map[crypto.Hash]string
+type DigestValue struct {
+	crypto.Hash
+	GitOID bool
+}
+
+type DigestSet map[DigestValue]string
 
 func HashToString(h crypto.Hash) (string, error) {
-	if name, ok := hashNames[h]; ok {
+	if name, ok := hashNames[DigestValue{Hash: h}]; ok {
 		return name, nil
 	}
 
@@ -54,7 +87,7 @@ func HashToString(h crypto.Hash) (string, error) {
 
 func HashFromString(name string) (crypto.Hash, error) {
 	if hash, ok := hashesByName[name]; ok {
-		return hash, nil
+		return hash.Hash, nil
 	}
 
 	return crypto.Hash(0), ErrUnsupportedHash(name)
@@ -125,7 +158,11 @@ func CalculateDigestSet(r io.Reader, hashes []crypto.Hash) (DigestSet, error) {
 	}
 
 	for hash, hashfunc := range hashfuncs {
-		digestSet[hash] = string(HexEncode(hashfunc.Sum(nil)))
+		digestValue := DigestValue{
+			Hash:   hash,
+			GitOID: false,
+		}
+		digestSet[digestValue] = string(HexEncode(hashfunc.Sum(nil)))
 	}
 	return digestSet, nil
 }

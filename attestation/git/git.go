@@ -116,7 +116,10 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subjectName := fmt.Sprintf("commithash:%v", a.CommitHash)
 	return map[string]cryptoutil.DigestSet{
 		subjectName: {
-			crypto.SHA1: a.CommitHash,
+			{
+				crypto.SHA1,
+				true,
+			}: a.CommitHash,
 		},
 	}
 }
