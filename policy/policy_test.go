@@ -130,7 +130,7 @@ deny[msg] {
 	step1Collection := attestation.NewCollection("step1", []attestation.Attestor{commandRun})
 	step1CollectionJson, err := json.Marshal(&step1Collection)
 	require.NoError(t, err)
-	intotoStatement, err := intoto.NewStatement(attestation.CollectionType, step1CollectionJson, map[string]cryptoutil.DigestSet{"dummy": {crypto.SHA256: "dummy"}})
+	intotoStatement, err := intoto.NewStatement(attestation.CollectionType, step1CollectionJson, map[string]cryptoutil.DigestSet{"dummy": {cryptoutil.DigestValue{Hash: crypto.SHA256}: "dummy"}})
 	require.NoError(t, err)
 
 	_, err = policy.Verify(
@@ -220,8 +220,8 @@ func TestArtifacts(t *testing.T) {
 
 	dummySha := "a1073968266a4ed65472a80ebcfd31f1955cfdf8f23d439b1df84d78ce05f7a9"
 	path := "testfile"
-	mats := map[string]cryptoutil.DigestSet{path: {crypto.SHA256: dummySha}}
-	prods := map[string]attestation.Product{path: {Digest: cryptoutil.DigestSet{crypto.SHA256: dummySha}, MimeType: "application/text"}}
+	mats := map[string]cryptoutil.DigestSet{path: {cryptoutil.DigestValue{Hash: crypto.SHA256}: dummySha}}
+	prods := map[string]attestation.Product{path: {Digest: cryptoutil.DigestSet{cryptoutil.DigestValue{Hash: crypto.SHA256}: dummySha}, MimeType: "application/text"}}
 	step1Collection := attestation.NewCollection("step1", []attestation.Attestor{DummyProducer{prods}})
 	step2Collection := attestation.NewCollection("step2", []attestation.Attestor{DummyMaterialer{mats}})
 	step1CollectionJson, err := json.Marshal(step1Collection)
@@ -256,7 +256,7 @@ func TestArtifacts(t *testing.T) {
 	)
 	assert.NoError(t, err)
 
-	mats[path][crypto.SHA256] = "badhash"
+	mats[path][cryptoutil.DigestValue{Hash: crypto.SHA256}] = "badhash"
 	step2Collection = attestation.NewCollection("step2", []attestation.Attestor{DummyMaterialer{mats}})
 	step2CollectionJson, err = json.Marshal(step2Collection)
 	require.NoError(t, err)

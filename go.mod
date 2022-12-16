@@ -8,6 +8,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/digitorus/pkcs7 v0.0.0-20220704143225-a9c8106cbfc6
 	github.com/digitorus/timestamp v0.0.0-20220704143351-8225fba02d52
+	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/open-policy-agent/opa v0.43.1
 	github.com/owenrumney/go-sarif v1.1.1

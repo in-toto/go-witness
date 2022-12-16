@@ -228,8 +228,8 @@ func (a *Attestor) parseMaifest(ctx *attestation.AttestationContext) error {
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subj := make(map[string]cryptoutil.DigestSet)
 
-	subj[fmt.Sprintf("tardigest:%s", a.TarDigest[crypto.SHA256])] = a.TarDigest
-	subj[fmt.Sprintf("imageid:%s", a.ImageID[crypto.SHA256])] = a.ImageID
+	subj[fmt.Sprintf("tardigest:%s", a.TarDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.TarDigest
+	subj[fmt.Sprintf("imageid:%s", a.ImageID[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.ImageID
 	//image tags
 	for _, tag := range a.ImageTags {
 		hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(tag), a.hashes)
@@ -242,7 +242,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 
 	//diff ids
 	for layer := range a.LayerDiffIDs {
-		subj[fmt.Sprintf("layerdiffid%02d:%s", layer, a.LayerDiffIDs[layer][crypto.SHA256])] = a.LayerDiffIDs[layer]
+		subj[fmt.Sprintf("layerdiffid%02d:%s", layer, a.LayerDiffIDs[layer][cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.LayerDiffIDs[layer]
 	}
 	return subj
 }

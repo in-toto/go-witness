@@ -117,8 +117,8 @@ func TestAttestor_Attest(t *testing.T) {
 
 	err = ctx.RunAttestors()
 
-	require.Equal(t, imageID, a.ImageID[crypto.SHA256])
-	require.Equal(t, diffID, a.LayerDiffIDs[0][crypto.SHA256])
+	require.Equal(t, imageID, a.ImageID[cryptoutil.DigestValue{Hash: crypto.SHA256}])
+	require.Equal(t, diffID, a.LayerDiffIDs[0][cryptoutil.DigestValue{Hash: crypto.SHA256}])
 	require.NoError(t, err)
 
 }
@@ -157,9 +157,9 @@ func TestAttestor_Subjects(t *testing.T) {
 
 	subj := a.Subjects()
 
-	require.Equal(t, imageID, subj[fmt.Sprintf("imageid:%s", imageID)][crypto.SHA256])
-	require.Equal(t, diffID, subj[fmt.Sprintf("layerdiffid00:%s", diffID)][crypto.SHA256])
-	require.Equal(t, tarDigest[crypto.SHA256], subj["tardigest:a996818fbcd6d8ae9214fb1f8b3c0cacee64fc8c937b749db0782c482c0575ac"][crypto.SHA256])
+	require.Equal(t, imageID, subj[fmt.Sprintf("imageid:%s", imageID)][cryptoutil.DigestValue{Hash: crypto.SHA256}])
+	require.Equal(t, diffID, subj[fmt.Sprintf("layerdiffid00:%s", diffID)][cryptoutil.DigestValue{Hash: crypto.SHA256}])
+	require.Equal(t, tarDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}], subj["tardigest:a996818fbcd6d8ae9214fb1f8b3c0cacee64fc8c937b749db0782c482c0575ac"][cryptoutil.DigestValue{Hash: crypto.SHA256}])
 
 	//require.Equal(t, tarDigest[crypto.SHA256], subj[fmt.Sprintf("tardigest:SHA256:%s", tarDigest)][crypto.SHA256])
 

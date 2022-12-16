@@ -136,7 +136,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subj := make(map[string]cryptoutil.DigestSet)
 
 	subj[commitSubj] = cryptoutil.DigestSet{
-		crypto.SHA1: a.Scorecard.Repo.Commit,
+		cryptoutil.DigestValue{Hash: crypto.SHA1}: a.Scorecard.Repo.Commit,
 	}
 
 	ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(nameSubj), a.hashes)
