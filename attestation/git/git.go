@@ -117,7 +117,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	return map[string]cryptoutil.DigestSet{
 		subjectName: {
 			{
-				Hash: crypto.SHA1,
+				Hash:   crypto.SHA1,
 				GitOID: true,
 			}: a.CommitHash,
 		},
