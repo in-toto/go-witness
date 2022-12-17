@@ -16,7 +16,6 @@ package material
 
 import (
 	"encoding/json"
-	"github.com/edwarnicke/gitoid"
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/file"
 	"github.com/testifysec/go-witness/cryptoutil"
@@ -45,7 +44,6 @@ type Option func(*Attestor)
 
 type Attestor struct {
 	materials map[string]cryptoutil.DigestSet
-	gitoids   map[string][]*gitoid.GitOID
 }
 
 func (a Attestor) Name() string {
