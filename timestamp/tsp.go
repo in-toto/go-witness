@@ -89,7 +89,9 @@ func (t TSPTimestamper) Timestamp(ctx context.Context, r io.Reader) ([]byte, err
 		return nil, err
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusCreated, http.StatusAccepted:
+	default:
 		return nil, fmt.Errorf("request to timestamp authority failed: %v", resp.Status)
 	}
 
