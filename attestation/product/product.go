@@ -17,11 +17,12 @@ package product
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
+
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/file"
 	"github.com/testifysec/go-witness/cryptoutil"
-	"net/http"
-	"os"
 )
 
 const (
@@ -47,6 +48,7 @@ func init() {
 type Attestor struct {
 	products      map[string]attestation.Product
 	baseArtifacts map[string]cryptoutil.DigestSet
+	ignorePattern string
 }
 
 func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
