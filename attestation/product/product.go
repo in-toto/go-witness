@@ -17,11 +17,13 @@ package product
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
+	"reflect"
+
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/file"
 	"github.com/testifysec/go-witness/cryptoutil"
-	"net/http"
-	"os"
 )
 
 const (
@@ -42,6 +44,11 @@ func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
 	})
+}
+
+type Config struct {
+	IncludeGlob string
+	ExcludeGlob string
 }
 
 type Attestor struct {
@@ -69,6 +76,22 @@ func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attesta
 	}
 
 	return products
+}
+
+func (a Attestor) GetConfig() any {
+	c := Config{
+		IncludeGlob: "",
+		ExcludeGlob: "",
+	}
+
+	return c
+}
+
+func (a *Attestor) SetConfig(c map[string]interface{}) error {
+	v := reflect.ValueOf(a).Elem()
+	t := v.Type()
+
+	return attestation.SetConfigHelper(v, t, c)
 }
 
 func (a Attestor) Name() string {

@@ -16,6 +16,7 @@ package material
 
 import (
 	"encoding/json"
+
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/file"
 	"github.com/testifysec/go-witness/cryptoutil"
@@ -38,6 +39,24 @@ func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
 	})
+}
+
+type Config struct {
+	Foo []string
+	Bar string
+}
+
+func (a Attestor) SetConfig(c any) error {
+	return nil
+}
+
+func (a Attestor) GetConfig() any {
+	c := Config{
+		Foo: []string{"test1", "test2"},
+		Bar: "",
+	}
+
+	return c
 }
 
 type Option func(*Attestor)

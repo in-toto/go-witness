@@ -43,6 +43,20 @@ func init() {
 	})
 }
 
+type Config struct {
+	Foo string
+	Bar string
+}
+
+func (a Attestor) GetConfig() any {
+	c := Config{
+		Foo: "",
+		Bar: "",
+	}
+
+	return c
+}
+
 type Status struct {
 	Staging  string `json:"staging,omitempty"`
 	Worktree string `json:"worktree,omitempty"`

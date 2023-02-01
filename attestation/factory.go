@@ -16,7 +16,9 @@ package attestation
 
 import (
 	"fmt"
+	"reflect"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/testifysec/go-witness/cryptoutil"
 )
 
@@ -24,13 +26,62 @@ var (
 	attestationsByName = map[string]AttestorFactory{}
 	attestationsByType = map[string]AttestorFactory{}
 	attestationsByRun  = map[string]AttestorFactory{}
+	attestorConfigs    = AttestorConfigs{}
 )
+
+type AttestorConfigs map[string]map[string]any
 
 type Attestor interface {
 	Name() string
 	Type() string
 	RunType() RunType
 	Attest(ctx *AttestationContext) error
+}
+
+type Configurable interface {
+	GetConfig() any
+	SetConfig(c any) error
+}
+
+func RegisterAttestation(name string, uri string, run RunType, factoryFunc AttestorFactory) {
+	attestationsByName[name] = factoryFunc
+	attestationsByType[uri] = factoryFunc
+	attestationsByRun[run.String()] = factoryFunc
+
+	//check to see if the attestior is configurable
+	a := factoryFunc()
+
+	if c, ok := a.(Configurable); ok {
+		conf := c.GetConfig()
+
+		v := reflect.ValueOf(conf)
+
+		typ := v.Type()
+		for i := 0; i < v.NumField(); i++ {
+			fi := typ.Field(i)
+			fieldName := fi.Name
+			value := v.Field(i).Interface()
+
+			// Create a map entry for this attestor if it doesn't exist
+			if _, ok := attestorConfigs[name]; !ok {
+				attestorConfigs[name] = make(map[string]interface{})
+			}
+
+			attestorConfigs[name][fieldName] = value
+		}
+	}
+	spew.Dump(attestorConfigs)
+}
+
+func RegisterConfig(attestors []Attestor, attestorConfig map[string]map[string]interface{}) {
+	for _, attestor := range attestors {
+		if c, ok := attestor.(Configurable); ok {
+			name := reflect.TypeOf(attestor).Name()
+			if config, ok := attestorConfig[name]; ok {
+				c.SetConfig(config)
+			}
+		}
+	}
 }
 
 // Subjecter allows attestors to expose bits of information that will be added to
@@ -71,12 +122,6 @@ func (e ErrAttestationNotFound) Error() string {
 	return fmt.Sprintf("attestation not found: %v", string(e))
 }
 
-func RegisterAttestation(name, uri string, run RunType, factoryFunc AttestorFactory) {
-	attestationsByName[name] = factoryFunc
-	attestationsByType[uri] = factoryFunc
-	attestationsByRun[run.String()] = factoryFunc
-}
-
 func FactoryByType(uri string) (AttestorFactory, bool) {
 	factory, ok := attestationsByType[uri]
 	return factory, ok
@@ -106,4 +151,38 @@ func Attestors(nameOrTypes []string) ([]Attestor, error) {
 	}
 
 	return attestors, nil
+}
+
+func SetConfigHelper(v reflect.Value, t reflect.Type, c map[string]interface{}) error {
+	for i := 0; i < v.NumField(); i++ {
+		field := t.Field(i)
+		fieldName := field.Name
+		if value, ok := c[fieldName]; ok {
+			f := v.FieldByName(fieldName)
+			if f.CanSet() {
+				fieldType := f.Type()
+				switch fieldType.Kind() {
+				case reflect.String:
+					f.SetString(value.(string))
+				case reflect.Int:
+					f.SetInt(int64(value.(int)))
+				case reflect.Slice:
+					if fieldType.Elem().Kind() == reflect.String {
+						sliceValue := value.([]interface{})
+						strSlice := make([]string, len(sliceValue))
+						for i, v := range sliceValue {
+							strSlice[i] = v.(string)
+						}
+						f.Set(reflect.ValueOf(strSlice))
+					} else {
+						return fmt.Errorf("unsupported slice type")
+					}
+				default:
+					return fmt.Errorf("unsupported field type")
+				}
+			}
+		}
+	}
+
+	return nil
 }
