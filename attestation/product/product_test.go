@@ -15,7 +15,10 @@
 package product
 
 import (
+	"archive/tar"
+	"bytes"
 	"crypto"
+	"os"
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
@@ -86,4 +89,67 @@ func TestAttestor_Attest(t *testing.T) {
 	require.NoError(t, err)
 	err = a.Attest(ctx)
 	require.NoError(t, err)
+}
+
+func TestGetFileContentType(t *testing.T) {
+	// Create a temporary directory for the test
+	tempDir := t.TempDir()
+
+	// Create a temporary text file.
+	textFile, err := os.CreateTemp(tempDir, "test-*.txt")
+	require.NoError(t, err)
+	defer os.Remove(textFile.Name())
+	_, err = textFile.WriteString("This is a test file.")
+	require.NoError(t, err)
+
+	// Create a temporary PDF file with extension.
+	pdfFile, err := os.CreateTemp(tempDir, "test-*")
+	require.NoError(t, err)
+	defer os.Remove(pdfFile.Name())
+
+	//write to pdf so it has correct file signature 25 50 44 46 2D
+	_, err = pdfFile.WriteAt([]byte{0x25, 0x50, 0x44, 0x46, 0x2D}, 0)
+
+	require.NoError(t, err)
+
+	// Create a temporary tar file with no extension.
+	tarFile, err := os.CreateTemp(tempDir, "test-*")
+	require.NoError(t, err)
+	defer os.Remove(tarFile.Name())
+	tarBuffer := new(bytes.Buffer)
+	writer := tar.NewWriter(tarBuffer)
+	header := &tar.Header{
+		Name: "test.txt",
+		Size: int64(len("This is a test file.")),
+	}
+	require.NoError(t, writer.WriteHeader(header))
+	_, err = writer.Write([]byte("This is a test file."))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	_, err = tarFile.Write(tarBuffer.Bytes())
+	require.NoError(t, err)
+
+	// Open the temporary tar file using os.Open.
+	tarFile, err = os.Open(tarFile.Name())
+	require.NoError(t, err)
+
+	// Define the test cases.
+	tests := []struct {
+		name     string
+		file     *os.File
+		expected string
+	}{
+		{"text file with extension", textFile, "text/plain; charset=utf-8"},
+		{"PDF file with no extension", pdfFile, "application/pdf"},
+		{"tar file with no extension", tarFile, "application/x-tar"},
+	}
+
+	// Run the test cases.
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			contentType, err := getFileContentType(test.file)
+			require.NoError(t, err)
+			require.Equal(t, test.expected, contentType)
+		})
+	}
 }
