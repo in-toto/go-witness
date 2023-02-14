@@ -36,7 +36,7 @@ const (
 	Type    = "https://witness.dev/attestations/oci/v0.1"
 	RunType = attestation.PostRunType
 
-	mimeTypes = "application/octet-stream application/x-tar"
+	mimeTypes = "application/x-tar"
 )
 
 // This is a hacky way to create a compile time error in case the attestor

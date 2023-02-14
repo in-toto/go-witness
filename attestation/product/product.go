@@ -17,11 +17,15 @@ package product
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
+	"net/http"
+	"os"
+	"path/filepath"
+
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/file"
 	"github.com/testifysec/go-witness/cryptoutil"
-	"net/http"
-	"os"
 )
 
 const (
@@ -126,15 +130,46 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 }
 
 func getFileContentType(file *os.File) (string, error) {
-	// Only the first 512 bytes are used to sniff the content type.
+	// Read up to 512 bytes from the file.
 	buffer := make([]byte, 512)
 	_, err := file.Read(buffer)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return "", err
 	}
 
-	// Use the net/http package's handy DectectContentType function. Always returns a valid
-	// content-type by returning "application/octet-stream" if no others seemed to match.
+	// Try to detect the content type using http.DetectContentType().
 	contentType := http.DetectContentType(buffer)
+
+	// If the content type is application/octet-stream, try to detect the content type using a file signature.
+	if contentType == "application/octet-stream" {
+		// Try to match the file signature to a content type.
+		if signature, _ := getFileSignature(buffer); signature != "application/octet-stream" {
+			contentType = signature
+		} else if extension := filepath.Ext(file.Name()); extension != "" {
+			contentType = mime.TypeByExtension(extension)
+		}
+	}
+
 	return contentType, nil
+}
+
+// getFileSignature tries to match the file signature to a content type.
+func getFileSignature(buffer []byte) (string, error) {
+	// Create a new buffer with a length of 512 bytes and copy the data from the input buffer into the new buffer to prevent out of bounds errors.
+	newBuffer := make([]byte, 512)
+	copy(newBuffer, buffer)
+
+	var signature string
+	switch {
+	// https://en.wikipedia.org/wiki/List_of_file_signatures
+	case buffer[257] == 0x75 && buffer[258] == 0x73 && buffer[259] == 0x74 && buffer[260] == 0x61 && buffer[261] == 0x72:
+		signature = "application/x-tar"
+	case buffer[0] == 0x25 && buffer[1] == 0x50 && buffer[2] == 0x44 && buffer[3] == 0x46 && buffer[4] == 0x2D:
+		signature = "application/pdf"
+	default:
+		// If the file signature is not recognized, return application/octet-stream by default
+		signature = "application/octet-stream"
+	}
+
+	return signature, nil
 }
