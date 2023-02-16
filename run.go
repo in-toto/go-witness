@@ -20,11 +20,8 @@ import (
 	"fmt"
 
 	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/attestation/commandrun"
 	"github.com/testifysec/go-witness/attestation/environment"
 	"github.com/testifysec/go-witness/attestation/git"
-	"github.com/testifysec/go-witness/attestation/material"
-	"github.com/testifysec/go-witness/attestation/product"
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
 	"github.com/testifysec/go-witness/intoto"
@@ -33,22 +30,14 @@ import (
 type runOptions struct {
 	stepName        string
 	signer          cryptoutil.Signer
-	tracing         bool
-	attestors       []string
-	command         []string
+	attestors       []attestation.Attestor
 	attestationOpts []attestation.AttestationContextOption
 	timestampers    []dsse.Timestamper
 }
 
 type RunOption func(ro *runOptions)
 
-func RunWithTracing(tracing bool) RunOption {
-	return func(ro *runOptions) {
-		ro.tracing = tracing
-	}
-}
-
-func RunWithAttestors(attestors []string) RunOption {
+func RunWithAttestors(attestors []attestation.Attestor) RunOption {
 	return func(ro *runOptions) {
 		ro.attestors = attestors
 	}
@@ -57,12 +46,6 @@ func RunWithAttestors(attestors []string) RunOption {
 func RunWithAttestationOpts(opts ...attestation.AttestationContextOption) RunOption {
 	return func(ro *runOptions) {
 		ro.attestationOpts = opts
-	}
-}
-
-func RunWithCommand(command []string) RunOption {
-	return func(ro *runOptions) {
-		ro.command = command
 	}
 }
 
@@ -81,8 +64,7 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 	ro := runOptions{
 		stepName:  stepName,
 		signer:    signer,
-		tracing:   false,
-		attestors: []string{environment.Type, git.Type},
+		attestors: []attestation.Attestor{environment.New(), git.New()},
 	}
 
 	for _, opt := range opts {
@@ -94,25 +76,7 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 		return result, err
 	}
 
-	attestors, err := attestation.Attestors(ro.attestors)
-	if err != nil {
-		return result, fmt.Errorf("failed to get attestors: %w", err)
-	}
-
-	if len(ro.command) > 0 {
-		ro.attestationOpts = append(ro.attestationOpts,
-			attestation.WithCommandAttestor(
-				commandrun.New(
-					commandrun.WithCommand(ro.command),
-					commandrun.WithTracing(ro.tracing),
-				),
-			),
-			attestation.WithMaterialAttestor(material.New()),
-			attestation.WithProductAttestor(product.New()),
-		)
-	}
-
-	runCtx, err := attestation.NewContext(attestors, ro.attestationOpts...)
+	runCtx, err := attestation.NewContext(ro.attestors, ro.attestationOpts...)
 	if err != nil {
 		return result, fmt.Errorf("failed to create attestation context: %w", err)
 	}

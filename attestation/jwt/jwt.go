@@ -27,7 +27,7 @@ import (
 const (
 	Name    = "jwt"
 	Type    = "https://witness.dev/attestations/jwt/v0.1"
-	RunType = attestation.PreRunType
+	RunType = attestation.PreMaterialRunType
 )
 
 // This is a hacky way to create a compile time error in case the attestor

@@ -35,10 +35,10 @@ import (
 )
 
 func init() {
-	attestation.RegisterAttestation("dummy-prods", "dummy-prods", attestation.PostRunType, func() attestation.Attestor {
+	attestation.RegisterAttestation("dummy-prods", "dummy-prods", attestation.PostProductRunType, func() attestation.Attestor {
 		return &DummyProducer{}
 	})
-	attestation.RegisterAttestation("dummy-mats", "dummy-mats", attestation.PreRunType, func() attestation.Attestor {
+	attestation.RegisterAttestation("dummy-mats", "dummy-mats", attestation.PreMaterialRunType, func() attestation.Attestor {
 		return &DummyMaterialer{}
 	})
 }
@@ -301,7 +301,7 @@ func (DummyMaterialer) Type() string {
 }
 
 func (DummyMaterialer) RunType() attestation.RunType {
-	return attestation.PreRunType
+	return attestation.PreMaterialRunType
 }
 
 func (DummyMaterialer) Attest(*attestation.AttestationContext) error {
@@ -325,7 +325,7 @@ func (DummyProducer) Type() string {
 }
 
 func (DummyProducer) RunType() attestation.RunType {
-	return attestation.PostRunType
+	return attestation.PostProductRunType
 }
 
 func (DummyProducer) Attest(*attestation.AttestationContext) error {

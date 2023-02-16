@@ -16,6 +16,7 @@ package material
 
 import (
 	"encoding/json"
+
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/file"
 	"github.com/testifysec/go-witness/cryptoutil"
@@ -24,7 +25,7 @@ import (
 const (
 	Name    = "material"
 	Type    = "https://witness.dev/attestations/material/v0.1"
-	RunType = attestation.Internal
+	RunType = attestation.MaterialRunType
 )
 
 // This is a hacky way to create a compile time error in case the attestor
