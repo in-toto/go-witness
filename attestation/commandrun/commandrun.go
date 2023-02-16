@@ -28,7 +28,7 @@ import (
 const (
 	Name    = "command-run"
 	Type    = "https://witness.dev/attestations/command-run/v0.1"
-	RunType = attestation.Internal
+	RunType = attestation.ExecuteRunType
 )
 
 // This is a hacky way to create a compile time error in case the attestor

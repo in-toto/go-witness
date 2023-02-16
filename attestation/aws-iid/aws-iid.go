@@ -35,7 +35,7 @@ import (
 const (
 	Name    = "aws"
 	Type    = "https://witness.dev/attestations/aws/v0.1"
-	RunType = attestation.PreRunType
+	RunType = attestation.PreMaterialRunType
 )
 
 // These will be configurable in the future

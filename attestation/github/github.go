@@ -31,7 +31,7 @@ import (
 const (
 	Name    = "github"
 	Type    = "https://witness.dev/attestations/github/v0.1"
-	RunType = attestation.PreRunType
+	RunType = attestation.PreMaterialRunType
 )
 
 const (

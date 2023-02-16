@@ -24,21 +24,23 @@ import (
 	"github.com/testifysec/go-witness/log"
 )
 
-type ErrInvalidOption struct {
-	Option string
-	Reason string
-}
-
 type RunType string
 
 const (
-	Internal    RunType = "internal"
-	PreRunType  RunType = "pre"
-	PostRunType RunType = "post"
+	PreMaterialRunType RunType = "prematerial"
+	MaterialRunType    RunType = "material"
+	ExecuteRunType     RunType = "execute"
+	ProductRunType     RunType = "product"
+	PostProductRunType RunType = "postproduct"
 )
 
 func (r RunType) String() string {
 	return string(r)
+}
+
+type ErrInvalidOption struct {
+	Option string
+	Reason string
 }
 
 func (e ErrInvalidOption) Error() string {
@@ -69,32 +71,11 @@ func WithWorkingDir(workingDir string) AttestationContextOption {
 	}
 }
 
-func WithMaterialAttestor(attestor Attestor) AttestationContextOption {
-	return func(ctx *AttestationContext) {
-		ctx.materialAttestor = attestor
-	}
-}
-
-func WithProductAttestor(attestor Attestor) AttestationContextOption {
-	return func(ctx *AttestationContext) {
-		ctx.productAttestor = attestor
-	}
-}
-
-func WithCommandAttestor(attestor Attestor) AttestationContextOption {
-	return func(ctx *AttestationContext) {
-		ctx.commandAttestor = attestor
-	}
-}
-
 type AttestationContext struct {
-	ctx              context.Context
-	attestors        []Attestor
-	materialAttestor Attestor
-	productAttestor  Attestor
-	commandAttestor  Attestor
-	workingDir       string
-	hashes           []crypto.Hash
+	ctx        context.Context
+	attestors  []Attestor
+	workingDir string
+	hashes     []crypto.Hash
 
 	completedAttestors []Attestor
 	products           map[string]Product
@@ -130,18 +111,27 @@ func NewContext(attestors []Attestor, opts ...AttestationContextOption) (*Attest
 
 func (ctx *AttestationContext) RunAttestors() error {
 	preAttestors := []Attestor{}
+	materialAttestors := []Attestor{}
+	exeucteAttestors := []Attestor{}
+	productAttestors := []Attestor{}
 	postAttestors := []Attestor{}
 
 	for _, attestor := range ctx.attestors {
 		switch attestor.RunType() {
-		case PreRunType:
+		case PreMaterialRunType:
 			preAttestors = append(preAttestors, attestor)
 
-		case PostRunType:
-			postAttestors = append(postAttestors, attestor)
+		case MaterialRunType:
+			materialAttestors = append(materialAttestors, attestor)
 
-		case Internal:
-			return fmt.Errorf("internal attestors unallowed in attestor array")
+		case ExecuteRunType:
+			exeucteAttestors = append(exeucteAttestors, attestor)
+
+		case ProductRunType:
+			productAttestors = append(productAttestors, attestor)
+
+		case PostProductRunType:
+			postAttestors = append(postAttestors, attestor)
 
 		default:
 			return ErrInvalidOption{
@@ -157,20 +147,20 @@ func (ctx *AttestationContext) RunAttestors() error {
 		}
 	}
 
-	if ctx.materialAttestor != nil {
-		if err := ctx.runAttestor(ctx.materialAttestor); err != nil {
+	for _, attestor := range materialAttestors {
+		if err := ctx.runAttestor(attestor); err != nil {
 			return err
 		}
 	}
 
-	if ctx.commandAttestor != nil {
-		if err := ctx.runAttestor(ctx.commandAttestor); err != nil {
+	for _, attestor := range exeucteAttestors {
+		if err := ctx.runAttestor(attestor); err != nil {
 			return err
 		}
 	}
 
-	if ctx.productAttestor != nil {
-		if err := ctx.runAttestor(ctx.productAttestor); err != nil {
+	for _, attestor := range productAttestors {
+		if err := ctx.runAttestor(attestor); err != nil {
 			return err
 		}
 	}

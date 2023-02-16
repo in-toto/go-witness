@@ -21,10 +21,77 @@ import (
 )
 
 var (
-	attestationsByName = map[string]AttestorFactory{}
-	attestationsByType = map[string]AttestorFactory{}
-	attestationsByRun  = map[string]AttestorFactory{}
+	attestationsByName = map[string]AttestorRegistration{}
+	attestationsByType = map[string]AttestorRegistration{}
+	attestationsByRun  = map[RunType]AttestorRegistration{}
 )
+
+type Configurer interface {
+	Description() string
+	Name() string
+}
+
+type Configurable interface {
+	int | string | []string
+}
+
+type ConfigOption[T Configurable] struct {
+	name        string
+	description string
+	defaultVal  T
+	setter      func(Attestor, T) (Attestor, error)
+}
+
+func (co ConfigOption[T]) Name() string {
+	return co.name
+}
+
+func (co ConfigOption[T]) DefaultVal() T {
+	return co.defaultVal
+}
+
+func (co ConfigOption[T]) Description() string {
+	return co.description
+}
+
+func (co ConfigOption[T]) Setter() func(Attestor, T) (Attestor, error) {
+	return co.setter
+}
+
+func IntConfigOption(name, description string, defaultVal int, setter func(Attestor, int) (Attestor, error)) ConfigOption[int] {
+	return ConfigOption[int]{
+		name,
+		description,
+		defaultVal,
+		setter,
+	}
+}
+
+func StringConfigOption(name, description string, defaultVal string, setter func(Attestor, string) (Attestor, error)) ConfigOption[string] {
+	return ConfigOption[string]{
+		name,
+		description,
+		defaultVal,
+		setter,
+	}
+}
+
+func StringSliceConfigOption(name, description string, defaultVal []string, setter func(Attestor, []string) (Attestor, error)) ConfigOption[[]string] {
+	return ConfigOption[[]string]{
+		name,
+		description,
+		defaultVal,
+		setter,
+	}
+}
+
+type AttestorRegistration struct {
+	Factory AttestorFactory
+	Name    string
+	Type    string
+	RunType RunType
+	Options []Configurer
+}
 
 type Attestor interface {
 	Name() string
@@ -71,39 +138,89 @@ func (e ErrAttestationNotFound) Error() string {
 	return fmt.Sprintf("attestation not found: %v", string(e))
 }
 
-func RegisterAttestation(name, uri string, run RunType, factoryFunc AttestorFactory) {
-	attestationsByName[name] = factoryFunc
-	attestationsByType[uri] = factoryFunc
-	attestationsByRun[run.String()] = factoryFunc
+func RegisterAttestation(name, predicateType string, run RunType, factoryFunc AttestorFactory, opts ...Configurer) {
+	registrationEntry := AttestorRegistration{
+		Name:    name,
+		Type:    predicateType,
+		Factory: factoryFunc,
+		RunType: run,
+		Options: opts,
+	}
+
+	attestationsByName[name] = registrationEntry
+	attestationsByType[predicateType] = registrationEntry
+	attestationsByRun[run] = registrationEntry
 }
 
 func FactoryByType(uri string) (AttestorFactory, bool) {
-	factory, ok := attestationsByType[uri]
-	return factory, ok
+	registrationEntry, ok := attestationsByType[uri]
+	return registrationEntry.Factory, ok
 }
 
 func FactoryByName(name string) (AttestorFactory, bool) {
-	factory, ok := attestationsByName[name]
-	return factory, ok
+	registrationEntry, ok := attestationsByName[name]
+	return registrationEntry.Factory, ok
 }
 
 func Attestors(nameOrTypes []string) ([]Attestor, error) {
 	attestors := make([]Attestor, 0)
 	for _, nameOrType := range nameOrTypes {
 		factory, ok := FactoryByName(nameOrType)
-		if ok {
-			attestors = append(attestors, factory())
-			continue
+		if !ok {
+			factory, ok = FactoryByType(nameOrType)
+			if !ok {
+				return nil, ErrAttestationNotFound(nameOrType)
+			}
 		}
 
-		factory, ok = FactoryByType(nameOrType)
-		if ok {
-			attestors = append(attestors, factory())
-			continue
+		attestor := factory()
+		opts := AttestorOptions(nameOrType)
+		attestor, err := setDefaultVals(attestor, opts)
+		if err != nil {
+			return nil, err
 		}
 
-		return nil, ErrAttestationNotFound(nameOrType)
+		attestors = append(attestors, attestor)
 	}
 
 	return attestors, nil
+}
+
+func AttestorOptions(nameOrType string) []Configurer {
+	entry, ok := attestationsByName[nameOrType]
+	if !ok {
+		entry = attestationsByType[nameOrType]
+	}
+
+	return entry.Options
+}
+
+func RegistrationEntries() []AttestorRegistration {
+	results := make([]AttestorRegistration, 0, len(attestationsByName))
+	for _, registration := range attestationsByName {
+		results = append(results, registration)
+	}
+
+	return results
+}
+
+func setDefaultVals(attestor Attestor, opts []Configurer) (Attestor, error) {
+	var err error
+
+	for _, opt := range opts {
+		switch o := opt.(type) {
+		case ConfigOption[int]:
+			attestor, err = o.Setter()(attestor, o.DefaultVal())
+		case ConfigOption[string]:
+			attestor, err = o.Setter()(attestor, o.DefaultVal())
+		case ConfigOption[[]string]:
+			attestor, err = o.Setter()(attestor, o.DefaultVal())
+		}
+
+		if err != nil {
+			return attestor, err
+		}
+	}
+
+	return attestor, nil
 }

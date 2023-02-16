@@ -31,7 +31,7 @@ import (
 const (
 	Name    = "product"
 	Type    = "https://witness.dev/attestations/product/v0.1"
-	RunType = attestation.Internal
+	RunType = attestation.ProductRunType
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -48,9 +48,25 @@ func init() {
 	})
 }
 
+type Option func(*Attestor)
+
+func WithIncludeGlob(glob string) Option {
+	return func(a *Attestor) {
+		a.includeGlob = glob
+	}
+}
+
+func WithExcludeGlob(glob string) Option {
+	return func(a *Attestor) {
+		a.excludeGlob = glob
+	}
+}
+
 type Attestor struct {
 	products      map[string]attestation.Product
 	baseArtifacts map[string]cryptoutil.DigestSet
+	includeGlob   string
+	excludeGlob   string
 }
 
 func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {

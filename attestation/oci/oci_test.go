@@ -38,7 +38,7 @@ func (testProducter) Type() string {
 }
 
 func (testProducter) RunType() attestation.RunType {
-	return attestation.PreRunType
+	return attestation.PreMaterialRunType
 }
 
 func (testProducter) Attest(ctx *attestation.AttestationContext) error {

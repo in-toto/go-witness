@@ -34,7 +34,7 @@ import (
 const (
 	Name    = "oci"
 	Type    = "https://witness.dev/attestations/oci/v0.1"
-	RunType = attestation.PostRunType
+	RunType = attestation.PostProductRunType
 
 	mimeTypes = "application/x-tar"
 )
