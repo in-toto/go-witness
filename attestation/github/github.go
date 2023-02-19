@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/davecgh/go-spew/spew"
@@ -156,7 +157,18 @@ func (a *Attestor) BackRefs() map[string]cryptoutil.DigestSet {
 
 func fetchToken(tokenURL string, bearer string, audience string) (string, error) {
 	client := &http.Client{}
-	reqURL := fmt.Sprintf("%s/&audience=%s", tokenURL, audience)
+
+	//add audient "&audience=witness" to the end of the tokenURL, parse it, and then add it to the query
+	u, err := url.Parse(tokenURL)
+	if err != nil {
+		return "", err
+	}
+
+	q := u.Query()
+	q.Add("audience", audience)
+	u.RawQuery = q.Encode()
+
+	reqURL := u.String()
 
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
