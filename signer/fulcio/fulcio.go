@@ -1,4 +1,4 @@
-// Copyright 2022 The Witness Contributors
+// Copyright 2023 The Witness Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,26 +15,68 @@
 package fulcio
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
-	"log"
+	"net"
 	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"time"
 
-	"github.com/sigstore/fulcio/pkg/api"
+	"github.com/mattn/go-isatty"
+	fulciopb "github.com/sigstore/fulcio/pkg/generated/protobuf"
+	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/oauthflow"
 	"github.com/sigstore/sigstore/pkg/signature"
 	sigo "github.com/sigstore/sigstore/pkg/signature/options"
 	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/testifysec/go-witness/log"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	"gopkg.in/square/go-jose.v2/jwt"
 )
 
-func Signer(ctx context.Context, funcioURL string, oidcIssuer string, oidcClientID string) (cryptoutil.Signer, error) {
-	fClient, err := newClient(funcioURL)
+func Signer(ctx context.Context, fulcioURL string, oidcIssuer string, oidcClientID string, tokenOption string) (cryptoutil.Signer, error) {
+	// Parse the Fulcio URL to extract its components
+	u, err := url.Parse(fulcioURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the scheme, default to HTTPS if not present
+	scheme := u.Scheme
+	if scheme == "" {
+		scheme = "https"
+	}
+
+	// Get the port, default to 443
+	port := 443
+	if u.Port() != "" {
+		p, err := strconv.Atoi(u.Port())
+		if err != nil {
+			return nil, fmt.Errorf("invalid port in Fulcio URL: %s", u.Port())
+		}
+		port = p
+	}
+
+	// Get the host, return an error if not present
+	if u.Host == "" {
+		return nil, errors.New("fulcio URL must include a host")
+	}
+
+	// Make insecure true only if the scheme is HTTP
+	insecure := scheme == "http"
+
+	fClient, err := NewClient(ctx, scheme+"://"+u.Host, port, insecure)
 	if err != nil {
 		return nil, err
 	}
@@ -44,104 +86,215 @@ func Signer(ctx context.Context, funcioURL string, oidcIssuer string, oidcClient
 		return nil, err
 	}
 
-	fulcioSigner, err := signature.LoadSigner(key, crypto.SHA256)
-	if err != nil {
-		return nil, err
-	}
+	var raw string
 
-	certResp, err := getCert(fulcioSigner.(*signature.RSAPKCS1v15Signer), fClient, oidcIssuer, oidcClientID)
-	if err != nil {
-		return nil, err
-	}
-
-	block, _ := pem.Decode(certResp.CertPEM)
-	if block == nil {
-		return nil, fmt.Errorf("failed to parse certificate PEM")
-	}
-
-	if block.Type != "CERTIFICATE" {
-		return nil, fmt.Errorf("failed to parse certificate PEM")
-	}
-
-	leaf, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	intermediates := []*x509.Certificate{}
-	roots := []*x509.Certificate{}
-
-	rest := certResp.ChainPEM
-
-	for len(rest) > 0 {
-		var block *pem.Block
-		block, rest = pem.Decode(rest)
-		if block == nil {
-			return nil, fmt.Errorf("failed to parse certificate PEM")
+	switch {
+	case tokenOption == "" && os.Getenv("GITHUB_ACTIONS") == "true":
+		tokenURL := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL")
+		if tokenURL == "" {
+			return nil, errors.New("ACTIONS_ID_TOKEN_REQUEST_URL is not set")
 		}
 
-		if block.Type != "CERTIFICATE" {
-			return nil, fmt.Errorf("failed to parse certificate PEM")
+		requestToken := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+		if requestToken == "" {
+			return nil, errors.New("ACTIONS_ID_TOKEN_REQUEST_TOKEN is not set")
 		}
 
-		cert, err := x509.ParseCertificate(block.Bytes)
+		raw, err = fetchToken(tokenURL, requestToken, "sigstore")
 		if err != nil {
 			return nil, err
 		}
 
-		switch cert.IsCA {
-		case true:
-			roots = append(roots, cert)
-		default:
-			intermediates = append(intermediates, cert)
+	case tokenOption != "":
+		raw = tokenOption
+
+	case tokenOption == "" && isatty.IsTerminal(os.Stdin.Fd()):
+		tok, err := oauthflow.OIDConnect(oidcIssuer, oidcClientID, "", "", oauthflow.DefaultIDTokenGetter)
+		if err != nil {
+			return nil, err
+		}
+		raw = tok.RawString
+	default:
+		return nil, errors.New("no token provided")
+	}
+
+	certResp, err := getCert(ctx, key, fClient, raw)
+	if err != nil {
+		return nil, err
+	}
+
+	var chain *fulciopb.CertificateChain
+
+	switch cert := certResp.Certificate.(type) {
+	case *fulciopb.SigningCertificate_SignedCertificateDetachedSct:
+		chain = cert.SignedCertificateDetachedSct.GetChain()
+	case *fulciopb.SigningCertificate_SignedCertificateEmbeddedSct:
+		chain = cert.SignedCertificateEmbeddedSct.GetChain()
+	}
+
+	certs := chain.Certificates
+
+	var rootCACert *x509.Certificate
+	var intermediateCerts []*x509.Certificate
+	var leafCert *x509.Certificate
+
+	for _, certPEM := range certs {
+		certDER, _ := pem.Decode([]byte(certPEM))
+		if certDER == nil {
+			return nil, errors.New("failed to decode PEM block containing the certificate")
 		}
 
+		cert, err := x509.ParseCertificate(certDER.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse certificate: %w", err)
+		}
+
+		if cert.IsCA {
+			if cert.Subject.CommonName == cert.Issuer.CommonName {
+				rootCACert = cert
+			} else {
+				intermediateCerts = append(intermediateCerts, cert)
+			}
+		} else {
+			leafCert = cert
+		}
 	}
 
 	ss := cryptoutil.NewRSASigner(key, crypto.SHA256)
+	if ss == nil {
+		return nil, errors.New("failed to create RSA signer")
+	}
+
+	witnessSigner, err := cryptoutil.NewX509Signer(ss, leafCert, intermediateCerts, []*x509.Certificate{rootCACert})
 	if err != nil {
 		return nil, err
 	}
 
-	witnessSigner, err := cryptoutil.NewX509Signer(ss, leaf, intermediates, roots)
-	if err != nil {
-		return nil, err
-	}
 	return witnessSigner, nil
 }
 
-func getCert(signer *signature.RSAPKCS1v15Signer, fc api.Client, oidcIssuer string, oidcClientID string) (*api.CertificateResponse, error) {
-	tok, err := oauthflow.OIDConnect(oidcIssuer, oidcClientID, "", "", oauthflow.DefaultIDTokenGetter)
+func getCert(ctx context.Context, key *rsa.PrivateKey, fc fulciopb.CAClient, token string) (*fulciopb.SigningCertificate, error) {
+	t, err := jwt.ParseSigned(token)
 	if err != nil {
 		return nil, err
 	}
 
-	// Sign the email address as part of the request
-	b := bytes.NewBuffer([]byte(tok.Subject))
-	proof, err := signer.SignMessage(b, sigo.WithCryptoSignerOpts(crypto.SHA256))
-	if err != nil {
-		log.Fatal(err)
+	var claims struct {
+		jwt.Claims
+		Email   string `json:"email"`
+		Subject string `json:"sub"`
 	}
 
-	pubBytes, err := x509.MarshalPKIXPublicKey(signer.Public())
+	if err := t.UnsafeClaimsWithoutVerification(&claims); err != nil {
+		return nil, err
+	}
+
+	var tok *oauthflow.OIDCIDToken
+
+	if claims.Email != "" {
+		tok = &oauthflow.OIDCIDToken{
+			RawString: token,
+			Subject:   claims.Email,
+		}
+	} else if claims.Subject != "" {
+		tok = &oauthflow.OIDCIDToken{
+			RawString: token,
+			Subject:   claims.Subject,
+		}
+	}
+
+	if tok == nil || tok.Subject == "" {
+		return nil, errors.New("no email or subject claim found in token")
+	}
+
+	msg := strings.NewReader(tok.Subject)
+
+	signer, err := signature.LoadSigner(key, crypto.SHA256)
 	if err != nil {
 		return nil, err
 	}
-	cr := api.CertificateRequest{
-		PublicKey: api.Key{
-			Algorithm: "rsa4096",
-			Content:   pubBytes,
+
+	proof, err := signer.SignMessage(msg, sigo.WithCryptoSignerOpts(crypto.SHA256))
+	if err != nil {
+		return nil, err
+	}
+
+	pubBytesPEM, err := cryptoutils.MarshalPublicKeyToPEM(&key.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	cscr := &fulciopb.CreateSigningCertificateRequest{
+		Credentials: &fulciopb.Credentials{
+			Credentials: &fulciopb.Credentials_OidcIdentityToken{
+				OidcIdentityToken: token,
+			},
 		},
-		SignedEmailAddress: proof,
+		Key: &fulciopb.CreateSigningCertificateRequest_PublicKeyRequest{
+			PublicKeyRequest: &fulciopb.PublicKeyRequest{
+				PublicKey: &fulciopb.PublicKey{
+					Content: string(pubBytesPEM),
+				},
+				ProofOfPossession: proof,
+			},
+		},
 	}
-	return fc.SigningCert(cr, tok.RawString)
+
+	sc, err := fc.CreateSigningCertificate(ctx, cscr)
+	if err != nil {
+		return nil, err
+	}
+
+	return sc, nil
 }
 
-func newClient(fulcioURL string) (api.Client, error) {
-	fulcioServer, err := url.Parse(fulcioURL)
+func NewClient(ctx context.Context, fulcioURL string, fulcioPort int, isInsecure bool) (fulciopb.CAClient, error) {
+	if isInsecure {
+		log.Infof("Fulcio client is running in insecure mode")
+	}
+
+	// Parse the Fulcio URL
+	u, err := url.Parse(fulcioURL)
 	if err != nil {
 		return nil, err
 	}
-	fClient := api.NewClient(fulcioServer, api.WithUserAgent("witness"))
-	return fClient, nil
+
+	// Verify that the URL is valid based on the isInsecure flag
+	if (u.Scheme != "https" && !isInsecure) || u.Host == "" {
+		return nil, fmt.Errorf("invalid Fulcio URL: %s", fulcioURL)
+	}
+
+	// Set up the TLS configuration
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
+	if isInsecure {
+		tlsConfig.InsecureSkipVerify = true
+	}
+
+	creds := credentials.NewTLS(tlsConfig)
+
+	// Set up the gRPC dial options
+	dialOpts := []grpc.DialOption{
+		grpc.WithAuthority(u.Hostname()),
+	}
+
+	if isInsecure {
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	} else {
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
+	}
+
+	// Dial the gRPC server
+	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(dialCtx, net.JoinHostPort(u.Hostname(), strconv.Itoa(fulcioPort)), dialOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create the Fulcio client
+	return fulciopb.NewCAClient(conn), nil
 }
