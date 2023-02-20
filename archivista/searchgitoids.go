@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package archivist
+package archivista
 
 import (
 	"context"
 
-	archivistapi "github.com/testifysec/archivist-api"
+	archivistaapi "github.com/testifysec/archivista-api"
 )
 
 type searchGitoidResponse struct {
@@ -65,7 +65,7 @@ func (c *Client) SearchGitoids(ctx context.Context, vars SearchGitoidVariables) 
   }
 }`
 
-	response, err := archivistapi.GraphQlQuery[searchGitoidResponse](ctx, c.url, query, vars)
+	response, err := archivistaapi.GraphQlQuery[searchGitoidResponse](ctx, c.url, query, vars)
 	if err != nil {
 		return nil, err
 	}
