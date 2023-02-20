@@ -12,20 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package archivist
+package archivista
 
-import (
-	"context"
+type Client struct {
+	url string
+}
 
-	archivistapi "github.com/testifysec/archivist-api"
-	"github.com/testifysec/go-witness/dsse"
-)
-
-func (c *Client) Store(ctx context.Context, env dsse.Envelope) (string, error) {
-	resp, err := archivistapi.Store(ctx, c.url, env)
-	if err != nil {
-		return "", err
+func New(url string) *Client {
+	return &Client{
+		url,
 	}
-
-	return resp.Gitoid, nil
 }

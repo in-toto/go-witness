@@ -17,23 +17,23 @@ package source
 import (
 	"context"
 
-	"github.com/testifysec/go-witness/archivist"
+	"github.com/testifysec/go-witness/archivista"
 )
 
-type ArchivistSource struct {
-	client      *archivist.Client
+type ArchivistaSource struct {
+	client      *archivista.Client
 	seenGitoids []string
 }
 
-func NewArchvistSource(client *archivist.Client) *ArchivistSource {
-	return &ArchivistSource{
+func NewArchvistSource(client *archivista.Client) *ArchivistaSource {
+	return &ArchivistaSource{
 		client:      client,
 		seenGitoids: make([]string, 0),
 	}
 }
 
-func (s *ArchivistSource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
-	gitoids, err := s.client.SearchGitoids(ctx, archivist.SearchGitoidVariables{
+func (s *ArchivistaSource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
+	gitoids, err := s.client.SearchGitoids(ctx, archivista.SearchGitoidVariables{
 		CollectionName: collectionName,
 		SubjectDigests: subjectDigests,
 		Attestations:   attestations,
