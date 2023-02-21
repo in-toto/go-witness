@@ -15,7 +15,6 @@ require (
 	github.com/spdx/spdx-sbom-generator v0.0.15
 	github.com/spiffe/go-spiffe/v2 v2.1.1
 	github.com/stretchr/testify v1.8.0
-	github.com/testifysec/archivist-api v0.0.0-20221115001947-07357e56e17e
 	golang.org/x/sys v0.0.0-20220908164124-27713097b956
 	google.golang.org/grpc v1.49.0
 	gopkg.in/square/go-jose.v2 v2.6.0
@@ -106,6 +105,7 @@ require (
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966 // indirect
 	github.com/spdx/tools-golang v0.3.0 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.1 // indirect
+	github.com/testifysec/archivista-api v0.0.0-20230220215059-632b84b82b76 // indirect
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
 	github.com/ulikunitz/xz v0.5.10 // indirect
 	github.com/vbatts/go-mtree v0.5.2 // indirect
