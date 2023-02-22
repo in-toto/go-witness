@@ -17,6 +17,7 @@ package attestation
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/testifysec/go-witness/cryptoutil"
 )
@@ -29,27 +30,34 @@ type Collection struct {
 }
 
 type CollectionAttestation struct {
-	Type        string   `json:"type"`
-	Attestation Attestor `json:"attestation"`
+	Type        string    `json:"type"`
+	Attestation Attestor  `json:"attestation"`
+	StartTime   time.Time `json:"starttime"`
+	EndTime     time.Time `json:"endtime"`
 }
 
-func NewCollection(name string, attestors []Attestor) Collection {
+func NewCollection(name string, attestors []CompletedAttestor) Collection {
 	collection := Collection{
 		Name:         name,
 		Attestations: make([]CollectionAttestation, 0),
 	}
 
-	for _, attestor := range attestors {
-		collection.Attestations = append(collection.Attestations, NewCollectionAttestation(attestor))
+	//move start/stop time to collection
+	//todo: this is a bit of a hack, but it's the easiest way to get the start/stop time
+
+	for _, completed := range attestors {
+		collection.Attestations = append(collection.Attestations, NewCollectionAttestation(completed))
 	}
 
 	return collection
 }
 
-func NewCollectionAttestation(attestor Attestor) CollectionAttestation {
+func NewCollectionAttestation(completed CompletedAttestor) CollectionAttestation {
 	return CollectionAttestation{
-		Type:        attestor.Type(),
-		Attestation: attestor,
+		Type:        completed.Attestor.Type(),
+		Attestation: completed.Attestor,
+		StartTime:   completed.StartTime,
+		EndTime:     completed.EndTime,
 	}
 }
 

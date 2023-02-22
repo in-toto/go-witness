@@ -19,6 +19,7 @@ import (
 	"crypto"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/log"
@@ -71,13 +72,19 @@ func WithWorkingDir(workingDir string) AttestationContextOption {
 	}
 }
 
-type AttestationContext struct {
-	ctx        context.Context
-	attestors  []Attestor
-	workingDir string
-	hashes     []crypto.Hash
+type CompletedAttestor struct {
+	Attestor  Attestor
+	StartTime time.Time
+	EndTime   time.Time
+	Error     error
+}
 
-	completedAttestors []Attestor
+type AttestationContext struct {
+	ctx                context.Context
+	attestors          []Attestor
+	workingDir         string
+	hashes             []crypto.Hash
+	completedAttestors []CompletedAttestor
 	products           map[string]Product
 	materials          map[string]cryptoutil.DigestSet
 }
@@ -176,11 +183,24 @@ func (ctx *AttestationContext) RunAttestors() error {
 
 func (ctx *AttestationContext) runAttestor(attestor Attestor) error {
 	log.Infof("Starting %v attestor...", attestor.Name())
+	startTime := time.Now()
 	if err := attestor.Attest(ctx); err != nil {
+		log.Errorf("Error running %v attestor: %v", attestor.Name(), err)
+		ctx.completedAttestors = append(ctx.completedAttestors, CompletedAttestor{
+			Attestor:  attestor,
+			StartTime: startTime,
+			EndTime:   time.Now(),
+			Error:     err,
+		})
 		return err
 	}
 
-	ctx.completedAttestors = append(ctx.completedAttestors, attestor)
+	ctx.completedAttestors = append(ctx.completedAttestors, CompletedAttestor{
+		Attestor:  attestor,
+		StartTime: startTime,
+		EndTime:   time.Now(),
+	})
+
 	if materialer, ok := attestor.(Materialer); ok {
 		ctx.addMaterials(materialer)
 	}
@@ -192,8 +212,8 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) error {
 	return nil
 }
 
-func (ctx *AttestationContext) CompletedAttestors() []Attestor {
-	attestors := make([]Attestor, len(ctx.completedAttestors))
+func (ctx *AttestationContext) CompletedAttestors() []CompletedAttestor {
+	attestors := make([]CompletedAttestor, len(ctx.completedAttestors))
 	copy(attestors, ctx.completedAttestors)
 	return attestors
 }
