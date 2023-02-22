@@ -53,14 +53,15 @@ func init() {
 }
 
 type Attestor struct {
-	TarDigest    cryptoutil.DigestSet   `json:"tardigest"`
-	Manifest     []Manifest             `json:"manifest"`
-	ImageTags    []string               `json:"imagetags"`
-	LayerDiffIDs []cryptoutil.DigestSet `json:"diffids"`
-	ImageID      cryptoutil.DigestSet   `json:"imageid"`
-	ManifestRaw  []byte                 `json:"manifestraw"`
-	tarFilePath  string                 `json:"-"`
-	hashes       []crypto.Hash          `json:"-"`
+	TarDigest      cryptoutil.DigestSet   `json:"tardigest"`
+	Manifest       []Manifest             `json:"manifest"`
+	ImageTags      []string               `json:"imagetags"`
+	LayerDiffIDs   []cryptoutil.DigestSet `json:"diffids"`
+	ImageID        cryptoutil.DigestSet   `json:"imageid"`
+	ManifestRaw    []byte                 `json:"manifestraw"`
+	ManifestDigest cryptoutil.DigestSet   `json:"manifestdigest"`
+	tarFilePath    string                 `json:"-"`
+	hashes         []crypto.Hash          `json:"-"`
 }
 
 type Manifest struct {
@@ -217,6 +218,13 @@ func (a *Attestor) parseMaifest(ctx *attestation.AttestationContext) error {
 		}
 	}
 
+	manifestDigest, err := cryptoutil.CalculateDigestSetFromBytes(a.ManifestRaw, ctx.Hashes())
+	if err != nil {
+		return err
+	}
+
+	a.ManifestDigest = manifestDigest
+
 	err = json.Unmarshal(a.ManifestRaw, &a.Manifest)
 	if err != nil {
 		return err
@@ -228,6 +236,7 @@ func (a *Attestor) parseMaifest(ctx *attestation.AttestationContext) error {
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subj := make(map[string]cryptoutil.DigestSet)
 
+	subj[fmt.Sprintf("manifestdigest:%s", a.ManifestDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.ManifestDigest
 	subj[fmt.Sprintf("tardigest:%s", a.TarDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.TarDigest
 	subj[fmt.Sprintf("imageid:%s", a.ImageID[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.ImageID
 	//image tags
