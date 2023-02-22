@@ -1,4 +1,4 @@
-// Copyright 2021 The Witness Contributors
+// Copyright 2023 The Witness Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,8 +17,11 @@ package git
 import (
 	"crypto"
 	"fmt"
+	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/cryptoutil"
 )
@@ -48,9 +51,31 @@ type Status struct {
 	Worktree string `json:"worktree,omitempty"`
 }
 
+type Tag struct {
+	Name         string `json:"name"`
+	TaggerName   string `json:"taggerName"`
+	TaggerEmail  string `json:"taggerEmail"`
+	When         string `json:"when"`
+	PGPSignature string `json:"pgpsignature"`
+	Message      string `json:"message"`
+}
+
 type Attestor struct {
-	CommitHash string            `json:"commithash"`
-	Status     map[string]Status `json:"status,omitempty"`
+	CommitHash     string               `json:"commithash"`
+	Author         string               `json:"author"`
+	AuthorEmail    string               `json:"authoremail"`
+	CommitterName  string               `json:"committername"`
+	CommitterEmail string               `json:"committeremail"`
+	CommitDate     string               `json:"commitdate"`
+	CommitMessage  string               `json:"commitmessage"`
+	Status         map[string]Status    `json:"status,omitempty"`
+	CommitDigest   cryptoutil.DigestSet `json:"commitdigest,omitempty"`
+	Signature      string               `json:"signature,omitempty"`
+	ParentHashes   []string             `json:"parenthashes,omitempty"`
+	TreeHash       string               `json:"treehash,omitempty"`
+	Refs           []string             `json:"refs,omitempty"`
+	Tags           []Tag                `json:"tags,omitempty"`
+	hashes         []crypto.Hash
 }
 
 func New() *Attestor {
@@ -72,6 +97,8 @@ func (a *Attestor) RunType() attestation.RunType {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
+	a.hashes = ctx.Hashes()
+
 	repo, err := git.PlainOpenWithOptions(ctx.WorkingDir(), &git.PlainOpenOptions{
 		DetectDotGit: true,
 	})
@@ -85,7 +112,86 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return err
 	}
 
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return err
+	}
+
+	a.CommitDigest = cryptoutil.DigestSet{
+		{
+			Hash:   crypto.SHA1,
+			GitOID: false,
+		}: commit.Hash.String(),
+	}
+
+	//get all the refs for the repo
+	refs, err := repo.References()
+	if err != nil {
+		return err
+	}
+
+	//iterate over the refs and add them to the attestor
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
+		//only add the ref if it points to the head
+		if ref.Hash() != head.Hash() {
+			return nil
+		}
+
+		//add the ref name to the attestor
+		a.Refs = append(a.Refs, ref.Name().String())
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
 	a.CommitHash = head.Hash().String()
+	a.Author = commit.Author.Name
+	a.AuthorEmail = commit.Author.Email
+	a.CommitterName = commit.Committer.Name
+	a.CommitterEmail = commit.Committer.Email
+	a.CommitDate = commit.Author.When.String()
+	a.CommitMessage = commit.Message
+	a.Signature = commit.PGPSignature
+
+	for _, parent := range commit.ParentHashes {
+		a.ParentHashes = append(a.ParentHashes, parent.String())
+	}
+
+	tags, err := repo.TagObjects()
+	if err != nil {
+		return fmt.Errorf("get tags error: %s", err)
+	}
+
+	var tagList []Tag
+
+	err = tags.ForEach(func(t *object.Tag) error {
+
+		//check if the tag points to the head
+		if t.Target.String() != head.Hash().String() {
+			return nil
+		}
+
+		fmt.Printf("tag: %s\n", t.Name)
+		tagList = append(tagList, Tag{
+			Name:         t.Name,
+			TaggerName:   t.Tagger.Name,
+			TaggerEmail:  t.Tagger.Email,
+			When:         t.Tagger.When.Format(time.RFC3339),
+			PGPSignature: t.PGPSignature,
+			Message:      t.Message,
+		})
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("iterate tags error: %s", err)
+	}
+	a.Tags = tagList
+
+	a.TreeHash = commit.TreeHash.String()
+
 	worktree, err := repo.Worktree()
 	if err != nil {
 		return err
@@ -113,19 +219,57 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
+	subjects := make(map[string]cryptoutil.DigestSet)
+
 	subjectName := fmt.Sprintf("commithash:%v", a.CommitHash)
-	return map[string]cryptoutil.DigestSet{
-		subjectName: {
-			{
-				Hash:   crypto.SHA1,
-				GitOID: true,
-			}: a.CommitHash,
-		},
+	subjects[subjectName] = cryptoutil.DigestSet{
+		{
+			Hash:   crypto.SHA1,
+			GitOID: false,
+		}: a.CommitHash,
 	}
+
+	//add author email
+	subjectName = fmt.Sprintf("authoremail:%v", a.AuthorEmail)
+	ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.AuthorEmail), a.hashes)
+	if err != nil {
+		return nil
+	}
+
+	subjects[subjectName] = ds
+
+	//add committer email
+	subjectName = fmt.Sprintf("committeremail:%v", a.CommitterEmail)
+	ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(a.CommitterEmail), a.hashes)
+	if err != nil {
+		return nil
+	}
+
+	subjects[subjectName] = ds
+
+	//add parent hashes
+	for _, parentHash := range a.ParentHashes {
+		subjectName = fmt.Sprintf("parenthash:%v", parentHash)
+		ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(parentHash), a.hashes)
+		if err != nil {
+			return nil
+		}
+		subjects[subjectName] = ds
+	}
+
+	return subjects
 }
 
 func (a *Attestor) BackRefs() map[string]cryptoutil.DigestSet {
-	return a.Subjects()
+	backrefs := make(map[string]cryptoutil.DigestSet)
+	subjectName := fmt.Sprintf("commithash:%v", a.CommitHash)
+	backrefs[subjectName] = cryptoutil.DigestSet{
+		{
+			Hash:   crypto.SHA1,
+			GitOID: false,
+		}: a.CommitHash,
+	}
+	return backrefs
 }
 
 func statusCodeString(statusCode git.StatusCode) string {
