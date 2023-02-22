@@ -127,7 +127,16 @@ deny[msg] {
 	commandRun := commandrun.New()
 	commandRun.Cmd = []string{"go", "build", "./"}
 	commandRun.ExitCode = 0
-	step1Collection := attestation.NewCollection("step1", []attestation.Attestor{commandRun})
+
+	step1Collection := attestation.NewCollection("step1", []attestation.CompletedAttestor{
+		{
+			Attestor:  commandRun,
+			StartTime: time.Now().Add(-1 * time.Minute),
+			EndTime:   time.Now(),
+			Error:     nil,
+		},
+	})
+
 	step1CollectionJson, err := json.Marshal(&step1Collection)
 	require.NoError(t, err)
 	intotoStatement, err := intoto.NewStatement(attestation.CollectionType, step1CollectionJson, map[string]cryptoutil.DigestSet{"dummy": {cryptoutil.DigestValue{Hash: crypto.SHA256}: "dummy"}})
@@ -222,8 +231,25 @@ func TestArtifacts(t *testing.T) {
 	path := "testfile"
 	mats := map[string]cryptoutil.DigestSet{path: {cryptoutil.DigestValue{Hash: crypto.SHA256}: dummySha}}
 	prods := map[string]attestation.Product{path: {Digest: cryptoutil.DigestSet{cryptoutil.DigestValue{Hash: crypto.SHA256}: dummySha}, MimeType: "application/text"}}
-	step1Collection := attestation.NewCollection("step1", []attestation.Attestor{DummyProducer{prods}})
-	step2Collection := attestation.NewCollection("step2", []attestation.Attestor{DummyMaterialer{mats}})
+
+	step1Collection := attestation.NewCollection("step1", []attestation.CompletedAttestor{
+		{
+			Attestor:  DummyProducer{prods},
+			StartTime: time.Now().Add(-1 * time.Minute),
+			EndTime:   time.Now(),
+			Error:     nil,
+		},
+	})
+
+	step2Collection := attestation.NewCollection("step2", []attestation.CompletedAttestor{
+		{
+			Attestor:  DummyMaterialer{mats},
+			StartTime: time.Now().Add(-1 * time.Minute),
+			EndTime:   time.Now(),
+			Error:     nil,
+		},
+	})
+
 	step1CollectionJson, err := json.Marshal(step1Collection)
 	require.NoError(t, err)
 	step2CollectionJson, err := json.Marshal(step2Collection)
@@ -257,7 +283,16 @@ func TestArtifacts(t *testing.T) {
 	assert.NoError(t, err)
 
 	mats[path][cryptoutil.DigestValue{Hash: crypto.SHA256}] = "badhash"
-	step2Collection = attestation.NewCollection("step2", []attestation.Attestor{DummyMaterialer{mats}})
+
+	step2Collection = attestation.NewCollection("step2", []attestation.CompletedAttestor{
+		{
+			Attestor:  DummyMaterialer{mats},
+			StartTime: time.Now().Add(-1 * time.Minute),
+			EndTime:   time.Now(),
+			Error:     nil,
+		},
+	})
+
 	step2CollectionJson, err = json.Marshal(step2Collection)
 	require.NoError(t, err)
 	intotoStatement2, err = intoto.NewStatement(attestation.CollectionType, step2CollectionJson, map[string]cryptoutil.DigestSet{})
