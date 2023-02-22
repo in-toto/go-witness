@@ -17,7 +17,6 @@ package oci
 import (
 	"crypto"
 	"encoding/base64"
-	"fmt"
 	"os"
 	"testing"
 
@@ -85,7 +84,6 @@ func SetupTest(t *testing.T, b64tarFile string) *os.File {
 	return file
 
 }
-
 func TestAttestor_Attest(t *testing.T) {
 	a := New()
 
@@ -119,54 +117,14 @@ func TestAttestor_Attest(t *testing.T) {
 
 	require.Equal(t, imageID, a.ImageID[cryptoutil.DigestValue{Hash: crypto.SHA256}])
 	require.Equal(t, diffID, a.LayerDiffIDs[0][cryptoutil.DigestValue{Hash: crypto.SHA256}])
+	require.Equal(t, manifestDigest, a.ManifestDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])
+
 	require.NoError(t, err)
-
-}
-
-func TestAttestor_Subjects(t *testing.T) {
-	a := New()
-
-	decoded, err := base64.StdEncoding.DecodeString(testTar)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	hashes := []crypto.Hash{crypto.SHA256}
-
-	tarDigest, err := cryptoutil.CalculateDigestSetFromBytes([]byte(decoded), hashes)
-	if err != nil {
-		t.Errorf("Failed to calculate digest set from bytes: %v", err)
-	}
-
-	file := SetupTest(t, testTar)
-	defer os.Remove(file.Name())
-
-	testProductSet := make(map[string]attestation.Product)
-	testProductSet[file.Name()] = attestation.Product{
-		MimeType: "application/x-tar",
-		Digest:   tarDigest,
-	}
-
-	ctx, err := attestation.NewContext([]attestation.Attestor{testProducter{testProductSet}, a})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = ctx.RunAttestors()
-	require.NoError(t, err)
-
-	subj := a.Subjects()
-
-	require.Equal(t, imageID, subj[fmt.Sprintf("imageid:%s", imageID)][cryptoutil.DigestValue{Hash: crypto.SHA256}])
-	require.Equal(t, diffID, subj[fmt.Sprintf("layerdiffid00:%s", diffID)][cryptoutil.DigestValue{Hash: crypto.SHA256}])
-	require.Equal(t, tarDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}], subj["tardigest:a996818fbcd6d8ae9214fb1f8b3c0cacee64fc8c937b749db0782c482c0575ac"][cryptoutil.DigestValue{Hash: crypto.SHA256}])
-
-	//require.Equal(t, tarDigest[crypto.SHA256], subj[fmt.Sprintf("tardigest:SHA256:%s", tarDigest)][crypto.SHA256])
-
 }
 
 const imageID = "c294e5406766e579a59a04260b9dc22917fd21929114beeef2eda63536d35c82"
 const diffID = "84ff92691f909a05b224e1c56abb4864f01b4f8e3c854e4bb4c7baf1d3f6d652"
+const manifestDigest = "5445fcd1d6274180325653c40ad113c2b4bda0682f3650ce50284f74f9305c4c"
 
 const testTar = `
 ODI5Y2NhODhlZTYzNTAzMzBlMmVlYTAwOWRkNmVjNjcxMjA3OGU5Y2U0ZGFhY2FmNjhhM2VkMDI5NjUz
