@@ -75,7 +75,20 @@ type Attestor struct {
 	TreeHash       string               `json:"treehash,omitempty"`
 	Refs           []string             `json:"refs,omitempty"`
 	Tags           []Tag                `json:"tags,omitempty"`
+	FileChanges    []FileChange         `json:"filechanges,omitempty"`
 	hashes         []crypto.Hash
+}
+
+// We will create a filechange for every ancestor of the file.  For files
+// with multiple parents, we will create a filechange for each parent.
+type FileChange struct {
+	Previous FileChangeEntry
+	Current  FileChangeEntry
+}
+
+type FileChangeEntry struct {
+	Path   string
+	Digest cryptoutil.DigestSet
 }
 
 func New() *Attestor {
@@ -157,6 +170,11 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	for _, parent := range commit.ParentHashes {
 		a.ParentHashes = append(a.ParentHashes, parent.String())
+	}
+
+	a.FileChanges, err = GetFileChangesInCommit(repo, commit.Hash)
+	if err != nil {
+		return err
 	}
 
 	tags, err := repo.TagObjects()
@@ -293,4 +311,72 @@ func statusCodeString(statusCode git.StatusCode) string {
 	default:
 		return string(statusCode)
 	}
+}
+
+func GetFileChangesInCommit(r *git.Repository, commitHash plumbing.Hash) ([]FileChange, error) {
+	// Lookup the commit object
+	commitObj, err := r.CommitObject(commitHash)
+	if err != nil {
+		return nil, fmt.Errorf("could not find commit: %s", commitHash.String())
+	}
+
+	// Check if the commit has one or more parents
+	var parentTrees []*object.Tree
+	if len(commitObj.ParentHashes) == 0 {
+		// If the commit has no parent create a new empty tree
+		parentTree := &object.Tree{}
+
+		if err != nil {
+			return nil, fmt.Errorf("could not create empty tree: %s", err)
+		}
+		parentTrees = append(parentTrees, parentTree)
+	} else {
+		// If the commit has one or more parents, compare the commit tree to the trees of each parent
+		for _, parentHash := range commitObj.ParentHashes {
+			parentObj, err := r.CommitObject(parentHash)
+			if err != nil {
+				return nil, fmt.Errorf("could not find parent commit: %s", parentHash.String())
+			}
+			parentTree, err := parentObj.Tree()
+			if err != nil {
+				return nil, fmt.Errorf("could not get tree for parent commit: %s", parentHash.String())
+			}
+			parentTrees = append(parentTrees, parentTree)
+		}
+	}
+
+	// Get the commit tree object
+	commitTree, err := commitObj.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("could not get tree for commit: %s", commitHash.String())
+	}
+
+	// Iterate over the list of parent trees and compare them to the commit tree
+	var fileChanges []FileChange
+	for _, parentTree := range parentTrees {
+		// Get the list of file changes between the commit and parent trees
+		patch, err := parentTree.Diff(commitTree)
+		if err != nil {
+			return nil, fmt.Errorf("could not get patch for commit: %s", commitHash.String())
+		}
+
+		// Iterate through the list of file changes and create FileChange structs for each change
+		for _, filePatch := range patch {
+			// Create a FileChange struct for the file change
+			fileChange := FileChange{
+				Previous: FileChangeEntry{
+					Path:   filePatch.From.Name,
+					Digest: cryptoutil.DigestSet{{Hash: crypto.SHA1, GitOID: true}: "gitoid:blob:sha1:" + filePatch.From.TreeEntry.Hash.String()},
+				},
+				Current: FileChangeEntry{
+					Path:   filePatch.To.Name,
+					Digest: cryptoutil.DigestSet{{Hash: crypto.SHA1, GitOID: true}: "gitoid:blob:sha1:" + filePatch.To.TreeEntry.Hash.String()},
+				},
+			}
+
+			// Add the FileChange struct to the list of file changes
+			fileChanges = append(fileChanges, fileChange)
+		}
+	}
+	return fileChanges, nil
 }

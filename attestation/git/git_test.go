@@ -23,11 +23,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edwarnicke/gitoid"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/require"
 	"github.com/testifysec/go-witness/attestation"
+	"github.com/testifysec/go-witness/cryptoutil"
 )
 
 func TestNew(t *testing.T) {
@@ -137,6 +139,16 @@ func TestRun(t *testing.T) {
 	require.Equal(t, "example tag message\n", tagObject.Message)
 	require.Equal(t, "John Doe", tagObject.TaggerName)
 	require.Equal(t, "tagger@example.com", tagObject.TaggerEmail)
+
+	//test the file changes with no parent
+	require.Len(t, attestor.FileChanges, 1, "Expected 1 file change")
+
+	//calculate the file hash
+	digestSet, err := gitOIDDigestSetFromFile(filepath.Join(dir, "test.txt"))
+	require.NoError(t, err, "Expected no error from gitOIDDigestSetFromFile")
+
+	//make sure the hash is correct
+	require.Equal(t, digestSet, attestor.FileChanges[0].Current.Digest)
 
 }
 
@@ -271,4 +283,276 @@ func createAnnotatedTagOnHead(t *testing.T, path string) {
 	})
 
 	require.NoError(t, err)
+}
+
+func TestGetFileChangesInCommit(t *testing.T) {
+	// Create a new test repository
+	repo, repoPath, cleanup := createTestRepo(t)
+	defer cleanup()
+
+	// Create a new commit with changes to the test file
+	createTestCommit(t, repoPath, "Test commit")
+
+	// Get the commit hash of the new commit
+	ref, err := repo.Head()
+	require.NoError(t, err)
+	commitHash := ref.Hash()
+
+	// Get the file changes in the commit
+	fileChanges, err := GetFileChangesInCommit(repo, commitHash)
+	require.NoError(t, err)
+
+	// Verify that there is one file change and that it is for the test.txt file
+	require.Len(t, fileChanges, 1)
+	require.Equal(t, "test.txt", fileChanges[0].Current.Path)
+
+	// Verify that the old Git OID is not equal to the new Git OID
+	require.NotEqual(t, fileChanges[0].Previous.Digest, fileChanges[0].Current.Digest)
+
+	//calulate the digest set for the file
+	digestSet1, err := gitOIDDigestSetFromFile(filepath.Join(repoPath, "test.txt"))
+	require.NoError(t, err)
+
+	// Verify that the current digest set is equal to the calculated digest set
+	require.Equal(t, digestSet1, fileChanges[0].Current.Digest)
+
+	//make a new commit
+	createTestCommit(t, repoPath, "Test commit 2")
+
+	// Get the commit hash of the new commit
+	ref, err = repo.Head()
+	require.NoError(t, err)
+	commitHash = ref.Hash()
+
+	// Get the file changes in the commit
+	fileChanges, err = GetFileChangesInCommit(repo, commitHash)
+	require.NoError(t, err)
+
+	// Verify that there is one file change and that it is for the test.txt file
+	require.Len(t, fileChanges, 1)
+	require.Equal(t, "test.txt", fileChanges[0].Current.Path)
+
+	// Verify that the old Git OID is not equal to the new Git OID
+	require.NotEqual(t, fileChanges[0].Previous.Digest, fileChanges[0].Current.Digest)
+
+	//calulate the digest set for the file
+	digestSet2, err := gitOIDDigestSetFromFile(filepath.Join(repoPath, "test.txt"))
+	require.NoError(t, err)
+
+	// Verify that the current digest set is equal to the calculated digest set
+	require.Equal(t, digestSet2, fileChanges[0].Current.Digest)
+
+	// Verify that the previous digest set is equal to the calculated digest set
+	require.Equal(t, digestSet1, fileChanges[0].Previous.Digest)
+
+	//make sure we are tracking file name changes
+	err = os.Rename(filepath.Join(repoPath, "test.txt"), filepath.Join(repoPath, "test2.txt"))
+	require.NoError(t, err)
+
+	// Add the new file to the repository
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	err = worktree.AddWithOptions(&git.AddOptions{
+		All: true,
+	})
+	require.NoError(t, err)
+
+	// Commit the changes
+	_, err = worktree.Commit("Test commit 3", &git.CommitOptions{
+		All: true,
+		Author: &object.Signature{
+			Name:  "John Doe",
+			Email: "john@test.com",
+			When:  time.Now(),
+		},
+	})
+	require.NoError(t, err)
+
+	// Get the commit hash of the new commit
+	ref, err = repo.Head()
+	require.NoError(t, err)
+
+	commitHash = ref.Hash()
+
+	// Get the file changes in the commit
+	fileChanges, err = GetFileChangesInCommit(repo, commitHash)
+	require.NoError(t, err)
+
+	// Verify that the file name has changed
+	require.Equal(t, "test2.txt", fileChanges[0].Current.Path)
+	require.Equal(t, "test.txt", fileChanges[0].Previous.Path)
+
+	// Verify that the old Git OID is equal to the new Git OID
+	require.Equal(t, fileChanges[0].Previous.Digest, fileChanges[0].Current.Digest)
+
+}
+
+func TestCreateMergeCommitWithTwoParents(t *testing.T) {
+	// Create a new test repository
+	author := &object.Signature{
+		Name:  "John Doe",
+		Email: "john@testifysec.com",
+		When:  time.Now(),
+	}
+	repo, repoPath, cleanup := createTestRepo(t)
+	defer cleanup()
+
+	//get head commit
+	headCommit, err := repo.Head()
+	require.NoError(t, err)
+
+	//create a new branch
+	mainBranchName := "main"
+	mainBranchRef := plumbing.NewBranchReferenceName(mainBranchName)
+	mainBranch := plumbing.NewHashReference(mainBranchRef, headCommit.Hash())
+	err = repo.Storer.SetReference(mainBranch)
+	require.NoError(t, err)
+
+	//Branch A
+	//create a test file
+	_, err = createTestFile(t, repoPath, "testA.txt", "contentA")
+	require.NoError(t, err)
+
+	//calculate the digest set for the file
+	digestSetA, err := gitOIDDigestSetFromFile(filepath.Join(repoPath, "testA.txt"))
+	require.NoError(t, err)
+
+	// Add the new file to the repository
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	err = worktree.AddWithOptions(&git.AddOptions{
+		All: true,
+	})
+	require.NoError(t, err)
+
+	// Commit the changes
+	commitA, err := worktree.Commit("Test commit A", &git.CommitOptions{
+		All:    true,
+		Author: author,
+	})
+	require.NoError(t, err)
+
+	//create a new branch
+	branchNameA := "branchA"
+	branchRefA := plumbing.NewBranchReferenceName(branchNameA)
+	branchA := plumbing.NewHashReference(branchRefA, commitA)
+	err = repo.Storer.SetReference(branchA)
+	require.NoError(t, err)
+
+	//Branch B
+	//create a test file
+	_, err = createTestFile(t, repoPath, "testA.txt", "contentB")
+	require.NoError(t, err)
+
+	//calculate the digest set for the file
+	digestSetB, err := gitOIDDigestSetFromFile(filepath.Join(repoPath, "testA.txt"))
+	require.NoError(t, err)
+
+	// Add the new file to the repository
+	err = worktree.AddWithOptions(&git.AddOptions{
+		All: true,
+	})
+	require.NoError(t, err)
+
+	// Commit the changes
+	commitB, err := worktree.Commit("Test commit B", &git.CommitOptions{
+		All:    true,
+		Author: author,
+	})
+	require.NoError(t, err)
+
+	//create a new branch
+	branchNameB := "branchB"
+	branchRefB := plumbing.NewBranchReferenceName(branchNameB)
+	branchB := plumbing.NewHashReference(branchRefB, commitB)
+	err = repo.Storer.SetReference(branchB)
+	require.NoError(t, err)
+
+	//modify testA.txt
+	_, err = createTestFile(t, repoPath, "testA.txt", "contentC")
+	require.NoError(t, err)
+
+	//calculate the digest set for the file
+	digestSetC, err := gitOIDDigestSetFromFile(filepath.Join(repoPath, "testA.txt"))
+	require.NoError(t, err)
+
+	// Add the new file to the repository
+	err = worktree.AddWithOptions(&git.AddOptions{
+		All: true,
+	})
+	require.NoError(t, err)
+
+	// Commit the changes
+	commitC, err := worktree.Commit("Test commit C", &git.CommitOptions{
+		All:     true,
+		Parents: []plumbing.Hash{commitA, commitB},
+	})
+	require.NoError(t, err)
+
+	//get the commit
+	commit, err := repo.CommitObject(commitC)
+	require.NoError(t, err)
+
+	//verify that the commit has two parents
+	require.Equal(t, 2, len(commit.ParentHashes))
+
+	fileChanges, err := GetFileChangesInCommit(repo, commitC)
+	require.NoError(t, err)
+
+	//verify there are two file changes
+	require.Equal(t, 2, len(fileChanges))
+
+	//verify that the file has been modified
+	require.Equal(t, "testA.txt", fileChanges[0].Current.Path)
+	require.Equal(t, "testA.txt", fileChanges[0].Previous.Path)
+	require.Equal(t, "testA.txt", fileChanges[1].Current.Path)
+	require.Equal(t, "testA.txt", fileChanges[1].Previous.Path)
+
+	//verify that the old Git OID is not equal to the new Git OID
+	require.NotEqual(t, fileChanges[0].Previous.Digest, fileChanges[0].Current.Digest)
+	require.NotEqual(t, fileChanges[1].Previous.Digest, fileChanges[1].Current.Digest)
+
+	//verify that the old digest set is equal to digestSetA or digestSetB
+	require.True(t, fileChanges[0].Previous.Digest.Equal(digestSetA) || fileChanges[0].Previous.Digest.Equal(digestSetB))
+	require.True(t, fileChanges[1].Previous.Digest.Equal(digestSetA) || fileChanges[1].Previous.Digest.Equal(digestSetB))
+
+	//verify that the new digest set is equal to digestSetC
+	require.True(t, fileChanges[0].Current.Digest.Equal(digestSetC))
+	require.True(t, fileChanges[1].Current.Digest.Equal(digestSetC))
+}
+
+func createTestFile(t *testing.T, repoPath string, name string, content string) (string, error) {
+	filePath := filepath.Join(repoPath, name)
+	file, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(content); err != nil {
+		return "", err
+	}
+
+	return filePath, nil
+}
+
+func gitOIDDigestSetFromFile(path string) (cryptoutil.DigestSet, error) {
+	fileReader, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer fileReader.Close()
+
+	gitOidSha1, err := gitoid.New(fileReader)
+	if err != nil {
+		return nil, err
+	}
+
+	return cryptoutil.DigestSet{
+		{
+			Hash:   crypto.SHA1,
+			GitOID: true,
+		}: gitOidSha1.URI(),
+	}, nil
+
 }
