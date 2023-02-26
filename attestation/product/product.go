@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gobwas/glob"
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/file"
 	"github.com/testifysec/go-witness/cryptoutil"
@@ -32,6 +33,9 @@ const (
 	Name    = "product"
 	Type    = "https://witness.dev/attestations/product/v0.1"
 	RunType = attestation.ProductRunType
+
+	defaultIncludeGlob = "*"
+	defaultExcludeGlob = ""
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -43,9 +47,36 @@ var (
 )
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
-		return New()
-	})
+	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor { return New() },
+		attestation.StringConfigOption(
+			"includeGlob",
+			"Pattern to use when recording products. Files that match this pattern will be included as subjects on the attestation.",
+			defaultIncludeGlob,
+			func(a attestation.Attestor, includeGlob string) (attestation.Attestor, error) {
+				prodAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a product attestor", a)
+				}
+
+				WithIncludeGlob(includeGlob)(prodAttestor)
+				return prodAttestor, nil
+			},
+		),
+		attestation.StringConfigOption(
+			"excludeGlob",
+			"Pattern to use when recording products. Files that match this pattern will be excluded as subjects on the attestation.",
+			defaultExcludeGlob,
+			func(a attestation.Attestor, excludeGlob string) (attestation.Attestor, error) {
+				prodAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a product attestor", a)
+				}
+
+				WithExcludeGlob(excludeGlob)(prodAttestor)
+				return prodAttestor, nil
+			},
+		),
+	)
 }
 
 type Option func(*Attestor)
@@ -63,10 +94,12 @@ func WithExcludeGlob(glob string) Option {
 }
 
 type Attestor struct {
-	products      map[string]attestation.Product
-	baseArtifacts map[string]cryptoutil.DigestSet
-	includeGlob   string
-	excludeGlob   string
+	products            map[string]attestation.Product
+	baseArtifacts       map[string]cryptoutil.DigestSet
+	includeGlob         string
+	compiledIncludeGlob glob.Glob
+	excludeGlob         string
+	compiledExcludeGlob glob.Glob
 }
 
 func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
@@ -103,11 +136,32 @@ func (rc *Attestor) RunType() attestation.RunType {
 	return RunType
 }
 
-func New() *Attestor {
-	return &Attestor{}
+func New(opts ...Option) *Attestor {
+	a := &Attestor{
+		includeGlob: defaultIncludeGlob,
+		excludeGlob: defaultExcludeGlob,
+	}
+
+	for _, opt := range opts {
+		opt(a)
+	}
+
+	return a
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
+	compiledIncludeGlob, err := glob.Compile(a.includeGlob)
+	if err != nil {
+		return err
+	}
+	a.compiledIncludeGlob = compiledIncludeGlob
+
+	compiledExcludeGlob, err := glob.Compile(a.excludeGlob)
+	if err != nil {
+		return err
+	}
+	a.compiledExcludeGlob = compiledExcludeGlob
+
 	a.baseArtifacts = ctx.Materials()
 	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{})
 	if err != nil {
@@ -139,6 +193,14 @@ func (a *Attestor) Products() map[string]attestation.Product {
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subjects := make(map[string]cryptoutil.DigestSet)
 	for productName, product := range a.products {
+		if a.compiledExcludeGlob != nil && a.compiledExcludeGlob.Match(productName) {
+			continue
+		}
+
+		if a.compiledIncludeGlob != nil && !a.compiledIncludeGlob.Match(productName) {
+			continue
+		}
+
 		subjects[fmt.Sprintf("file:%v", productName)] = product.Digest
 	}
 
