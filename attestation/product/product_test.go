@@ -19,62 +19,43 @@ import (
 	"bytes"
 	"crypto"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/cryptoutil"
 )
 
-func Test_fromDigestMap(t *testing.T) {
-
+func TestFromDigestMap(t *testing.T) {
 	testDigest, err := cryptoutil.CalculateDigestSetFromBytes([]byte("test"), []crypto.Hash{crypto.SHA256})
-	if err != nil {
-		t.Errorf("Failed to calculate digest set from bytes: %v", err)
-	}
-
+	assert.NoError(t, err)
 	testDigestSet := make(map[string]cryptoutil.DigestSet)
 	testDigestSet["test"] = testDigest
-
 	result := fromDigestMap(testDigestSet)
-
-	if len(result) != 1 {
-		t.Errorf("Expected 1 product, got %d", len(result))
-	}
-
-	if result["test"].Digest.Equal(testDigest) == false {
-		t.Errorf("Expected digest set to be %v, got %v", testDigest, result["test"])
-	}
-
-	t.Logf("Result: %v", spew.Sdump(result["test"]))
-	t.Logf("Expected: %v", spew.Sdump(testDigest))
+	assert.Len(t, result, 1)
+	assert.True(t, result["test"].Digest.Equal(testDigest))
 }
 
-func TestAttestor_Name(t *testing.T) {
+func TestAttestorName(t *testing.T) {
 	a := New()
-	if a.Name() != Name {
-		t.Errorf("Expected Name to be %s, got %s", Name, a.Name())
-	}
+	assert.Equal(t, a.Name(), Name)
 }
 
-func TestAttestor_Type(t *testing.T) {
+func TestAttestorType(t *testing.T) {
 	a := New()
-	if a.Type() != Type {
-		t.Errorf("Expected Type to be %s, got %s", Type, a.Type())
-	}
+	assert.Equal(t, a.Type(), Type)
 }
 
-func TestAttestor_RunType(t *testing.T) {
+func TestAttestorRunType(t *testing.T) {
 	a := New()
-	if a.RunType() != RunType {
-		t.Errorf("Expected RunType to be %s, got %s", RunType, a.RunType())
-	}
+	assert.Equal(t, a.RunType(), RunType)
 }
 
-func TestAttestor_Attest(t *testing.T) {
+func TestAttestorAttest(t *testing.T) {
 	a := New()
-
 	testDigest, err := cryptoutil.CalculateDigestSetFromBytes([]byte("test"), []crypto.Hash{crypto.SHA256})
 	if err != nil {
 		t.Errorf("Failed to calculate digest set from bytes: %v", err)
@@ -82,13 +63,10 @@ func TestAttestor_Attest(t *testing.T) {
 
 	testDigestSet := make(map[string]cryptoutil.DigestSet)
 	testDigestSet["test"] = testDigest
-
 	a.baseArtifacts = testDigestSet
-
 	ctx, err := attestation.NewContext([]attestation.Attestor{a})
 	require.NoError(t, err)
-	err = a.Attest(ctx)
-	require.NoError(t, err)
+	require.NoError(t, a.Attest(ctx))
 }
 
 func TestGetFileContentType(t *testing.T) {
@@ -150,6 +128,67 @@ func TestGetFileContentType(t *testing.T) {
 			contentType, err := getFileContentType(test.file)
 			require.NoError(t, err)
 			require.Equal(t, test.expected, contentType)
+		})
+	}
+}
+
+func TestIncludeExcludeGlobs(t *testing.T) {
+	workingDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(workingDir, "subdir"), 0777))
+	files := []string{
+		filepath.Join(workingDir, "test.txt"),
+		filepath.Join(workingDir, "test.exe"),
+		filepath.Join(workingDir, "subdir", "test.txt"),
+		filepath.Join(workingDir, "subdir", "test.exe"),
+	}
+
+	for _, file := range files {
+		f, err := os.Create(file)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+	}
+
+	tests := []struct {
+		name             string
+		includeGlob      string
+		excludeGlob      string
+		expectedSubjects []string
+	}{
+		{"match all", "*", "", []string{"test.txt", "test.exe", filepath.Join("subdir", "test.txt"), filepath.Join("subdir", "test.exe")}},
+		{"include only exes", "*.exe", "", []string{"test.exe", filepath.Join("subdir", "test.exe")}},
+		{"exclude exes", "*", "*.exe", []string{"test.txt", filepath.Join("subdir", "test.txt")}},
+		{"include only files in subdir", "subdir/*", "", []string{filepath.Join("subdir", "test.txt"), filepath.Join("subdir", "test.exe")}},
+		{"exclude files in subdir", "*", "subdir/*", []string{"test.txt", "test.exe"}},
+		{"include nothing", "", "", []string{}},
+		{"exclude everything", "", "*", []string{}},
+	}
+
+	assertSubjsMatch := func(t *testing.T, subjects map[string]cryptoutil.DigestSet, expected []string) {
+		subjectPaths := make([]string, 0, len(subjects))
+		for path := range subjects {
+			subjectPaths = append(subjectPaths, strings.TrimPrefix(path, "file:"))
+		}
+
+		assert.ElementsMatch(t, subjectPaths, expected)
+	}
+
+	t.Run("default include all", func(t *testing.T) {
+		ctx, err := attestation.NewContext([]attestation.Attestor{}, attestation.WithWorkingDir(workingDir))
+		require.NoError(t, err)
+		a := New()
+		require.NoError(t, a.Attest(ctx))
+		assertSubjsMatch(t, a.Subjects(), []string{"test.txt", "test.exe", filepath.Join("subdir", "test.txt"), filepath.Join("subdir", "test.exe")})
+	})
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, err := attestation.NewContext([]attestation.Attestor{}, attestation.WithWorkingDir(workingDir))
+			require.NoError(t, err)
+			a := New()
+			WithIncludeGlob(test.includeGlob)(a)
+			WithExcludeGlob(test.excludeGlob)(a)
+			require.NoError(t, a.Attest(ctx))
+			assertSubjsMatch(t, a.Subjects(), test.expectedSubjects)
 		})
 	}
 }
