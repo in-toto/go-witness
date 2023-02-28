@@ -50,12 +50,6 @@ type ptraceContext struct {
 	environmentBlockList map[string]struct{}
 }
 
-func enableTracing(c *exec.Cmd) {
-	c.SysProcAttr = &unix.SysProcAttr{
-		Ptrace: true,
-	}
-}
-
 func (r *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext) ([]ProcessInfo, error) {
 	pctx := &ptraceContext{
 		parentPid:            c.Process.Pid,
@@ -66,6 +60,7 @@ func (r *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext) ([
 	}
 
 	if err := pctx.runTrace(context.Background()); err != nil {
+		log.Debugf("error while tracing process: %v", err)
 		return nil, err
 	}
 
@@ -158,12 +153,21 @@ func (p *ptraceContext) runTrace(ctx context.Context) error {
 			}
 		}
 
+		//check to see if the process is still running
+		if status.Exited() {
+			//if the process has exited, remove it from the map
+			delete(p.processes, pid)
+			break
+		}
+
 		// Resume the process with the injected signal value.
 		if err := unix.PtraceSyscall(pid, injectedSig); err != nil {
 			errChan <- fmt.Errorf("failed to resume process with signal %d: %w", injectedSig, err)
 			log.Debugf("(tracing) got error from ptrace syscall: %v", err)
 		}
 	}
+
+	return nil
 }
 
 // nextSyscall handles the next system call for the given process ID.
@@ -228,7 +232,6 @@ func (p *ptraceContext) handleExeCve(pid int, argArray []uintptr) error {
 	// read status file and set attributes on success
 	statusFile, err := os.ReadFile(status)
 	if err == nil {
-		procInfo.SpecBypassIsVuln = getSpecBypassIsVulnFromStatus(statusFile)
 		ppid, err := getPPIDFromStatus(statusFile)
 		if err == nil {
 			procInfo.ParentPID = ppid
@@ -240,7 +243,13 @@ func (p *ptraceContext) handleExeCve(pid int, argArray []uintptr) error {
 		procInfo.Comm = cleanString(string(comm))
 	}
 
+	//create map for env vars
+	procInfo.Environ = make(map[string]string)
+
+	//get env vars for process
+
 	environ, err := os.ReadFile(envinLocation)
+
 	if err == nil {
 		allVars := strings.Split(string(environ), "\x00")
 		filteredEnviron := make([]string, 0)
@@ -248,7 +257,27 @@ func (p *ptraceContext) handleExeCve(pid int, argArray []uintptr) error {
 			filteredEnviron = append(filteredEnviron, varStr)
 		})
 
-		procInfo.Environ = strings.Join(filteredEnviron, " ")
+		parentEnvs := p.processes[procInfo.ParentPID].Environ
+		if parentEnvs == nil {
+			parentEnvs = make(map[string]string)
+		}
+
+		// Check which environment variables are new and add them to procInfo.Environ
+		for _, varStr := range filteredEnviron {
+
+			//guard out of bounds
+			if len(strings.Split(varStr, "=")) < 2 {
+				continue
+			}
+
+			key := strings.Split(varStr, "=")[0]
+			value := strings.Split(varStr, "=")[1]
+
+			if _, ok := parentEnvs[key]; !ok {
+				procInfo.Environ[key] = value
+
+			}
+		}
 	}
 
 	cmdline, err := os.ReadFile(cmdlineLocation)
@@ -287,6 +316,26 @@ func (p *ptraceContext) handleOpenedFile(pid int, argArray []uintptr) error {
 	}
 	if err != nil {
 		return err
+	}
+
+	//switch on file type
+	fileInfo, err := os.Stat(file)
+	if err != nil {
+		return err
+	}
+
+	ds := cryptoutil.DigestSet{}
+
+	//if it's a directory, we don't want to hash it
+	if fileInfo.IsDir() {
+		procInfo.OpenedFiles[file] = ds
+		return nil
+	}
+
+	//if it s special file, we don't want to hash it
+	if fileInfo.Mode()&os.ModeDevice != 0 {
+		procInfo.OpenedFiles[file] = ds
+		return nil
 	}
 
 	digestSet, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
@@ -485,22 +534,6 @@ func getPPIDFromStatus(status []byte) (int, error) {
 	}
 
 	return 0, nil
-}
-
-func getSpecBypassIsVulnFromStatus(status []byte) bool {
-	statusStr := string(status)
-	lines := strings.Split(statusStr, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "Speculation_Store_Bypass:") {
-			parts := strings.Split(line, ":")
-			isVuln := strings.TrimSpace(parts[1])
-			if strings.Contains(isVuln, "vulnerable") {
-				return true
-			}
-		}
-	}
-
-	return false
 }
 
 func (p *ptraceContext) readSyscallData(pid int, addr uintptr, size int) ([]byte, error) {

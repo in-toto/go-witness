@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/environment"
@@ -96,8 +97,7 @@ type ProcessInfo struct {
 	Cmdline           string                          `json:"cmdline,omitempty"`
 	ExeDigest         cryptoutil.DigestSet            `json:"exedigest,omitempty"`
 	OpenedFiles       map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
-	Environ           string                          `json:"environ,omitempty"`
-	SpecBypassIsVuln  bool                            `json:"specbypassisvuln,omitempty"`
+	Environ           map[string]string               `json:"environ,omitempty"`
 	OpenedSockets     []SocketInfo                    `json:"openedsockets,omitempty"`
 	OpenedConnections []ConnectionInfo                `json:"openedconnections,omitempty"`
 }
@@ -156,40 +156,93 @@ func (rc *CommandRun) RunType() attestation.RunType {
 }
 
 func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
-	c := exec.Command(r.Cmd[0], r.Cmd[1:]...)
+	// combine the command and arguments into a single string
+	cmd := r.Cmd[0]
+	for _, arg := range r.Cmd[1:] {
+		cmd += " " + arg
+	}
+
+	// Create a new command with the specified command and arguments
+	c := exec.Command("/bin/sh", "-c", cmd)
+
+	// Set the command's working directory to the context's working directory
 	c.Dir = ctx.WorkingDir()
-	stdoutBuffer := bytes.Buffer{}
-	stderrBuffer := bytes.Buffer{}
+
+	// Set up buffers to capture stdout and stderr
+	var stdoutBuffer, stderrBuffer bytes.Buffer
+
+	// Set up writers for stdout and stderr
 	stdoutWriters := []io.Writer{&stdoutBuffer}
 	stderrWriters := []io.Writer{&stderrBuffer}
+
+	// If the command is not silent, write to stdout and stderr as well as the buffers
 	if !r.silent {
 		stdoutWriters = append(stdoutWriters, os.Stdout)
 		stderrWriters = append(stderrWriters, os.Stderr)
 	}
 
+	// Create a multi-writer that writes to all of the specified writers
 	stdoutWriter := io.MultiWriter(stdoutWriters...)
 	stderrWriter := io.MultiWriter(stderrWriters...)
+
+	// Set the command's stdout and stderr to the multi-writers
 	c.Stdout = stdoutWriter
 	c.Stderr = stderrWriter
+
+	// If tracing is enabled, set the SysProcAttr to enable PTRACE
 	if r.enableTracing {
-		enableTracing(c)
+		c.SysProcAttr = &syscall.SysProcAttr{
+			Ptrace: true,
+		}
 	}
 
-	if err := c.Start(); err != nil {
-		return err
+	// Set the command's Cloneflags and Uid/GidMappings to sandbox the command in a new user namespace
+	c.SysProcAttr.Cloneflags = syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS | syscall.CLONE_NEWPID
+	c.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
+		{
+			ContainerID: os.Geteuid(),
+			HostID:      os.Geteuid(),
+			Size:        1,
+		},
+	}
+	c.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
+		{
+			ContainerID: os.Getegid(),
+			HostID:      os.Getegid(),
+			Size:        1,
+		},
+	}
+
+	c.SysProcAttr.Credential = &syscall.Credential{
+		Uid: uint32(os.Geteuid()),
+		Gid: uint32(os.Getegid()),
 	}
 
 	var err error
+
+	// Start the command
+	if err = c.Start(); err != nil {
+		return err
+	}
+
+	// If tracing is enabled, trace the command and set the Processes field of the CommandRun struct
 	if r.enableTracing {
 		r.Processes, err = r.trace(c, ctx)
+		if err != nil {
+			return err
+		}
 	} else {
+		// Otherwise, wait for the command to complete and set the ExitCode field of the CommandRun struct
 		err = c.Wait()
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			r.ExitCode = exitErr.ExitCode()
 		}
 	}
 
+	// Set the Stdout and Stderr fields of the CommandRun struct to the captured stdout and stderr, respectively
 	r.Stdout = stdoutBuffer.String()
 	r.Stderr = stderrBuffer.String()
+
+	// Return any errors that occurred during the execution of the command
 	return err
 }
