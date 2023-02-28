@@ -88,16 +88,31 @@ func New(opts ...Option) *CommandRun {
 }
 
 type ProcessInfo struct {
-	Program          string                          `json:"program,omitempty"`
-	ProcessID        int                             `json:"processid"`
-	ParentPID        int                             `json:"parentpid"`
-	ProgramDigest    cryptoutil.DigestSet            `json:"programdigest,omitempty"`
-	Comm             string                          `json:"comm,omitempty"`
-	Cmdline          string                          `json:"cmdline,omitempty"`
-	ExeDigest        cryptoutil.DigestSet            `json:"exedigest,omitempty"`
-	OpenedFiles      map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
-	Environ          string                          `json:"environ,omitempty"`
-	SpecBypassIsVuln bool                            `json:"specbypassisvuln,omitempty"`
+	Program           string                          `json:"program,omitempty"`
+	ProcessID         int                             `json:"processid"`
+	ParentPID         int                             `json:"parentpid"`
+	ProgramDigest     cryptoutil.DigestSet            `json:"programdigest,omitempty"`
+	Comm              string                          `json:"comm,omitempty"`
+	Cmdline           string                          `json:"cmdline,omitempty"`
+	ExeDigest         cryptoutil.DigestSet            `json:"exedigest,omitempty"`
+	OpenedFiles       map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
+	Environ           string                          `json:"environ,omitempty"`
+	SpecBypassIsVuln  bool                            `json:"specbypassisvuln,omitempty"`
+	OpenedSockets     []SocketInfo                    `json:"openedsockets,omitempty"`
+	OpenedConnections []ConnectionInfo                `json:"openedconnections,omitempty"`
+}
+
+type ConnectionInfo struct {
+	Address  string `json:"address"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+	Bytes    int    `json:"bytes"`
+}
+
+type SocketInfo struct {
+	Domain   string `json:"domain"`
+	Type     string `json:"type"`
+	Protocol string `json:"protocol"`
 }
 
 type CommandRun struct {

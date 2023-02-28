@@ -20,6 +20,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const (
+	WORD_SIZE = 8 // 64-bit
+)
+
 func getSyscallId(regs unix.PtraceRegs) uint64 {
 	return regs.Orig_rax
 }
