@@ -89,17 +89,16 @@ func New(opts ...Option) *CommandRun {
 }
 
 type ProcessInfo struct {
-	Program           string                          `json:"program,omitempty"`
-	ProcessID         int                             `json:"processid"`
-	ParentPID         int                             `json:"parentpid"`
-	ProgramDigest     cryptoutil.DigestSet            `json:"programdigest,omitempty"`
-	Comm              string                          `json:"comm,omitempty"`
-	Cmdline           string                          `json:"cmdline,omitempty"`
-	ExeDigest         cryptoutil.DigestSet            `json:"exedigest,omitempty"`
-	OpenedFiles       map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
-	Environ           map[string]string               `json:"environ,omitempty"`
-	OpenedSockets     []SocketInfo                    `json:"openedsockets,omitempty"`
-	OpenedConnections []ConnectionInfo                `json:"openedconnections,omitempty"`
+	Program       string                          `json:"program,omitempty"`
+	ProcessID     int                             `json:"processid"`
+	ParentPID     int                             `json:"parentpid"`
+	ProgramDigest cryptoutil.DigestSet            `json:"programdigest,omitempty"`
+	Comm          string                          `json:"comm,omitempty"`
+	Cmdline       string                          `json:"cmdline,omitempty"`
+	ExeDigest     cryptoutil.DigestSet            `json:"exedigest,omitempty"`
+	OpenedFiles   map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
+	Environ       map[string]string               `json:"environ,omitempty"`
+	Sockets       map[int]SocketInfo              `json:"openedsockets,omitempty"`
 }
 
 type ConnectionInfo struct {
@@ -110,9 +109,10 @@ type ConnectionInfo struct {
 }
 
 type SocketInfo struct {
-	Domain   string `json:"domain"`
-	Type     string `json:"type"`
-	Protocol string `json:"protocol"`
+	Type        string           `json:"type"`
+	Protocol    string           `json:"protocol"`
+	Fd          int              `json:"fd"`
+	Connections []ConnectionInfo `json:"connections,omitempty"`
 }
 
 type CommandRun struct {
@@ -231,6 +231,7 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		if err != nil {
 			return err
 		}
+
 	} else {
 		// Otherwise, wait for the command to complete and set the ExitCode field of the CommandRun struct
 		err = c.Wait()
