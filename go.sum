@@ -54,6 +54,8 @@ github.com/emirpasic/gods v1.18.1/go.mod h1:8tpGGwCnJ5H4r6BWwaV6OrWmMoPhUl5jm/FM
 github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a h1:yDWHCSQ40h88yih2JAcL6Ls/kVkSE8GFACTGVnMPruw=
 github.com/facebookgo/limitgroup v0.0.0-20150612190941-6abd8d71ec01 h1:IeaD1VDVBPlx3viJT9Md8if8IxxJnO+x0JCGb054heg=
 github.com/facebookgo/muster v0.0.0-20150708232844-fd3d7953fd52 h1:a4DFiKFJiDRGFD1qIcqGLX/WlUMD9dyLSLDt+9QZgt8=
+github.com/fkautz/omnitrail-go v0.0.0-20230521141415-265a13f91de1 h1:em+HWjiGF4CCPl+D5d6DAnuY09rwD3Qk875sEHqsFSk=
+github.com/fkautz/omnitrail-go v0.0.0-20230521141415-265a13f91de1/go.mod h1:ADoX/ou2k4Vtye67y3ik3zkcOFWM5zmcjVg2QFkwYf4=
 github.com/fortytw2/leaktest v1.3.0 h1:u8491cBMTQ8ft8aeV+adlcytMZylmA5nnwwkRZjI8vw=
 github.com/foxcpp/go-mockdns v0.0.0-20210729171921-fb145fc6f897 h1:E52jfcE64UG42SwLmrW0QByONfGynWuzBvm86BoB9z8=
 github.com/ghodss/yaml v1.0.0 h1:wQHKEahhL6wmXdzwWG11gIVCkOv05bNOh+Rxn0yngAk=
@@ -129,6 +131,8 @@ github.com/mattn/go-isatty v0.0.17/go.mod h1:kYGgaQfpe5nmfYZH+SKPsOc2e4SrIfOl2e/
 github.com/matttproud/golang_protobuf_extensions v1.0.4 h1:mmDVorXM7PCGKw94cs5zkfA9PSy5pEvNWRP0ET0TIVo=
 github.com/miekg/dns v1.1.50 h1:DQUfb9uc6smULcREF09Uc+/Gd46YWqJd5DbpPE9xkcA=
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=
+github.com/omnibor/omnibor-go v0.0.0-20230226193847-c1d2b6d19159 h1:lM5TaZOWo76IG5zElw3ozfnWuwIqOt0/YW410IJGKaE=
+github.com/omnibor/omnibor-go v0.0.0-20230226193847-c1d2b6d19159/go.mod h1:ArlQivzDQvZnFe8itjlA3ndPTXd9iWOgqzF31OyIEFQ=
 github.com/open-policy-agent/opa v0.49.1 h1:hXnKOmzVk8TyCTHEoHTZvYjAqwOBS9n+3mf4zmdDtP0=
 github.com/open-policy-agent/opa v0.49.1/go.mod h1:Wvc+vpbXuYxhKk0uvhTxmDmZ3rjSXtqYJBtGAPNoJ6E=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
@@ -180,6 +184,7 @@ github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO+kdMU+MU=
 github.com/stretchr/testify v1.8.1 h1:w7B6lhMri9wdJUVmEZPGGhZzrYTPvgJArz7wNPgYKsk=
 github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
+github.com/stretchr/testify v1.8.2/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
 github.com/tchap/go-patricia/v2 v2.3.1 h1:6rQp39lgIYZ+MHmdEq4xzuk1t7OdC35z/xm0BGhTkes=
 github.com/tchap/go-patricia/v2 v2.3.1/go.mod h1:VZRHKAb53DLaG+nA9EaYYiaEx6YztwDlLElMsnSHD4k=
 github.com/testifysec/archivista-api v0.0.0-20230220215059-632b84b82b76 h1:GAUgHyg4ss2DDTIYG9RuVxap2smkAGtzpXcOvNxlLic=

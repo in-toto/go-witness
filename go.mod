@@ -12,7 +12,7 @@ require (
 	github.com/open-policy-agent/opa v0.49.1
 	github.com/owenrumney/go-sarif v1.1.1
 	github.com/spiffe/go-spiffe/v2 v2.1.2
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	github.com/testifysec/archivista-api v0.0.0-20230220215059-632b84b82b76
 	go.step.sm/crypto v0.25.0
 	golang.org/x/sys v0.5.0
@@ -26,6 +26,7 @@ require (
 	github.com/cloudflare/circl v1.3.2 // indirect
 	github.com/coreos/go-oidc/v3 v3.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/fkautz/omnitrail-go v0.0.0-20230521141415-265a13f91de1 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.0 // indirect
 	github.com/google/flatbuffers v2.0.8+incompatible // indirect
 	github.com/google/go-containerregistry v0.13.0 // indirect
@@ -33,6 +34,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/letsencrypt/boulder v0.0.0-20221109233200-85aa52084eaf // indirect
+	github.com/omnibor/omnibor-go v0.0.0-20230226193847-c1d2b6d19159 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pjbgf/sha1cd v0.2.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
