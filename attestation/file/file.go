@@ -16,6 +16,9 @@ package file
 
 import (
 	"crypto"
+	"encoding/json"
+	"fmt"
+	"github.com/fkautz/omnitrail-go"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -30,8 +33,13 @@ import (
 // returned map of artifacts.
 func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.DigestSet, hashes []crypto.Hash, visitedSymlinks map[string]struct{}) (map[string]cryptoutil.DigestSet, error) {
 	artifacts := make(map[string]cryptoutil.DigestSet)
+	trail := omnitrail.New(omnitrail.WithSha1(), omnitrail.WithSha256())
 	err := filepath.Walk(basePath, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
+			return err
+		}
+
+		if err := trail.Add(path); err != nil {
 			return err
 		}
 
@@ -111,6 +119,25 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 
 		return nil
 	})
+
+	j, e := json.MarshalIndent(trail, "", "  ")
+	if e != nil {
+		return nil, e
+	}
+
+	fmt.Println("sha1")
+	adgs := trail.Sha1ADGs()
+	for k, v := range adgs {
+		fmt.Printf("%s:\n%s\n\n", k, v)
+	}
+
+	fmt.Println("sha256")
+	adgs = trail.Sha256ADGs()
+	for k, v := range adgs {
+		fmt.Printf("%s:\n%s\n\n", k, v)
+	}
+
+	fmt.Println(string(j))
 
 	return artifacts, err
 }
