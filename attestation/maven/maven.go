@@ -15,6 +15,7 @@
 package maven
 
 import (
+	"crypto"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/testifysec/go-witness/log"
 )
 
 const (
@@ -51,8 +53,7 @@ type Attestor struct {
 	ProjectName  string            `xml:"name" json:"projectname"`
 	Dependencies []MavenDependency `xml:"dependencies>dependency" json:"dependencies"`
 
-	pomPath  string
-	subjects map[string]cryptoutil.DigestSet
+	pomPath string
 }
 
 type MavenDependency struct {
@@ -72,8 +73,7 @@ func WithPom(path string) Option {
 
 func New(opts ...Option) *Attestor {
 	attestor := &Attestor{
-		pomPath:  "pom.xml",
-		subjects: make(map[string]cryptoutil.DigestSet),
+		pomPath: "pom.xml",
 	}
 
 	for _, opt := range opts {
@@ -111,27 +111,28 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return err
 	}
 
-	hashes := ctx.Hashes()
-	projectSubject := fmt.Sprintf("project:%v/%v@%v", a.GroupId, a.ArtifactId, a.Version)
-	projectDigest, err := cryptoutil.CalculateDigestSetFromBytes([]byte(projectSubject), hashes)
-	if err != nil {
-		return err
-	}
-
-	a.subjects[projectSubject] = projectDigest
-	for _, dep := range a.Dependencies {
-		depSubject := fmt.Sprintf("dependency:%v/%v@%v", dep.GroupId, dep.ArtifactId, dep.Version)
-		depDigest, err := cryptoutil.CalculateDigestSetFromBytes([]byte(depSubject), hashes)
-		if err != nil {
-			return err
-		}
-
-		a.subjects[depSubject] = depDigest
-	}
-
 	return nil
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
-	return a.subjects
+	subjects := make(map[string]cryptoutil.DigestSet)
+	hashes := []crypto.Hash{crypto.SHA256}
+	projectSubject := fmt.Sprintf("project:%v/%v@%v", a.GroupId, a.ArtifactId, a.Version)
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(projectSubject), hashes); err == nil {
+		subjects[projectSubject] = ds
+	} else {
+		log.Debugf("(attestation/maven) failed to record %v subject: %v", projectSubject, err)
+	}
+
+	for _, dep := range a.Dependencies {
+		depSubject := fmt.Sprintf("dependency:%v/%v@%v", dep.GroupId, dep.ArtifactId, dep.Version)
+		depDigest, err := cryptoutil.CalculateDigestSetFromBytes([]byte(depSubject), hashes)
+		if err != nil {
+			log.Debugf("(attestation/maven) failed to record %v subject: %v", depSubject, err)
+		}
+
+		subjects[depSubject] = depDigest
+	}
+
+	return subjects
 }

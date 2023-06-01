@@ -15,12 +15,15 @@
 package gitlab
 
 import (
+	"crypto"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/jwt"
 	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/testifysec/go-witness/log"
 )
 
 const (
@@ -64,14 +67,10 @@ type Attestor struct {
 	RunnerID     string        `json:"runnerid"`
 	CIHost       string        `json:"cihost"`
 	CIServerUrl  string        `json:"ciserverurl"`
-
-	subjects map[string]cryptoutil.DigestSet
 }
 
 func New() *Attestor {
-	return &Attestor{
-		subjects: make(map[string]cryptoutil.DigestSet),
-	}
+	return &Attestor{}
 }
 
 func (a *Attestor) Name() string {
@@ -114,34 +113,41 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.RunnerID = os.Getenv("CI_RUNNER_ID")
 	a.CIHost = os.Getenv("CI_SERVER_HOST")
 
-	pipelineSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.PipelineUrl), ctx.Hashes())
-	if err != nil {
-		return err
-	}
-
-	a.subjects[fmt.Sprintf("pipelineurl:%v", a.PipelineUrl)] = pipelineSubj
-	jobSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.JobUrl), ctx.Hashes())
-	if err != nil {
-		return err
-	}
-
-	a.subjects[fmt.Sprintf("joburl:%v", a.JobUrl)] = jobSubj
-	projectSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectUrl), ctx.Hashes())
-	if err != nil {
-		return err
-	}
-
-	a.subjects[fmt.Sprintf("projecturl:%v", a.ProjectUrl)] = projectSubj
 	return nil
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
-	return a.subjects
+	subjects := make(map[string]cryptoutil.DigestSet)
+	hashes := []crypto.Hash{crypto.SHA256}
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.PipelineUrl), hashes); err == nil {
+		subjects[fmt.Sprintf("pipelineurl:%v", a.PipelineUrl)] = ds
+	} else {
+		log.Debugf("(attestation/gitlab) failed to record gitlab pipelineurl subject: %v", err)
+	}
+
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.JobUrl), hashes); err == nil {
+		subjects[fmt.Sprintf("joburl:%v", a.JobUrl)] = ds
+	} else {
+		log.Debugf("(attestation/gitlab) failed to record gitlab joburl subject: %v", err)
+	}
+
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectUrl), hashes); err == nil {
+		subjects[fmt.Sprintf("projecturl:%v", a.ProjectUrl)] = ds
+	} else {
+		log.Debugf("(attestation/gitlab) failed to record gitlab projecturl subject: %v", err)
+	}
+
+	return subjects
 }
 
 func (a *Attestor) BackRefs() map[string]cryptoutil.DigestSet {
 	backRefs := make(map[string]cryptoutil.DigestSet)
-	pipelineUrl := fmt.Sprintf("pipelineurl:%v", a.PipelineUrl)
-	backRefs[pipelineUrl] = a.subjects[pipelineUrl]
+	for subj, ds := range a.Subjects() {
+		if strings.HasPrefix(subj, "pipelineurl:") {
+			backRefs[subj] = ds
+			break
+		}
+	}
+
 	return backRefs
 }

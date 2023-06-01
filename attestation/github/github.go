@@ -16,17 +16,20 @@ package github
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/jwt"
 	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/testifysec/go-witness/log"
 )
 
 const (
@@ -72,15 +75,14 @@ type Attestor struct {
 	CIServerUrl  string        `json:"ciserverurl"`
 	RunnerArch   string        `json:"runnerarch"`
 	RunnerOS     string        `json:"runneros"`
-	jwksURL      string
-	tokenURL     string
-	aud          string
-	subjects     map[string]cryptoutil.DigestSet
+
+	jwksURL  string
+	tokenURL string
+	aud      string
 }
 
 func New() *Attestor {
 	return &Attestor{
-		subjects: make(map[string]cryptoutil.DigestSet),
 		aud:      tokenAudience,
 		jwksURL:  jwksURL,
 		tokenURL: os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL"),
@@ -129,29 +131,36 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.RunnerArch = os.Getenv("RUNNER_ARCH")
 	a.RunnerOS = os.Getenv("RUNNER_OS")
 	a.PipelineUrl = fmt.Sprintf("%s/actions/runs/%s", a.ProjectUrl, a.PipelineID)
-
-	pipelineSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.PipelineUrl), ctx.Hashes())
-	if err != nil {
-		return err
-	}
-	a.subjects[fmt.Sprintf("pipelineurl:%v", a.PipelineUrl)] = pipelineSubj
-
-	projectSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectUrl), ctx.Hashes())
-	if err != nil {
-		return err
-	}
-	a.subjects[fmt.Sprintf("projecturl:%v", a.ProjectUrl)] = projectSubj
 	return nil
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
-	return a.subjects
+	subjects := make(map[string]cryptoutil.DigestSet)
+	hashes := []crypto.Hash{crypto.SHA256}
+	if pipelineSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.PipelineUrl), hashes); err == nil {
+		subjects[fmt.Sprintf("pipelineurl:%v", a.PipelineUrl)] = pipelineSubj
+	} else {
+		log.Debugf("(attestation/github) failed to record github pipelineurl subject: %v", err)
+	}
+
+	if projectSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectUrl), hashes); err == nil {
+		subjects[fmt.Sprintf("projecturl:%v", a.ProjectUrl)] = projectSubj
+	} else {
+		log.Debugf("(attestation/github) failed to record github projecturl subject: %v", err)
+	}
+
+	return subjects
 }
 
 func (a *Attestor) BackRefs() map[string]cryptoutil.DigestSet {
 	backRefs := make(map[string]cryptoutil.DigestSet)
-	pipelineUrl := fmt.Sprintf("pipelineurl:%v", a.PipelineUrl)
-	backRefs[pipelineUrl] = a.subjects[pipelineUrl]
+	for subj, ds := range a.Subjects() {
+		if strings.HasPrefix(subj, "pipelineurl:") {
+			backRefs[subj] = ds
+			break
+		}
+	}
+
 	return backRefs
 }
 

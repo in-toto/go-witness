@@ -15,6 +15,7 @@
 package gcpiit
 
 import (
+	"crypto"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,8 +35,7 @@ const (
 	Type    = "https://witness.dev/attestations/gcp-iit/v0.1"
 	RunType = attestation.PreMaterialRunType
 
-	jwksUrl = "https://www.googleapis.com/oauth2/v3/certs"
-
+	jwksUrl                      = "https://www.googleapis.com/oauth2/v3/certs"
 	defaultIdentityTokenHost     = "metadata.google.internal"
 	identityTokenURLPathTemplate = "/computeMetadata/v1/instance/service-accounts/%s/identity"
 	identityTokenAudience        = "witness-node-attestor" //nolint: gosec // false positive
@@ -80,13 +80,10 @@ type Attestor struct {
 	ClusterLocation           string        `json:"cluster_location"`
 
 	isWorkloadIdentity bool
-	subjects           map[string]cryptoutil.DigestSet
 }
 
 func New() *Attestor {
-	return &Attestor{
-		subjects: make(map[string]cryptoutil.DigestSet),
-	}
+	return &Attestor{}
 }
 
 func (a *Attestor) Name() string {
@@ -102,9 +99,7 @@ func (a *Attestor) RunType() attestation.RunType {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-
 	tokenURL := identityTokenURL(defaultIdentityTokenHost, defaultServiceAccount)
-
 	identityToken, err := getMetadata(tokenURL)
 	if err != nil {
 		return status.Errorf(codes.Internal, "unable to retrieve valid identity token: %v", err)
@@ -134,36 +129,6 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	} else {
 		a.getInstanceData()
 	}
-
-	instanceIDSubject, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.InstanceID), ctx.Hashes())
-	if err != nil {
-		return err
-	}
-	a.subjects[fmt.Sprintf("instanceid:%v", a.InstanceID)] = instanceIDSubject
-
-	instanceHostnameSubject, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.InstanceHostname), ctx.Hashes())
-	if err != nil {
-		return err
-	}
-	a.subjects[fmt.Sprintf("instancename:%v", a.InstanceHostname)] = instanceHostnameSubject
-
-	projectIDSubject, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectID), ctx.Hashes())
-	if err != nil {
-		return err
-	}
-	a.subjects[fmt.Sprintf("projectid:%v", a.ProjectID)] = projectIDSubject
-
-	projectNumberSubject, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectNumber), ctx.Hashes())
-	if err != nil {
-		return err
-	}
-	a.subjects[fmt.Sprintf("projectnumber:%v", a.ProjectNumber)] = projectNumberSubject
-
-	clusterUIDSubject, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ClusterUID), ctx.Hashes())
-	if err != nil {
-		return err
-	}
-	a.subjects[fmt.Sprintf("clusteruid:%v", a.ClusterUID)] = clusterUIDSubject
 
 	return nil
 }
@@ -209,7 +174,39 @@ func (a *Attestor) getInstanceData() {
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
-	return a.subjects
+	subjects := make(map[string]cryptoutil.DigestSet)
+	hashes := []crypto.Hash{crypto.SHA256}
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.InstanceID), hashes); err == nil {
+		subjects[fmt.Sprintf("instanceid:%v", a.InstanceID)] = ds
+	} else {
+		log.Debugf("(attestation/gcp) failed to record gcp instanceid subject: %v", err)
+	}
+
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.InstanceHostname), hashes); err == nil {
+		subjects[fmt.Sprintf("instancename:%v", a.InstanceHostname)] = ds
+	} else {
+		log.Debugf("(attestation/gcp) failed to record gcp instancename subject: %v", err)
+	}
+
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectID), hashes); err == nil {
+		subjects[fmt.Sprintf("projectid:%v", a.ProjectID)] = ds
+	} else {
+		log.Debugf("(attestation/gcp) failed to record gcp projectid subject: %v", err)
+	}
+
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectNumber), hashes); err == nil {
+		subjects[fmt.Sprintf("projectnumber:%v", a.ProjectNumber)] = ds
+	} else {
+		log.Debugf("(attestation/gcp) failed to record gcp projectnumber subject: %v", err)
+	}
+
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ClusterUID), hashes); err == nil {
+		subjects[fmt.Sprintf("clusteruid:%v", a.ClusterUID)] = ds
+	} else {
+		log.Debugf("(attestation/gcp) failed to record gcp clusteruid subject: %v", err)
+	}
+
+	return subjects
 }
 
 func getMetadata(url string) ([]byte, error) {
