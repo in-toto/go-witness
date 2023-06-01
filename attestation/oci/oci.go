@@ -61,7 +61,6 @@ type Attestor struct {
 	ManifestRaw    []byte                 `json:"manifestraw"`
 	ManifestDigest cryptoutil.DigestSet   `json:"manifestdigest"`
 	tarFilePath    string                 `json:"-"`
-	hashes         []crypto.Hash          `json:"-"`
 }
 
 type Manifest struct {
@@ -127,8 +126,6 @@ func (a *Attestor) RunType() attestation.RunType {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	a.hashes = ctx.Hashes()
-
 	if err := a.getCandidate(ctx); err != nil {
 		log.Debugf("(attestation/oci) error getting candidate: %v", err)
 		return err
@@ -234,14 +231,15 @@ func (a *Attestor) parseMaifest(ctx *attestation.AttestationContext) error {
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
+	hashes := []crypto.Hash{crypto.SHA256}
 	subj := make(map[string]cryptoutil.DigestSet)
-
 	subj[fmt.Sprintf("manifestdigest:%s", a.ManifestDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.ManifestDigest
 	subj[fmt.Sprintf("tardigest:%s", a.TarDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.TarDigest
 	subj[fmt.Sprintf("imageid:%s", a.ImageID[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.ImageID
+
 	//image tags
 	for _, tag := range a.ImageTags {
-		hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(tag), a.hashes)
+		hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(tag), hashes)
 		if err != nil {
 			log.Debugf("(attestation/oci) error calculating image tag: %v", err)
 			continue

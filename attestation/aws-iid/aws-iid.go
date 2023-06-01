@@ -80,7 +80,6 @@ func init() {
 
 type Attestor struct {
 	ec2metadata.EC2InstanceIdentityDocument
-	subjects  map[string]cryptoutil.DigestSet
 	hashes    []crypto.Hash
 	session   session.Session
 	conf      *aws.Config
@@ -96,11 +95,9 @@ func New() *Attestor {
 	}
 
 	conf := &aws.Config{}
-
 	return &Attestor{
-		session:  *sess,
-		conf:     conf,
-		subjects: make(map[string]cryptoutil.DigestSet),
+		session: *sess,
+		conf:    conf,
 	}
 
 }
@@ -130,20 +127,6 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return err
 	}
 
-	subjects := make(map[string]string)
-	subjects[fmt.Sprintf("instanceid:%s", a.EC2InstanceIdentityDocument.InstanceID)] = a.EC2InstanceIdentityDocument.InstanceID
-	subjects[fmt.Sprintf("accountid:%s", a.EC2InstanceIdentityDocument.AccountID)] = a.EC2InstanceIdentityDocument.AccountID
-	subjects[fmt.Sprintf("imageid:%s", a.EC2InstanceIdentityDocument.ImageID)] = a.EC2InstanceIdentityDocument.ImageID
-	subjects[fmt.Sprintf("privateip:%s", a.EC2InstanceIdentityDocument.PrivateIP)] = a.EC2InstanceIdentityDocument.PrivateIP
-
-	for k, v := range subjects {
-		subj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(v), ctx.Hashes())
-		if err != nil {
-			continue
-		}
-		a.subjects[k] = subj
-	}
-
 	return nil
 }
 
@@ -171,7 +154,6 @@ func (a *Attestor) getIID() error {
 }
 
 func (a *Attestor) Verify() error {
-
 	if len(a.RawIID) == 0 || len(a.RawSig) == 0 {
 		return nil
 	}
@@ -213,11 +195,36 @@ func (a *Attestor) Verify() error {
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
-	return a.subjects
+	hashes := []crypto.Hash{crypto.SHA256}
+	subjects := make(map[string]cryptoutil.DigestSet)
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.EC2InstanceIdentityDocument.InstanceID), hashes); err == nil {
+		subjects[fmt.Sprintf("instanceid:%s", a.EC2InstanceIdentityDocument.InstanceID)] = ds
+	} else {
+		log.Debugf("(attestation/aws) failed to record aws instanceid subject: %v", err)
+	}
+
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.EC2InstanceIdentityDocument.AccountID), hashes); err == nil {
+		subjects[fmt.Sprintf("accountid:%s", a.EC2InstanceIdentityDocument.AccountID)] = ds
+	} else {
+		log.Debugf("(attestation/aws) failed to record aws accountid subject: %v", err)
+	}
+
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.EC2InstanceIdentityDocument.ImageID), hashes); err == nil {
+		subjects[fmt.Sprintf("imageid:%s", a.EC2InstanceIdentityDocument.ImageID)] = ds
+	} else {
+		log.Debugf("(attestation/aws) failed to record aws imageid subject: %v", err)
+	}
+
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.EC2InstanceIdentityDocument.PrivateIP), hashes); err == nil {
+		subjects[fmt.Sprintf("privateip:%s", a.EC2InstanceIdentityDocument.PrivateIP)] = ds
+	} else {
+		log.Debugf("(attestation/aws) failed to record aws privateip subject: %v", err)
+	}
+
+	return subjects
 }
 
 func getAWSCAPublicKey() (*rsa.PublicKey, error) {
-
 	block, rest := pem.Decode([]byte(awsCACertPEM))
 	if len(rest) > 0 {
 		return nil, fmt.Errorf("failed to decode PEM block containing the public key")
@@ -229,5 +236,4 @@ func getAWSCAPublicKey() (*rsa.PublicKey, error) {
 	}
 
 	return cert.PublicKey.(*rsa.PublicKey), nil
-
 }
