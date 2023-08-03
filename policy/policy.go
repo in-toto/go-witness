@@ -48,12 +48,11 @@ type PublicKey struct {
 }
 
 type PolicyDecision struct {
-	id             uuid.UUID
-	Digests        []string
-	Timestamp      time.Time
-	Decision       Decision
-	PolicyGitoid   string
-	EvidenceHashes []string
+	id          uuid.UUID
+	SubjectName string
+	DigestID    string
+	Timestamp   time.Time
+	Decision    Decision
 }
 
 // Decision defines the type for the "decision" enum field.
@@ -215,7 +214,6 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string][]
 		}
 	}
 
-	// TODO: this is where we need to return more data on when steps failed vs when they passed
 	passedByStep := make(map[string][]source.VerifiedCollection)
 	for depth := 0; depth < vo.searchDepth; depth++ {
 		for stepName, step := range p.Steps {

@@ -15,19 +15,14 @@
 package witness
 
 import (
-	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
-	"time"
 
-	cloudevents "github.com/cloudevents/sdk-go/v2"
-	"github.com/edwarnicke/gitoid"
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
-	"github.com/testifysec/go-witness/log"
 	"github.com/testifysec/go-witness/policy"
 	"github.com/testifysec/go-witness/source"
 	"github.com/testifysec/go-witness/timestamp"
@@ -49,7 +44,6 @@ type verifyOptions struct {
 	policyVerifiers  []cryptoutil.Verifier
 	collectionSource source.Sourcer
 	subjectDigests   []string
-	decisionLogURL   string
 }
 
 type VerifyOption func(*verifyOptions)
@@ -67,12 +61,6 @@ func VerifyWithSubjectDigests(subjectDigests []cryptoutil.DigestSet) VerifyOptio
 func VerifyWithCollectionSource(source source.Sourcer) VerifyOption {
 	return func(vo *verifyOptions) {
 		vo.collectionSource = source
-	}
-}
-
-func VerifyWithDecisionLogProvider(decisionLogURL string) VerifyOption {
-	return func(vo *verifyOptions) {
-		vo.decisionLogURL = decisionLogURL
 	}
 }
 
@@ -97,9 +85,9 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		return nil, fmt.Errorf("failed to unmarshal policy from envelope: %w", err)
 	}
 
-	pubKeysById, verifyErr := pol.PublicKeyVerifiers()
-	if verifyErr != nil {
-		return nil, fmt.Errorf("failed to get pulic keys from policy: %w", verifyErr)
+	pubKeysById, err := pol.PublicKeyVerifiers()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pulic keys from policy: %w", err)
 	}
 
 	pubkeys := make([]cryptoutil.Verifier, 0)
@@ -107,9 +95,9 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		pubkeys = append(pubkeys, pubkey)
 	}
 
-	trustBundlesById, verifyErr := pol.TrustBundles()
-	if verifyErr != nil {
-		return nil, fmt.Errorf("failed to load policy trust bundles: %w", verifyErr)
+	trustBundlesById, err := pol.TrustBundles()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load policy trust bundles: %w", err)
 	}
 
 	roots := make([]*x509.Certificate, 0)
@@ -119,9 +107,9 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		intermediates = append(intermediates, intermediates...)
 	}
 
-	timestampAuthoritiesById, verifyErr := pol.TimestampAuthorityTrustBundles()
-	if verifyErr != nil {
-		return nil, fmt.Errorf("failed to load policy timestamp authorities: %w", verifyErr)
+	timestampAuthoritiesById, err := pol.TimestampAuthorityTrustBundles()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load policy timestamp authorities: %w", err)
 	}
 
 	timestampVerifiers := make([]dsse.TimestampVerifier, 0)
@@ -138,90 +126,10 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		dsse.VerifyWithIntermediates(intermediates...),
 		dsse.VerifyWithTimestampVerifiers(timestampVerifiers...),
 	)
-	accepted, verifyErr := pol.Verify(ctx, policy.WithSubjectDigests(vo.subjectDigests), policy.WithVerifiedSource(verifiedSource))
-
-	if verifyErr != nil {
-		decisionErr := createPolicyDecision(vo, policy.DecisionDenied, policyEnvelope, accepted)
-		if decisionErr != nil {
-			return nil, fmt.Errorf("failed to verify policy and post decision: /n %v /n %w", verifyErr, decisionErr)
-		}
-		return nil, fmt.Errorf("failed to verify policy: %w", verifyErr)
-	}
-
-	decisionErr := createPolicyDecision(vo, policy.DecisionAllowed, policyEnvelope, accepted)
-	if decisionErr != nil {
-		return nil, fmt.Errorf("failed to post decision: /n %v", decisionErr)
+	accepted, err := pol.Verify(ctx, policy.WithSubjectDigests(vo.subjectDigests), policy.WithVerifiedSource(verifiedSource))
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify policy: %w", err)
 	}
 
 	return accepted, nil
-}
-
-// this creates a policy decision and sends it as a cloud event to your decision log url, if provided
-func createPolicyDecision(vo verifyOptions, decision policy.Decision, policyEnvelope dsse.Envelope, evidence map[string][]source.VerifiedCollection) error {
-	if vo.decisionLogURL == "" {
-		return nil
-	}
-
-	policyEnvelopeBytes, err := json.Marshal(policyEnvelope)
-	if err != nil {
-		log.Errorf("failed to marshal policyEnvelope: %v", err)
-		return err
-	}
-
-	gid, err := gitoid.New(bytes.NewReader(policyEnvelopeBytes), gitoid.WithContentLength(int64(len(policyEnvelopeBytes))), gitoid.WithSha256())
-	if err != nil {
-		log.Errorf("failed to generate gitoid: %v", err)
-		return err
-	}
-
-	pd := policy.PolicyDecision{
-		Digests:        vo.subjectDigests,
-		Timestamp:      time.Now(), // TODO: Time Stamp Authority?
-		Decision:       decision,
-		PolicyGitoid:   string(gid.Bytes()),
-		EvidenceHashes: make([]string, len(evidence)),
-	}
-
-	num := 0
-	for _, stepEvidence := range evidence {
-		for _, e := range stepEvidence {
-			pd.EvidenceHashes[num] = string([]byte(e.Reference))
-		}
-	}
-
-	event := cloudevents.NewEvent()
-	c, err := cloudevents.NewClientHTTP()
-	if err != nil {
-		return fmt.Errorf("failed to create client, %v", err)
-	}
-
-	event.SetSource("/policy-decision")
-	event.SetType("com.testifysec.policydecision")
-	event.SetData(cloudevents.ApplicationJSON, fmt.Sprintf(`%#v`, pd))
-
-	log.Infof("Policy decision created: %v", pd.Decision)
-
-	err = postPolicyDecision(vo, event, c)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// this attempts to post the policy decision provided to the DecisionLogURL provided
-func postPolicyDecision(vo verifyOptions, event cloudevents.Event, c cloudevents.Client) error {
-	if vo.decisionLogURL == "" {
-		return nil
-	}
-	ctx := cloudevents.ContextWithTarget(context.Background(), vo.decisionLogURL)
-	log.Infof("Sending policy decision as payload of cloudevent to %v. Cloudevent payload: %s", vo.decisionLogURL, event)
-	if result := c.Send(ctx, event); cloudevents.IsUndelivered(result) || cloudevents.IsNACK(result) {
-		return fmt.Errorf("Failed to post policy decision to DecisionLogURL, %v", result)
-	} else {
-		log.Infof("sent: %v", event)
-		log.Infof("result: %v", result)
-		log.Info("Posted policy decision to DecisonLogURL successfully")
-		return nil
-	}
 }
