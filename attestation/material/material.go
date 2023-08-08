@@ -16,6 +16,7 @@ package material
 
 import (
 	"encoding/json"
+	"github.com/fkautz/omnitrail-go"
 
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/file"
@@ -45,6 +46,7 @@ type Option func(*Attestor)
 
 type Attestor struct {
 	materials map[string]cryptoutil.DigestSet
+	trail     omnitrail.Factory
 }
 
 func (a Attestor) Name() string {
@@ -69,7 +71,8 @@ func New(opts ...Option) *Attestor {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	materials, err := file.RecordArtifacts(ctx.WorkingDir(), nil, ctx.Hashes(), map[string]struct{}{})
+	a.trail = omnitrail.NewTrail()
+	materials, err := file.RecordArtifacts(ctx.WorkingDir(), nil, ctx.Hashes(), map[string]struct{}{}, a.trail)
 	if err != nil {
 		return err
 	}

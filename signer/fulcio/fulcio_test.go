@@ -181,7 +181,7 @@ func TestSigner(t *testing.T) {
 	ctx := context.Background()
 
 	// Create mock token
-	token := generateTestToken("foo@example.com", "")
+	token := generateTestToken("internal@example.com", "")
 
 	//pasre url to get hostname
 	hostname := strings.Split(url, ":")[0]

@@ -17,6 +17,7 @@ package product
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/fkautz/omnitrail-go"
 	"io"
 	"mime"
 	"net/http"
@@ -96,6 +97,7 @@ func WithExcludeGlob(glob string) Option {
 type Attestor struct {
 	products            map[string]attestation.Product
 	baseArtifacts       map[string]cryptoutil.DigestSet
+	trail               omnitrail.Factory
 	includeGlob         string
 	compiledIncludeGlob glob.Glob
 	excludeGlob         string
@@ -163,7 +165,8 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.compiledExcludeGlob = compiledExcludeGlob
 
 	a.baseArtifacts = ctx.Materials()
-	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{})
+	a.trail = omnitrail.NewTrail()
+	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, a.trail)
 	if err != nil {
 		return err
 	}
