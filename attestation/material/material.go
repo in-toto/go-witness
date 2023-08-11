@@ -15,7 +15,6 @@
 package material
 
 import (
-	"encoding/json"
 	"github.com/fkautz/omnitrail-go"
 
 	"github.com/testifysec/go-witness/attestation"
@@ -45,8 +44,8 @@ func init() {
 type Option func(*Attestor)
 
 type Attestor struct {
-	materials map[string]cryptoutil.DigestSet
-	trail     omnitrail.Factory
+	RecordedMaterials map[string]cryptoutil.DigestSet
+	OmniTrail         *omnitrail.Envelope
 }
 
 func (a Attestor) Name() string {
@@ -71,30 +70,17 @@ func New(opts ...Option) *Attestor {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	a.trail = omnitrail.NewTrail()
-	materials, err := file.RecordArtifacts(ctx.WorkingDir(), nil, ctx.Hashes(), map[string]struct{}{}, a.trail)
+	trail := omnitrail.NewTrail()
+	materials, err := file.RecordArtifacts(ctx.WorkingDir(), nil, ctx.Hashes(), map[string]struct{}{}, trail)
 	if err != nil {
 		return err
 	}
 
-	a.materials = materials
-	return nil
-}
-
-func (a *Attestor) MarshalJSON() ([]byte, error) {
-	return json.Marshal(a.materials)
-}
-
-func (a *Attestor) UnmarshalJSON(data []byte) error {
-	mats := make(map[string]cryptoutil.DigestSet)
-	if err := json.Unmarshal(data, &mats); err != nil {
-		return err
-	}
-
-	a.materials = mats
+	a.RecordedMaterials = materials
+	a.OmniTrail = trail.Envelope()
 	return nil
 }
 
 func (a *Attestor) Materials() map[string]cryptoutil.DigestSet {
-	return a.materials
+	return a.RecordedMaterials
 }
