@@ -56,9 +56,6 @@ type dummyAttestor struct {
 	name          string
 	predicateType string
 	runType       RunType
-	intOpt        int
-	strOpt        string
-	strSliceOpt   []string
 }
 
 func (a *dummyAttestor) Name() string {
