@@ -25,6 +25,7 @@ const (
 	AllowAllConstraint = "*"
 )
 
+// +kubebuilder:object:generate=true
 type CertConstraint struct {
 	CommonName    string   `json:"commonname"`
 	DNSNames      []string `json:"dnsnames"`

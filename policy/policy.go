@@ -24,23 +24,28 @@ import (
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/log"
 	"github.com/testifysec/go-witness/source"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const PolicyPredicate = "https://witness.testifysec.com/policy/v0.1"
 
+// +kubebuilder:object:generate=true
 type Policy struct {
-	Expires              time.Time            `json:"expires"`
+	Expires              metav1.Time          `json:"expires"`
 	Roots                map[string]Root      `json:"roots,omitempty"`
 	TimestampAuthorities map[string]Root      `json:"timestampauthorities,omitempty"`
 	PublicKeys           map[string]PublicKey `json:"publickeys,omitempty"`
 	Steps                map[string]Step      `json:"steps"`
 }
 
+// +kubebuilder:object:generate=true
 type Root struct {
 	Certificate   []byte   `json:"certificate"`
 	Intermediates [][]byte `json:"intermediates,omitempty"`
 }
 
+// +kubebuilder:object:generate=true
 type PublicKey struct {
 	KeyID string `json:"keyid"`
 	Key   []byte `json:"key"`
@@ -176,8 +181,8 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string][]
 		return nil, err
 	}
 
-	if time.Now().After(p.Expires) {
-		return nil, ErrPolicyExpired(p.Expires)
+	if time.Now().After(p.Expires.Time) {
+		return nil, ErrPolicyExpired(p.Expires.Time)
 	}
 
 	trustBundles, err := p.TrustBundles()
