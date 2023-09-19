@@ -17,6 +17,7 @@ package git
 import (
 	"crypto"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -75,7 +76,6 @@ type Attestor struct {
 	TreeHash       string               `json:"treehash,omitempty"`
 	Refs           []string             `json:"refs,omitempty"`
 	Tags           []Tag                `json:"tags,omitempty"`
-	hashes         []crypto.Hash
 }
 
 func New() *Attestor {
@@ -97,8 +97,6 @@ func (a *Attestor) RunType() attestation.RunType {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	a.hashes = ctx.Hashes()
-
 	repo, err := git.PlainOpenWithOptions(ctx.WorkingDir(), &git.PlainOpenOptions{
 		DetectDotGit: true,
 	})
@@ -109,6 +107,9 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	head, err := repo.Head()
 	if err != nil {
+		if strings.Contains(err.Error(), "reference not found") {
+			return nil
+		}
 		return err
 	}
 
@@ -219,6 +220,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subjects := make(map[string]cryptoutil.DigestSet)
+	hashes := []crypto.Hash{crypto.SHA256}
 
 	subjectName := fmt.Sprintf("commithash:%v", a.CommitHash)
 	subjects[subjectName] = cryptoutil.DigestSet{
@@ -230,7 +232,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 
 	//add author email
 	subjectName = fmt.Sprintf("authoremail:%v", a.AuthorEmail)
-	ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.AuthorEmail), a.hashes)
+	ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.AuthorEmail), hashes)
 	if err != nil {
 		return nil
 	}
@@ -239,7 +241,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 
 	//add committer email
 	subjectName = fmt.Sprintf("committeremail:%v", a.CommitterEmail)
-	ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(a.CommitterEmail), a.hashes)
+	ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(a.CommitterEmail), hashes)
 	if err != nil {
 		return nil
 	}
@@ -249,7 +251,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	//add parent hashes
 	for _, parentHash := range a.ParentHashes {
 		subjectName = fmt.Sprintf("parenthash:%v", parentHash)
-		ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(parentHash), a.hashes)
+		ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(parentHash), hashes)
 		if err != nil {
 			return nil
 		}
