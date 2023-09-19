@@ -32,6 +32,8 @@ import (
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/intoto"
 	"github.com/testifysec/go-witness/source"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func init() {
@@ -85,7 +87,7 @@ deny[msg] {
 }`)
 
 	policy := Policy{
-		Expires: time.Now().Add(1 * time.Hour),
+		Expires: metav1.NewTime(time.Now().Add(1 * time.Hour)),
 		PublicKeys: map[string]PublicKey{
 			keyID: {
 				KeyID: keyID,
@@ -187,7 +189,7 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 
 	policy := Policy{
-		Expires: time.Now().Add(1 * time.Hour),
+		Expires: metav1.NewTime(time.Now().Add(1 * time.Hour)),
 		PublicKeys: map[string]PublicKey{
 			keyID: {
 				KeyID: keyID,
