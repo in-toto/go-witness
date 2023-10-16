@@ -16,16 +16,16 @@ package witness
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 
+	"github.com/testifysec/go-witness/attestation"
+	"github.com/testifysec/go-witness/attestation/policyverify"
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
-	"github.com/testifysec/go-witness/policy"
+	"github.com/testifysec/go-witness/slsa"
 	"github.com/testifysec/go-witness/source"
-	"github.com/testifysec/go-witness/timestamp"
 )
 
 func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelope, error) {
@@ -40,96 +40,100 @@ func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelo
 }
 
 type verifyOptions struct {
-	policyEnvelope   dsse.Envelope
-	policyVerifiers  []cryptoutil.Verifier
-	collectionSource source.Sourcer
-	subjectDigests   []string
+	attestorOptions []policyverify.Option
+	runOptions      []RunOption
+	signers         []cryptoutil.Signer
 }
 
 type VerifyOption func(*verifyOptions)
 
-func VerifyWithSubjectDigests(subjectDigests []cryptoutil.DigestSet) VerifyOption {
+// VerifyWithSigners will configure the provided signers to be used to sign a DSSE envelope with the resulting
+// policyverify attestor. See VerifyWithRunOptions for additional options.
+func VerifyWithSigners(signers ...cryptoutil.Signer) VerifyOption {
 	return func(vo *verifyOptions) {
-		for _, set := range subjectDigests {
-			for _, digest := range set {
-				vo.subjectDigests = append(vo.subjectDigests, digest)
-			}
-		}
+		vo.signers = append(vo.signers, signers...)
 	}
 }
 
+// VerifyWithSubjectDigests configured the "seed" subject digests to start evaluating a policy. This is typically
+// the digest of the software artifact or some other identifying digest.
+func VerifyWithSubjectDigests(subjectDigests []cryptoutil.DigestSet) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.attestorOptions = append(vo.attestorOptions, policyverify.VerifyWithSubjectDigests(subjectDigests))
+	}
+}
+
+// VerifyWithCollectionSource configures the policy engine's sources for signed attestation collections.
+// For example: disk or archivista are two typical sources.
 func VerifyWithCollectionSource(source source.Sourcer) VerifyOption {
 	return func(vo *verifyOptions) {
-		vo.collectionSource = source
+		vo.attestorOptions = append(vo.attestorOptions, policyverify.VerifyWithCollectionSource(source))
 	}
+}
+
+// VerifyWithAttestorOptions forwards the provided options to the policyverify attestor.
+func VerifyWithAttestorOptions(opts ...policyverify.Option) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.attestorOptions = append(vo.attestorOptions, opts...)
+	}
+}
+
+// VerifyWithRunOptions forwards the provided RunOptions to the Run function that Verify calls.
+func VerifyWithRunOptions(opts ...RunOption) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.runOptions = append(vo.runOptions, opts...)
+	}
+}
+
+type VerifyResult struct {
+	RunResult
+	VerificationSummary slsa.VerificationSummary
 }
 
 // Verify verifies a set of attestations against a provided policy. The set of attestations that satisfy the policy will be returned
 // if verifiation is successful.
-func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (map[string][]source.VerifiedCollection, error) {
-	vo := verifyOptions{
-		policyEnvelope:  policyEnvelope,
-		policyVerifiers: policyVerifiers,
-	}
-
+func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (VerifyResult, error) {
+	vo := verifyOptions{}
 	for _, opt := range opts {
 		opt(&vo)
 	}
 
-	if _, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...)); err != nil {
-		return nil, fmt.Errorf("could not verify policy: %w", err)
+	vo.attestorOptions = append(vo.attestorOptions, policyverify.VerifyWithPolicyEnvelope(policyEnvelope), policyverify.VerifyWithPolicyVerifiers(policyVerifiers))
+	if len(vo.signers) > 0 {
+		vo.runOptions = append(vo.runOptions, RunWithSigners(vo.signers...))
+	} else {
+		vo.runOptions = append(vo.runOptions, RunWithInsecure(true))
 	}
 
-	pol := policy.Policy{}
-	if err := json.Unmarshal(vo.policyEnvelope.Payload, &pol); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal policy from envelope: %w", err)
-	}
-
-	pubKeysById, err := pol.PublicKeyVerifiers()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pulic keys from policy: %w", err)
-	}
-
-	pubkeys := make([]cryptoutil.Verifier, 0)
-	for _, pubkey := range pubKeysById {
-		pubkeys = append(pubkeys, pubkey)
-	}
-
-	trustBundlesById, err := pol.TrustBundles()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load policy trust bundles: %w", err)
-	}
-
-	roots := make([]*x509.Certificate, 0)
-	intermediates := make([]*x509.Certificate, 0)
-	for _, trustBundle := range trustBundlesById {
-		roots = append(roots, trustBundle.Root)
-		intermediates = append(intermediates, intermediates...)
-	}
-
-	timestampAuthoritiesById, err := pol.TimestampAuthorityTrustBundles()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load policy timestamp authorities: %w", err)
-	}
-
-	timestampVerifiers := make([]dsse.TimestampVerifier, 0)
-	for _, timestampAuthority := range timestampAuthoritiesById {
-		certs := []*x509.Certificate{timestampAuthority.Root}
-		certs = append(certs, timestampAuthority.Intermediates...)
-		timestampVerifiers = append(timestampVerifiers, timestamp.NewVerifier(timestamp.VerifyWithCerts(certs)))
-	}
-
-	verifiedSource := source.NewVerifiedSource(
-		vo.collectionSource,
-		dsse.VerifyWithVerifiers(pubkeys...),
-		dsse.VerifyWithRoots(roots...),
-		dsse.VerifyWithIntermediates(intermediates...),
-		dsse.VerifyWithTimestampVerifiers(timestampVerifiers...),
+	// hacky solution to ensure the verification attestor is run through the attestation context
+	vo.runOptions = append(vo.runOptions,
+		RunWithAttestors(
+			[]attestation.Attestor{
+				policyverify.New(vo.attestorOptions...),
+			},
+		),
 	)
-	accepted, err := pol.Verify(ctx, policy.WithSubjectDigests(vo.subjectDigests), policy.WithVerifiedSource(verifiedSource))
+
+	runResult, err := Run("policyverify", vo.runOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to verify policy: %w", err)
+		return VerifyResult{}, err
 	}
 
-	return accepted, nil
+	vr := VerifyResult{
+		RunResult: runResult,
+	}
+
+	for _, att := range runResult.Collection.Attestations {
+		if att.Type == slsa.VerificationSummaryPredicate {
+			verificationAttestor, ok := att.Attestation.(*policyverify.Attestor)
+			if !ok {
+				return VerifyResult{}, fmt.Errorf("unknown attestor %T", att.Attestation)
+			}
+
+			vr.VerificationSummary = verificationAttestor.VerificationSummary
+			break
+		}
+	}
+
+	return vr, nil
 }
