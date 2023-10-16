@@ -185,7 +185,11 @@ func checkVerifyOpts(vo *verifyOptions) error {
 	return nil
 }
 
-func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string][]source.VerifiedCollection, error) {
+type PolicyResult struct {
+	EvidenceByStep map[string][]source.VerifiedCollection
+}
+
+func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (PolicyResult, error) {
 	vo := &verifyOptions{
 		searchDepth: 3,
 	}
@@ -195,16 +199,16 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string][]
 	}
 
 	if err := checkVerifyOpts(vo); err != nil {
-		return nil, err
+		return PolicyResult{}, err
 	}
 
 	if time.Now().After(p.Expires.Time) {
-		return nil, ErrPolicyExpired(p.Expires.Time)
+		return PolicyResult{}, ErrPolicyExpired(p.Expires.Time)
 	}
 
 	trustBundles, err := p.TrustBundles()
 	if err != nil {
-		return nil, err
+		return PolicyResult{}, err
 	}
 
 	attestationsByStep := make(map[string][]string)
@@ -219,7 +223,7 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string][]
 		for stepName, step := range p.Steps {
 			statements, err := vo.verifiedSource.Search(ctx, stepName, vo.subjectDigests, attestationsByStep[stepName])
 			if err != nil {
-				return nil, err
+				return PolicyResult{}, err
 			}
 
 			approvedCollections := step.checkFunctionaries(statements, trustBundles)
@@ -235,11 +239,11 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string][]
 		}
 
 		if accepted, err := p.verifyArtifacts(passedByStep); err == nil {
-			return accepted, nil
+			return PolicyResult{EvidenceByStep: accepted}, nil
 		}
 	}
 
-	return nil, ErrPolicyDenied{Reasons: []string{"failed to find set of attestations that satisfies the policy"}}
+	return PolicyResult{}, ErrPolicyDenied{Reasons: []string{"failed to find set of attestations that satisfies the policy"}}
 }
 
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for
