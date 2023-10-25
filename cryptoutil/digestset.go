@@ -114,9 +114,9 @@ func (first DigestSet) Equal(second DigestSet) bool {
 	return hasMatchingDigest
 }
 
-func (ds DigestSet) ToNameMap() (map[string]string, error) {
+func (first DigestSet) ToNameMap() (map[string]string, error) {
 	nameMap := make(map[string]string)
-	for hash, digest := range ds {
+	for hash, digest := range first {
 		name, ok := hashNames[hash]
 		if !ok {
 			return nameMap, ErrUnsupportedHash(hash.String())
@@ -190,8 +190,8 @@ func CalculateDigestSetFromFile(path string, hashes []crypto.Hash) (DigestSet, e
 	return CalculateDigestSet(file, hashes)
 }
 
-func (ds DigestSet) MarshalJSON() ([]byte, error) {
-	nameMap, err := ds.ToNameMap()
+func (first DigestSet) MarshalJSON() ([]byte, error) {
+	nameMap, err := first.ToNameMap()
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (ds DigestSet) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nameMap)
 }
 
-func (ds *DigestSet) UnmarshalJSON(data []byte) error {
+func (first *DigestSet) UnmarshalJSON(data []byte) error {
 	nameMap := make(map[string]string)
 	err := json.Unmarshal(data, &nameMap)
 	if err != nil {
@@ -211,7 +211,7 @@ func (ds *DigestSet) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	*ds = newDs
+	*first = newDs
 	return nil
 }
 
