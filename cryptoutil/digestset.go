@@ -96,9 +96,9 @@ func HashFromString(name string) (crypto.Hash, error) {
 // Equal returns true if every digest for hash functions both artifacts have in common are equal.
 // If the two artifacts don't have any digests from common hash functions, equal will return false.
 // If any digest from common hash functions differ between the two artifacts, equal will return false.
-func (first DigestSet) Equal(second DigestSet) bool {
+func (ds *DigestSet) Equal(second DigestSet) bool {
 	hasMatchingDigest := false
-	for hash, digest := range first {
+	for hash, digest := range *ds {
 		otherDigest, ok := second[hash]
 		if !ok {
 			continue
@@ -114,9 +114,9 @@ func (first DigestSet) Equal(second DigestSet) bool {
 	return hasMatchingDigest
 }
 
-func (first DigestSet) ToNameMap() (map[string]string, error) {
+func (ds *DigestSet) ToNameMap() (map[string]string, error) {
 	nameMap := make(map[string]string)
-	for hash, digest := range first {
+	for hash, digest := range *ds {
 		name, ok := hashNames[hash]
 		if !ok {
 			return nameMap, ErrUnsupportedHash(hash.String())
@@ -190,8 +190,8 @@ func CalculateDigestSetFromFile(path string, hashes []crypto.Hash) (DigestSet, e
 	return CalculateDigestSet(file, hashes)
 }
 
-func (first DigestSet) MarshalJSON() ([]byte, error) {
-	nameMap, err := first.ToNameMap()
+func (ds DigestSet) MarshalJSON() ([]byte, error) {
+	nameMap, err := ds.ToNameMap()
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (first DigestSet) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nameMap)
 }
 
-func (first *DigestSet) UnmarshalJSON(data []byte) error {
+func (ds *DigestSet) UnmarshalJSON(data []byte) error {
 	nameMap := make(map[string]string)
 	err := json.Unmarshal(data, &nameMap)
 	if err != nil {
@@ -211,7 +211,7 @@ func (first *DigestSet) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	*first = newDs
+	*ds = newDs
 	return nil
 }
 
