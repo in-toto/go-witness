@@ -16,7 +16,6 @@ package source
 
 import (
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"testing"
 
@@ -25,10 +24,10 @@ import (
 	intoto "github.com/testifysec/go-witness/intoto"
 )
 
-func TestLoadFile(t *testing.T) {
+func TestLoadEnvelope(t *testing.T) {
 	predicate, err := json.Marshal(attestation.Collection{})
 	if err != nil {
-		fmt.Errorf("failed to marshal predicate, err = %v", err)
+		t.Fatalf("failed to marshal predicate, err = %v", err)
 	}
 	tests := []struct {
 		name                 string
