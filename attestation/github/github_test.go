@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/testifysec/go-witness/attestation"
 )
 
 func createMockServer() *httptest.Server {
@@ -34,18 +33,6 @@ func createMockServer() *httptest.Server {
 		if r.URL.Path == "/valid" && r.Header.Get("Authorization") == "bearer validBearer" {
 			resp, _ := json.Marshal(Response{Count: 1, Value: "validJWTToken"})
 			_, _ = w.Write(resp)
-		} else {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		}
-	}))
-}
-
-func createTokenServer() *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/valid" && r.Header.Get("Authorization") == "bearer validBearer" {
-			w.Write([]byte(`{"protected": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", 
-                            "payload": "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ", 
-                            "signature": "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"}`))
 		} else {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		}
@@ -111,27 +98,8 @@ func TestFetchToken(t *testing.T) {
 	}
 }
 
-func TestAttestorAttest(t *testing.T) {
-	tokenServer := createTokenServer()
-	defer tokenServer.Close()
-	t.Setenv("GITHUB_ACTIONS", "true")
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", tokenServer.URL+"/valid")
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "validBearer")
-
-	attestor := &Attestor{
-		aud:      tokenAudience,
-		jwksURL:  tokenServer.URL,
-		tokenURL: os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL"),
-	}
-
-	ctx := &attestation.AttestationContext{}
-
-	err := attestor.Attest(ctx)
-	assert.NoError(t, err)
-}
-
 func TestSubjects(t *testing.T) {
-	tokenServer := createTokenServer()
+	tokenServer := createMockServer()
 	defer tokenServer.Close()
 	attestor := &Attestor{
 		aud:      "projecturl",

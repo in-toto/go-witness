@@ -25,7 +25,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/attestation/jwt"
 	"github.com/testifysec/go-witness/cryptoutil"
@@ -117,16 +116,16 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	jwtString, err := fetchToken(a.tokenURL, os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN"), "witness")
 	if err != nil {
-		return fmt.Errorf("error on fething token %w", err)
+		return fmt.Errorf("error on fetching token %w", err)
 	}
 
-	spew.Dump(jwtString)
+	if jwtString == "" {
+		return fmt.Errorf("empty JWT string")
+	}
 
-	if jwtString != "" {
-		a.JWT = jwt.New(jwt.WithToken(jwtString), jwt.WithJWKSUrl(a.jwksURL))
-		if err := a.JWT.Attest(ctx); err != nil {
-			return fmt.Errorf("error on attesting jwt %w", err)
-		}
+	a.JWT = jwt.New(jwt.WithToken(jwtString), jwt.WithJWKSUrl(a.jwksURL))
+	if err := a.JWT.Attest(ctx); err != nil {
+		return fmt.Errorf("failed to attest github jwt: %w", err)
 	}
 
 	a.CIServerUrl = os.Getenv("GITHUB_SERVER_URL")
