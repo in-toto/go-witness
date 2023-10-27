@@ -173,7 +173,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return fmt.Errorf("failed to verify policy: %w", err)
 	}
 
-	a.VerificationSummary, err = verificationSummaryFromResults(a.policyEnvelope, policyResult, accepted)
+	a.VerificationSummary, err = verificationSummaryFromResults(ctx, a.policyEnvelope, policyResult, accepted)
 	if err != nil {
 		return fmt.Errorf("failed to generate verification summary: %w", err)
 	}
@@ -181,15 +181,11 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	return policyErr
 }
 
-func calculateDigest(b []byte) (cryptoutil.DigestSet, error) {
-	return cryptoutil.CalculateDigestSetFromBytes(b, []crypto.Hash{crypto.SHA256})
-}
-
-func verificationSummaryFromResults(policyEnvelope dsse.Envelope, policyResult policy.PolicyResult, accepted bool) (slsa.VerificationSummary, error) {
+func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyEnvelope dsse.Envelope, policyResult policy.PolicyResult, accepted bool) (slsa.VerificationSummary, error) {
 	inputAttestations := make([]slsa.ResourceDescriptor, 0, len(policyResult.EvidenceByStep))
 	for _, input := range policyResult.EvidenceByStep {
 		for _, attestation := range input {
-			digest, err := calculateDigest(attestation.Envelope.Payload)
+			digest, err := cryptoutil.CalculateDigestSetFromBytes(attestation.Envelope.Payload, ctx.Hashes())
 			if err != nil {
 				log.Debugf("failed to calculate evidence hash: %v", err)
 				continue
@@ -202,7 +198,7 @@ func verificationSummaryFromResults(policyEnvelope dsse.Envelope, policyResult p
 		}
 	}
 
-	policyDigest, err := calculateDigest(policyEnvelope.Payload)
+	policyDigest, err := cryptoutil.CalculateDigestSetFromBytes(policyEnvelope.Payload, ctx.Hashes())
 	if err != nil {
 		return slsa.VerificationSummary{}, fmt.Errorf("failed to calculate policy digest: %w", err)
 	}

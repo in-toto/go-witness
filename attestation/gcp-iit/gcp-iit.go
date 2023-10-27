@@ -175,7 +175,7 @@ func (a *Attestor) getInstanceData() {
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subjects := make(map[string]cryptoutil.DigestSet)
-	hashes := []crypto.Hash{crypto.SHA256}
+	hashes := []cryptoutil.DigestValue{{Hash: crypto.SHA256}}
 	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.InstanceID), hashes); err == nil {
 		subjects[fmt.Sprintf("instanceid:%v", a.InstanceID)] = ds
 	} else {
