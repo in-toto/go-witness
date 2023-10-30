@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/testifysec/go-witness/dsse"
 )
@@ -33,16 +35,16 @@ func (e ErrDuplicateReference) Error() string {
 type MemorySource struct {
 	envelopesByReference       map[string]CollectionEnvelope
 	referencesByCollectionName map[string][]string
-	subjectDigestsByReference  map[string]map[string]struct{}
-	attestationsByReference    map[string]map[string]struct{}
+	referencesBySubjectDigest  map[string][]string
+	attestationsByReference    map[string]struct{}
 }
 
 func NewMemorySource() *MemorySource {
 	return &MemorySource{
 		envelopesByReference:       make(map[string]CollectionEnvelope),
 		referencesByCollectionName: make(map[string][]string),
-		subjectDigestsByReference:  make(map[string]map[string]struct{}),
-		attestationsByReference:    make(map[string]map[string]struct{}),
+		referencesBySubjectDigest:  make(map[string][]string),
+		attestationsByReference:    make(map[string]struct{}),
 	}
 }
 
@@ -86,60 +88,59 @@ func (s *MemorySource) LoadEnvelope(reference string, env dsse.Envelope) error {
 
 	s.envelopesByReference[reference] = collEnv
 	s.referencesByCollectionName[collEnv.Collection.Name] = append(s.referencesByCollectionName[collEnv.Collection.Name], reference)
-	subDigestIndex := make(map[string]struct{})
+
+	// Add the reference to the map of references by subject digest for each subject in the statement
 	for _, sub := range collEnv.Statement.Subject {
 		for _, digest := range sub.Digest {
-			subDigestIndex[digest] = struct{}{}
+			s.referencesBySubjectDigest[digest] = append(s.referencesBySubjectDigest[digest], reference)
 		}
 	}
 
-	s.subjectDigestsByReference[reference] = subDigestIndex
-	attestationIndex := make(map[string]struct{})
+	// Sort the attestations in the collection envelope by their type
+	sort.Slice(collEnv.Collection.Attestations, func(i, j int) bool {
+		return collEnv.Collection.Attestations[i].Attestation.Type() < collEnv.Collection.Attestations[j].Attestation.Type()
+	})
+
+	// Compress the attestations into a key for quick lookup
+	attkey := ""
 	for _, att := range collEnv.Collection.Attestations {
-		attestationIndex[att.Attestation.Type()] = struct{}{}
+		attkey += att.Attestation.Type()
 	}
 
-	s.attestationsByReference[reference] = attestationIndex
+	// Add the attestation key to the map of attestations by reference
+	s.attestationsByReference[reference+attkey] = struct{}{}
 	return nil
 }
 
 func (s *MemorySource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
-	matches := make([]CollectionEnvelope, 0)
-	for _, potentialMatchReference := range s.referencesByCollectionName[collectionName] {
-		env, ok := s.envelopesByReference[potentialMatchReference]
-		if !ok {
+	// Initialize an empty slice to store matching envelopes
+	matches := []CollectionEnvelope{}
+
+	// Sort attestations and join them into a key
+	sort.Strings(attestations)
+	attestationKey := strings.Join(attestations, "")
+
+	// Initialize a map to store potential matches
+	potentialMatches := map[string]struct{}{}
+
+	// Populate the map with references from subject digests
+	for _, subjectDigest := range subjectDigests {
+		for _, reference := range s.referencesBySubjectDigest[subjectDigest] {
+			potentialMatches[reference] = struct{}{}
+		}
+	}
+
+	// Iterate over potential matches and check if they exist in the envelopes by reference
+	for reference := range potentialMatches {
+		envelope, envelopeExists := s.envelopesByReference[reference]
+
+		// Check if all the expected attestations appear in the collection and the envelope exist in the memory source
+		if _, containsNecessaryAttestations := s.attestationsByReference[reference+attestationKey]; !containsNecessaryAttestations || !envelopeExists {
 			continue
 		}
 
-		// make sure at least one of the subjects digests exists on the potential matches
-		subjectMatchFound := false
-		indexSubjects := s.subjectDigestsByReference[potentialMatchReference]
-		for _, checkDigest := range subjectDigests {
-			if _, ok := indexSubjects[checkDigest]; ok {
-				subjectMatchFound = true
-				break
-			}
-		}
-
-		if !subjectMatchFound {
-			continue
-		}
-
-		// make sure all the expected attestations appear in the collection
-		attestationsMatched := true
-		indexAttestations := s.attestationsByReference[potentialMatchReference]
-		for _, checkAttestation := range attestations {
-			if _, ok := indexAttestations[checkAttestation]; !ok {
-				attestationsMatched = false
-				break
-			}
-		}
-
-		if !attestationsMatched {
-			continue
-		}
-
-		matches = append(matches, env)
+		// If all checks pass, append the envelope to matches
+		matches = append(matches, envelope)
 	}
 
 	return matches, nil
