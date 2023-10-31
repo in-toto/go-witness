@@ -20,8 +20,6 @@ import (
 	"fmt"
 
 	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/attestation/environment"
-	"github.com/testifysec/go-witness/attestation/git"
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
 	"github.com/testifysec/go-witness/intoto"
@@ -86,9 +84,8 @@ type RunResult struct {
 
 func Run(stepName string, opts ...RunOption) (RunResult, error) {
 	ro := runOptions{
-		stepName:  stepName,
-		insecure:  false,
-		attestors: []attestation.Attestor{environment.New(), git.New()},
+		stepName: stepName,
+		insecure: false,
 	}
 
 	for _, opt := range opts {
