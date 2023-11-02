@@ -234,7 +234,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return fmt.Errorf("failed to generate verification summary: %w", err)
 	}
 
-	return policyErr
+	return nil
 }
 
 func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyEnvelope dsse.Envelope, policyResult policy.PolicyResult, accepted bool) (slsa.VerificationSummary, error) {
