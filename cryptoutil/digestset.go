@@ -85,20 +85,20 @@ func (dv DigestValue) New() hash.Hash {
 
 type DigestSet map[DigestValue]string
 
-func HashToString(h crypto.Hash) (string, error) {
-	if name, ok := hashNames[DigestValue{Hash: h}]; ok {
+func DigestValueToString(dv DigestValue) (string, error) {
+	if name, ok := hashNames[dv]; ok {
 		return name, nil
 	}
 
-	return "", ErrUnsupportedHash(h.String())
+	return "", ErrUnsupportedHash(dv.Hash.String())
 }
 
-func HashFromString(name string) (crypto.Hash, error) {
-	if hash, ok := hashesByName[name]; ok {
-		return hash.Hash, nil
+func DigestValueFromString(name string) (DigestValue, error) {
+	if dv, ok := hashesByName[name]; ok {
+		return dv, nil
 	}
 
-	return crypto.Hash(0), ErrUnsupportedHash(name)
+	return DigestValue{}, ErrUnsupportedHash(name)
 }
 
 // Equal returns true if every digest for hash functions both artifacts have in common are equal.

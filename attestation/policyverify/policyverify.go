@@ -19,11 +19,13 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
+	"github.com/testifysec/go-witness/intoto"
 	"github.com/testifysec/go-witness/log"
 	"github.com/testifysec/go-witness/policy"
 	"github.com/testifysec/go-witness/slsa"
@@ -48,6 +50,7 @@ type Attestor struct {
 	policyVerifiers  []cryptoutil.Verifier
 	collectionSource source.Sourcer
 	subjectDigests   []string
+	addtlSubjects    map[string]cryptoutil.DigestSet
 }
 
 type Option func(*Attestor)
@@ -81,7 +84,7 @@ func VerifyWithCollectionSource(source source.Sourcer) Option {
 }
 
 func New(opts ...Option) *Attestor {
-	a := &Attestor{}
+	a := &Attestor{addtlSubjects: make(map[string]cryptoutil.DigestSet)}
 	for _, opt := range opts {
 		opt(a)
 	}
@@ -110,6 +113,10 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	}
 
 	subjects[fmt.Sprintf("policy:%v", a.VerificationSummary.Policy.URI)] = a.VerificationSummary.Policy.Digest
+	for name, ds := range a.addtlSubjects {
+		subjects[name] = ds
+	}
+
 	return subjects
 }
 
@@ -178,7 +185,90 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return fmt.Errorf("failed to generate verification summary: %w", err)
 	}
 
+	a.findRelevantSubjects(policyResult.EvidenceByStep)
 	return nil
+}
+
+// findRelevantSubjects will find any image tags in attestations that passed our policy check.
+// we do this by searching the subject digests the user tested the policy against, and if we find
+// a collection with OCI subjects for an imageid that matches one of the provided subject digests,
+// we grab the imagetag subjects off of that attestation.
+// todo: we need a better solution for this
+func (a *Attestor) findRelevantSubjects(evidenceByStep map[string][]source.VerifiedCollection) {
+	const imageTagSubjectPrefix = "https://witness.dev/attestations/oci/v0.1/imagetag:"
+	const imageIdSubjectPrefix = "https://witness.dev/attestations/oci/v0.1/imageid:"
+	const githubProjectPrefix = "https://witness.dev/attestations/github/v0.1/projecturl:"
+	const gitlabProjectPrefix = "https://witness.dev/attestations/gitlab/v0.1/projecturl:"
+
+	for _, collections := range evidenceByStep {
+		for _, collection := range collections {
+			candidates := make([]intoto.Subject, 0)
+			matchedSubject := false
+
+			// search through every subject on the in-toto statment. if we find imagetags, we set them aside as possible candidates.
+			// if we find an imageid subject that matches, we consider all the candidates to be matching subjects and return them
+			for _, subject := range collection.Statement.Subject {
+				// if we find an image tag subject, add it to the list of candidates
+				if strings.HasPrefix(subject.Name, imageTagSubjectPrefix) {
+					candidates = append(candidates, intoto.Subject{
+						Name:   fmt.Sprintf("imagetag:%v", strings.TrimPrefix(subject.Name, imageTagSubjectPrefix)),
+						Digest: subject.Digest,
+					})
+				}
+
+				if strings.HasPrefix(subject.Name, githubProjectPrefix) {
+					candidates = append(candidates, intoto.Subject{
+						Name:   fmt.Sprintf("projecturl:%v", strings.TrimPrefix(subject.Name, githubProjectPrefix)),
+						Digest: subject.Digest,
+					})
+				}
+
+				if strings.HasPrefix(subject.Name, gitlabProjectPrefix) {
+					candidates = append(candidates, intoto.Subject{
+						Name:   fmt.Sprintf("projecturl:%v", strings.TrimPrefix(subject.Name, gitlabProjectPrefix)),
+						Digest: subject.Digest,
+					})
+				}
+
+				// if we find an imageid subject, check to see if any the digests we verified match the imageid
+				if strings.HasPrefix(subject.Name, imageIdSubjectPrefix) {
+					for _, imageIdDigest := range subject.Digest {
+						for _, testImageIdDigest := range a.subjectDigests {
+							if imageIdDigest == testImageIdDigest {
+								matchedSubject = true
+								candidates = append(candidates, intoto.Subject{
+									Name:   fmt.Sprintf("imageid:%v", testImageIdDigest),
+									Digest: subject.Digest,
+								})
+							}
+						}
+
+						// if we found a matching imageid subject with one of our test subject digests, stop looking
+						if matchedSubject {
+							break
+						}
+					}
+				}
+			}
+
+			// after we've checked all the subjects, if we found a match, add our candidates to our additional subjects
+			if matchedSubject {
+				for _, candidate := range candidates {
+					ds := cryptoutil.DigestSet{}
+					for hash, value := range candidate.Digest {
+						digestValue, err := cryptoutil.DigestValueFromString(hash)
+						if err != nil {
+							continue
+						}
+
+						ds[digestValue] = value
+					}
+
+					a.addtlSubjects[candidate.Name] = ds
+				}
+			}
+		}
+	}
 }
 
 func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyEnvelope dsse.Envelope, policyResult policy.PolicyResult, accepted bool) (slsa.VerificationSummary, error) {

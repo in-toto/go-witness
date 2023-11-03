@@ -61,7 +61,7 @@ func (gh *gitoidHasher) Reset() {
 
 // Size returns the number of bytes Sum will return.
 func (gh *gitoidHasher) Size() int {
-	hashName, err := HashToString(gh.hash)
+	hashName, err := DigestValueToString(DigestValue{Hash: gh.hash})
 	if err != nil {
 		return 0
 	}
