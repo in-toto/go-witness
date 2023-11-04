@@ -58,6 +58,13 @@ type WitnessVerifyInfo struct {
 	InitialSubjectDigests []cryptoutil.DigestSet `json:"initialsubjectdigests,omitempty"`
 	// AdditionalSubjects is a set of subjects that were used during the verification process.
 	AdditionalSubjects map[string]cryptoutil.DigestSet `json:"additionalsubjects,omitempty"`
+	// RejectedAttestations is a list of the attestations that were rejected by our policy and a reason why
+	RejectedAttestations []RejectedAttestation `json:"rejectedattestations,omitempty"`
+}
+
+type RejectedAttestation struct {
+	slsa.ResourceDescriptor `json:"resourcedescriptor"`
+	ReasonRejected          string `json:"reasonrejected"`
 }
 
 type Option func(*Attestor)
@@ -179,20 +186,18 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		dsse.VerifyWithTimestampVerifiers(timestampVerifiers...),
 	)
 
-	accepted := true
-	policyResult, policyErr := pol.Verify(ctx.Context(), policy.WithSubjectDigests(a.WitnessVerifyInfo.InitialSubjectDigests), policy.WithVerifiedSource(verifiedSource))
-	if _, ok := policyErr.(policy.ErrPolicyDenied); ok {
-		accepted = false
-	} else if policyErr != nil {
+	policyResult, err := pol.Verify(ctx.Context(), policy.WithSubjectDigests(a.WitnessVerifyInfo.InitialSubjectDigests), policy.WithVerifiedSource(verifiedSource))
+	if err != nil {
 		return fmt.Errorf("failed to verify policy: %w", err)
 	}
 
-	a.VerificationSummary, err = verificationSummaryFromResults(ctx, a.policyEnvelope, policyResult, accepted)
+	a.VerificationSummary, err = verificationSummaryFromResults(ctx, a.policyEnvelope, policyResult)
 	if err != nil {
 		return fmt.Errorf("failed to generate verification summary: %w", err)
 	}
 
-	a.findInterestingSubjects(policyResult.EvidenceByStep)
+	a.WitnessVerifyInfo.AdditionalSubjects = findInterestingSubjects(policyResult, a.WitnessVerifyInfo.InitialSubjectDigests)
+	a.WitnessVerifyInfo.RejectedAttestations = rejectedAttestations(ctx, policyResult)
 	return nil
 }
 
@@ -200,7 +205,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 // for interesting subjects, and package them onto the VSA as additional subjects. This is used
 // primarily to link a VSA back to a specific github or gitlab project, or an artifact hash to
 // a specific tagged image.
-func (a *Attestor) findInterestingSubjects(evidenceByStep map[string][]source.VerifiedCollection) {
+func findInterestingSubjects(policyResult policy.PolicyResult, initialSubjectDigests []cryptoutil.DigestSet) map[string]cryptoutil.DigestSet {
 	// imageId is especially interesting, and we only treat the other interesting subject candidates
 	// as valid if we get a match on the imageId
 	const imageIdSubjectPrefix = "https://witness.dev/attestations/oci/v0.1/imageid:"
@@ -214,8 +219,19 @@ func (a *Attestor) findInterestingSubjects(evidenceByStep map[string][]source.Ve
 		"https://witness.dev/attestations/git/v0.1/commithash:":    "commithash",
 	}
 
-	for _, collections := range evidenceByStep {
-		for _, collection := range collections {
+	foundSubjects := make(map[string]cryptoutil.DigestSet)
+	for _, stepResults := range policyResult.ResultsByStep {
+		// if our policy passed, we only care about interesting subjects on attestations that satisfied our policy.
+		// if it didn't, though, we want information off the failed ones.
+		collectionsToSearch := stepResults.Passed
+		if !policyResult.Passed {
+			collectionsToSearch = make([]source.VerifiedCollection, 0)
+			for _, rejects := range stepResults.Rejected {
+				collectionsToSearch = append(collectionsToSearch, rejects.Collection)
+			}
+		}
+
+		for _, collection := range collectionsToSearch {
 			candidates := make([]intoto.Subject, 0)
 			matchedSubject := false
 
@@ -234,7 +250,7 @@ func (a *Attestor) findInterestingSubjects(evidenceByStep map[string][]source.Ve
 					// if we find an imageid subject, check to see if any the digests we verified match the imageid
 					if strings.HasPrefix(subject.Name, imageIdSubjectPrefix) {
 						for _, imageIdDigest := range subject.Digest {
-							for _, testDigestSet := range a.WitnessVerifyInfo.InitialSubjectDigests {
+							for _, testDigestSet := range initialSubjectDigests {
 								for _, testImageIdDigest := range testDigestSet {
 									if imageIdDigest == testImageIdDigest {
 										matchedSubject = true
@@ -267,38 +283,25 @@ func (a *Attestor) findInterestingSubjects(evidenceByStep map[string][]source.Ve
 							ds[digestValue] = value
 						}
 
-						a.WitnessVerifyInfo.AdditionalSubjects[candidate.Name] = ds
+						foundSubjects[candidate.Name] = ds
 					}
 				}
 			}
 		}
 	}
+
+	return foundSubjects
 }
 
-func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyEnvelope dsse.Envelope, policyResult policy.PolicyResult, accepted bool) (slsa.VerificationSummary, error) {
-	inputAttestations := make([]slsa.ResourceDescriptor, 0, len(policyResult.EvidenceByStep))
-	for _, input := range policyResult.EvidenceByStep {
-		for _, attestation := range input {
-			digest, err := cryptoutil.CalculateDigestSetFromBytes(attestation.Envelope.Payload, ctx.Hashes())
-			if err != nil {
-				log.Debugf("failed to calculate evidence hash: %v", err)
-				continue
-			}
-
-			inputAttestations = append(inputAttestations, slsa.ResourceDescriptor{
-				URI:    attestation.Reference,
-				Digest: digest,
-			})
-		}
-	}
-
+func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyEnvelope dsse.Envelope, policyResult policy.PolicyResult) (slsa.VerificationSummary, error) {
+	inputAttestations := inputAttestationsFromResults(ctx, policyResult)
 	policyDigest, err := cryptoutil.CalculateDigestSetFromBytes(policyEnvelope.Payload, ctx.Hashes())
 	if err != nil {
 		return slsa.VerificationSummary{}, fmt.Errorf("failed to calculate policy digest: %w", err)
 	}
 
 	verificationResult := slsa.FailedVerificationResult
-	if accepted {
+	if policyResult.Passed {
 		verificationResult = slsa.PassedVerificationResult
 	}
 
@@ -314,4 +317,47 @@ func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyE
 		InputAttestations:  inputAttestations,
 		VerificationResult: verificationResult,
 	}, nil
+}
+
+func inputAttestationsFromResults(ctx *attestation.AttestationContext, policyResult policy.PolicyResult) []slsa.ResourceDescriptor {
+	inputAttestations := make([]slsa.ResourceDescriptor, 0)
+	for _, input := range policyResult.ResultsByStep {
+		// if our policy passed we'll only record our passed attestations as input attestations. if it didn't pass, we'll record every attestation we tried to use.
+		if policyResult.Passed {
+			for _, coll := range input.Passed {
+				inputAttestations = append(inputAttestations, slsaResourceDescriptorFromAttestation(ctx, coll))
+			}
+		} else {
+			for _, reject := range input.Rejected {
+				inputAttestations = append(inputAttestations, slsaResourceDescriptorFromAttestation(ctx, reject.Collection))
+			}
+		}
+	}
+
+	return inputAttestations
+}
+
+func slsaResourceDescriptorFromAttestation(ctx *attestation.AttestationContext, attestation source.VerifiedCollection) slsa.ResourceDescriptor {
+	digest, err := cryptoutil.CalculateDigestSetFromBytes(attestation.Envelope.Payload, ctx.Hashes())
+	if err != nil {
+		log.Debugf("failed to calculate evidence hash: %v", err)
+	}
+
+	return slsa.ResourceDescriptor{
+		URI:    attestation.Reference,
+		Digest: digest,
+	}
+}
+
+func rejectedAttestations(ctx *attestation.AttestationContext, policyResults policy.PolicyResult) []RejectedAttestation {
+	rejecetedAttestations := make([]RejectedAttestation, 0)
+	for _, stepResult := range policyResults.ResultsByStep {
+		for _, reject := range stepResult.Rejected {
+			rejecetedAttestations = append(rejecetedAttestations, RejectedAttestation{
+				ResourceDescriptor: slsaResourceDescriptorFromAttestation(ctx, reject.Collection),
+				ReasonRejected:     reject.Reason.Error(),
+			})
+		}
+	}
+	return rejecetedAttestations
 }

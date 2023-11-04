@@ -82,13 +82,18 @@ type RejectedCollection struct {
 
 // validateAttestations will test each collection against to ensure the expected attestations
 // appear in the collection as well as that any rego policies pass for the step.
-func (s Step) validateAttestations(verifiedCollections []source.VerifiedCollection) StepResult {
-	result := StepResult{Step: s.Name}
-	if len(verifiedCollections) <= 0 {
+func (s Step) validateAttestations(result StepResult) StepResult {
+	// clone the result we were given, but start with no passed collections.
+	// we'll iterate through the old result's passed collections and add them to either passed
+	// or rejected on the new result. we want to keep the existing rejected results, though.
+	newResult := result
+	newResult.Passed = []source.VerifiedCollection{}
+
+	if len(result.Passed) <= 0 {
 		return result
 	}
 
-	for _, collection := range verifiedCollections {
+	for _, collection := range result.Passed {
 		found := make(map[string]attestation.Attestor)
 		for _, attestation := range collection.Collection.Attestations {
 			found[attestation.Type] = attestation.Attestation
@@ -98,7 +103,7 @@ func (s Step) validateAttestations(verifiedCollections []source.VerifiedCollecti
 		for _, expected := range s.Attestations {
 			attestor, ok := found[expected.Type]
 			if !ok {
-				result.Rejected = append(result.Rejected, RejectedCollection{
+				newResult.Rejected = append(newResult.Rejected, RejectedCollection{
 					Collection: collection,
 					Reason: ErrMissingAttestation{
 						Step:        s.Name,
@@ -111,7 +116,7 @@ func (s Step) validateAttestations(verifiedCollections []source.VerifiedCollecti
 			}
 
 			if err := EvaluateRegoPolicy(attestor, expected.RegoPolicies); err != nil {
-				result.Rejected = append(result.Rejected, RejectedCollection{
+				newResult.Rejected = append(newResult.Rejected, RejectedCollection{
 					Collection: collection,
 					Reason:     err,
 				})
@@ -122,9 +127,9 @@ func (s Step) validateAttestations(verifiedCollections []source.VerifiedCollecti
 		}
 
 		if passed {
-			result.Passed = append(result.Passed, collection)
+			newResult.Passed = append(newResult.Passed, collection)
 		}
 	}
 
-	return result
+	return newResult
 }

@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"fmt"
 	"time"
 
 	"github.com/testifysec/go-witness/attestation"
@@ -169,7 +170,8 @@ func checkVerifyOpts(vo *verifyOptions) error {
 }
 
 type PolicyResult struct {
-	EvidenceByStep map[string][]source.VerifiedCollection
+	Passed        bool
+	ResultsByStep map[string]StepResult
 }
 
 func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (PolicyResult, error) {
@@ -201,7 +203,7 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (PolicyResult,
 		}
 	}
 
-	passedByStep := make(map[string][]source.VerifiedCollection)
+	resultsByStep := make(map[string]StepResult)
 	for depth := 0; depth < vo.searchDepth; depth++ {
 		for stepName, step := range p.Steps {
 			statements, err := vo.verifiedSource.Search(ctx, stepName, vo.subjectDigests, attestationsByStep[stepName])
@@ -209,30 +211,59 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (PolicyResult,
 				return PolicyResult{}, err
 			}
 
-			approvedCollections := step.checkFunctionaries(statements, trustBundles)
-			stepResults := step.validateAttestations(approvedCollections)
-			passedByStep[stepName] = append(passedByStep[stepName], stepResults.Passed...)
+			stepResults := step.checkFunctionaries(statements, trustBundles)
+			stepResults = step.validateAttestations(stepResults)
+
+			// go through our new pass results and add any found backrefs to our search digests
 			for _, coll := range stepResults.Passed {
 				for _, digestSet := range coll.Collection.BackRefs() {
 					vo.subjectDigests = append(vo.subjectDigests, digestSet)
 				}
 			}
+
+			// merge the existing passed results with our new ones
+			oldResults := resultsByStep[stepName]
+			oldResults.Passed = append(oldResults.Passed, stepResults.Passed...)
+			oldResults.Rejected = append(oldResults.Rejected, stepResults.Rejected...)
+			resultsByStep[stepName] = oldResults
 		}
 
-		if accepted, err := p.verifyArtifacts(passedByStep); err == nil {
-			return PolicyResult{EvidenceByStep: accepted}, nil
+		if _, err := p.verifyArtifacts(resultsByStep); err == nil {
+			return PolicyResult{ResultsByStep: resultsByStep, Passed: true}, nil
 		}
 	}
 
-	return PolicyResult{}, ErrPolicyDenied{Reasons: []string{"failed to find set of attestations that satisfies the policy"}}
+	// mark all currently marked passed results as failed
+	for step, results := range resultsByStep {
+		modifiedResults := results
+		for _, passed := range results.Passed {
+			modifiedResults.Rejected = append(modifiedResults.Rejected, RejectedCollection{
+				Collection: passed,
+				Reason:     err,
+			})
+		}
+
+		modifiedResults.Passed = nil
+		resultsByStep[step] = modifiedResults
+	}
+
+	return PolicyResult{Passed: false, ResultsByStep: resultsByStep}, ErrPolicyDenied{Reasons: []string{"failed to find set of attestations that satisfies the policy"}}
 }
 
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for
 // the step the statement corresponds to
-func (step Step) checkFunctionaries(verifiedStatements []source.VerifiedCollection, trustBundles map[string]TrustBundle) []source.VerifiedCollection {
-	collections := make([]source.VerifiedCollection, 0)
+func (step Step) checkFunctionaries(verifiedStatements []source.VerifiedCollection, trustBundles map[string]TrustBundle) StepResult {
+	stepResult := StepResult{
+		Step: step.Name,
+	}
+
 	for _, verifiedStatement := range verifiedStatements {
 		if verifiedStatement.Statement.PredicateType != attestation.CollectionType {
+			stepResult.Rejected = append(stepResult.Rejected, RejectedCollection{
+				Collection: verifiedStatement,
+				Reason:     fmt.Errorf("unrecognized predicate: %v", verifiedStatement.Statement.PredicateType),
+			})
+
 			log.Debugf("(policy) skipping statement: predicate type is not a collection (%v)", verifiedStatement.Statement.PredicateType)
 			continue
 		}
@@ -244,9 +275,10 @@ func (step Step) checkFunctionaries(verifiedStatements []source.VerifiedCollecti
 				continue
 			}
 
+			passedFunctionary := false
 			for _, functionary := range step.Functionaries {
 				if functionary.PublicKeyID != "" && functionary.PublicKeyID == verifierID {
-					collections = append(collections, verifiedStatement)
+					passedFunctionary = true
 					break
 				}
 
@@ -264,42 +296,56 @@ func (step Step) checkFunctionaries(verifiedStatements []source.VerifiedCollecti
 				if err := functionary.CertConstraint.Check(x509Verifier, trustBundles); err != nil {
 					log.Debugf("(policy) skipping verifier: verifier with ID %v doesn't meet certificate constraint: %w", verifierID, err)
 					continue
+				} else {
+					passedFunctionary = true
 				}
+			}
 
-				collections = append(collections, verifiedStatement)
+			if passedFunctionary {
+				stepResult.Passed = append(stepResult.Passed, verifiedStatement)
+			} else {
+				stepResult.Rejected = append(stepResult.Rejected, RejectedCollection{
+					Collection: verifiedStatement,
+					Reason:     fmt.Errorf("no signature from allowed functionary"),
+				})
 			}
 		}
 	}
 
-	return collections
+	return stepResult
 }
 
 // verifyArtifacts will check the artifacts (materials+products) of the step referred to by `ArtifactsFrom` against the
 // materials of the original step.  This ensures file integrity between each step.
-func (p Policy) verifyArtifacts(collectionsByStep map[string][]source.VerifiedCollection) (map[string][]source.VerifiedCollection, error) {
-	acceptedByStep := make(map[string][]source.VerifiedCollection)
+func (p Policy) verifyArtifacts(collectionsByStep map[string]StepResult) (map[string]StepResult, error) {
 	for _, step := range p.Steps {
-		accepted := make([]source.VerifiedCollection, 0)
-		for _, collection := range collectionsByStep[step.Name] {
+		newResultsByStep := collectionsByStep[step.Name]
+		newResultsByStep.Passed = make([]source.VerifiedCollection, 0)
+		for _, collection := range collectionsByStep[step.Name].Passed {
 			if err := verifyCollectionArtifacts(step, collection, collectionsByStep); err == nil {
-				accepted = append(accepted, collection)
+				newResultsByStep.Passed = append(newResultsByStep.Passed, collection)
+			} else {
+				newResultsByStep.Rejected = append(newResultsByStep.Rejected, RejectedCollection{
+					Collection: collection,
+					Reason:     err,
+				})
 			}
 		}
 
-		acceptedByStep[step.Name] = accepted
-		if len(accepted) <= 0 {
+		collectionsByStep[step.Name] = newResultsByStep
+		if len(newResultsByStep.Passed) <= 0 {
 			return nil, ErrNoAttestations(step.Name)
 		}
 	}
 
-	return acceptedByStep, nil
+	return collectionsByStep, nil
 }
 
-func verifyCollectionArtifacts(step Step, collection source.VerifiedCollection, collectionsByStep map[string][]source.VerifiedCollection) error {
+func verifyCollectionArtifacts(step Step, collection source.VerifiedCollection, resultsByStep map[string]StepResult) error {
 	mats := collection.Collection.Materials()
 	for _, artifactsFrom := range step.ArtifactsFrom {
 		accepted := make([]source.VerifiedCollection, 0)
-		for _, testCollection := range collectionsByStep[artifactsFrom] {
+		for _, testCollection := range resultsByStep[artifactsFrom].Passed {
 			if err := compareArtifacts(mats, testCollection.Collection.Artifacts()); err != nil {
 				break
 			}
