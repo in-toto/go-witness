@@ -247,7 +247,7 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (PolicyResult,
 		resultsByStep[step] = modifiedResults
 	}
 
-	return PolicyResult{Passed: false, ResultsByStep: resultsByStep}, ErrPolicyDenied{Reasons: []string{"failed to find set of attestations that satisfies the policy"}}
+	return PolicyResult{Passed: false, ResultsByStep: resultsByStep}, nil
 }
 
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for

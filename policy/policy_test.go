@@ -144,7 +144,7 @@ deny[msg] {
 	intotoStatement, err := intoto.NewStatement(attestation.CollectionType, step1CollectionJson, map[string]cryptoutil.DigestSet{"dummy": {cryptoutil.DigestValue{Hash: crypto.SHA256}: "dummy"}})
 	require.NoError(t, err)
 
-	_, err = policy.Verify(
+	result, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]cryptoutil.DigestSet{{cryptoutil.DigestValue{Hash: crypto.SHA256}: "dummy"}}),
 		WithVerifiedSource(
@@ -161,8 +161,9 @@ deny[msg] {
 		),
 	)
 	assert.NoError(t, err)
+	assert.True(t, result.Passed)
 
-	_, err = policy.Verify(
+	result, err = policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]cryptoutil.DigestSet{{cryptoutil.DigestValue{Hash: crypto.SHA256}: "dummy"}}),
 		WithVerifiedSource(
@@ -178,8 +179,9 @@ deny[msg] {
 			}),
 		),
 	)
-	assert.Error(t, err)
-	assert.IsType(t, ErrPolicyDenied{}, err)
+
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
 }
 
 func TestArtifacts(t *testing.T) {
@@ -299,7 +301,7 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 	intotoStatement2, err = intoto.NewStatement(attestation.CollectionType, step2CollectionJson, map[string]cryptoutil.DigestSet{})
 	require.NoError(t, err)
-	_, err = policy.Verify(
+	result, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]cryptoutil.DigestSet{{cryptoutil.DigestValue{Hash: crypto.SHA256}: dummySha}}),
 		WithVerifiedSource(newDummyVerifiedSourcer([]source.VerifiedCollection{
@@ -321,8 +323,8 @@ func TestArtifacts(t *testing.T) {
 			},
 		})),
 	)
-	assert.Error(t, err)
-	assert.IsType(t, ErrPolicyDenied{}, err)
+	assert.NoError(t, err)
+	assert.False(t, result.Passed)
 }
 
 type DummyMaterialer struct {
