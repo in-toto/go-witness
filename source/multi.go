@@ -14,7 +14,11 @@
 
 package source
 
-import "context"
+import (
+	"context"
+
+	"github.com/testifysec/go-witness/cryptoutil"
+)
 
 type MultiSource struct {
 	sources []Sourcer
@@ -24,7 +28,7 @@ func NewMultiSource(sources ...Sourcer) *MultiSource {
 	return &MultiSource{sources}
 }
 
-func (s *MultiSource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
+func (s *MultiSource) Search(ctx context.Context, collectionName string, subjectDigests []cryptoutil.DigestSet, attestations []string) ([]CollectionEnvelope, error) {
 	results := make([]CollectionEnvelope, 0)
 	for _, source := range s.sources {
 		res, err := source.Search(ctx, collectionName, subjectDigests, attestations)

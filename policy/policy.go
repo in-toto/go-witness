@@ -121,7 +121,7 @@ type VerifyOption func(*verifyOptions)
 
 type verifyOptions struct {
 	verifiedSource source.VerifiedSourcer
-	subjectDigests []string
+	subjectDigests []cryptoutil.DigestSet
 	searchDepth    int
 }
 
@@ -131,7 +131,7 @@ func WithVerifiedSource(verifiedSource source.VerifiedSourcer) VerifyOption {
 	}
 }
 
-func WithSubjectDigests(subjectDigests []string) VerifyOption {
+func WithSubjectDigests(subjectDigests []cryptoutil.DigestSet) VerifyOption {
 	return func(vo *verifyOptions) {
 		vo.subjectDigests = subjectDigests
 	}
@@ -214,9 +214,7 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (PolicyResult,
 			passedByStep[stepName] = append(passedByStep[stepName], stepResults.Passed...)
 			for _, coll := range stepResults.Passed {
 				for _, digestSet := range coll.Collection.BackRefs() {
-					for _, digest := range digestSet {
-						vo.subjectDigests = append(vo.subjectDigests, digest)
-					}
+					vo.subjectDigests = append(vo.subjectDigests, digestSet)
 				}
 			}
 		}

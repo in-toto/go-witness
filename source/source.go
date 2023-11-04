@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 
 	"github.com/testifysec/go-witness/attestation"
+	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
 	"github.com/testifysec/go-witness/intoto"
 )
@@ -31,7 +32,7 @@ type CollectionEnvelope struct {
 }
 
 type Sourcer interface {
-	Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error)
+	Search(ctx context.Context, collectionName string, subjectDigests []cryptoutil.DigestSet, attestations []string) ([]CollectionEnvelope, error)
 }
 
 func envelopeToCollectionEnvelope(reference string, env dsse.Envelope) (CollectionEnvelope, error) {

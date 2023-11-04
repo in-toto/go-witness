@@ -45,12 +45,19 @@ var (
 
 type Attestor struct {
 	slsa.VerificationSummary
+	WitnessVerifyInfo WitnessVerifyInfo `json:"witnessverifyinfo,omitempty"`
 
 	policyEnvelope   dsse.Envelope
 	policyVerifiers  []cryptoutil.Verifier
 	collectionSource source.Sourcer
-	subjectDigests   []string
-	addtlSubjects    map[string]cryptoutil.DigestSet
+}
+
+type WitnessVerifyInfo struct {
+	// InitialSubjectDigests is the set of subject digests passed to witness Verify to start
+	// the verification process
+	InitialSubjectDigests []cryptoutil.DigestSet `json:"initialsubjectdigests,omitempty"`
+	// AdditionalSubjects is a set of subjects that were used during the verification process.
+	AdditionalSubjects map[string]cryptoutil.DigestSet `json:"additionalsubjects,omitempty"`
 }
 
 type Option func(*Attestor)
@@ -69,11 +76,7 @@ func VerifyWithPolicyVerifiers(policyVerifiers []cryptoutil.Verifier) Option {
 
 func VerifyWithSubjectDigests(subjectDigests []cryptoutil.DigestSet) Option {
 	return func(a *Attestor) {
-		for _, set := range subjectDigests {
-			for _, digest := range set {
-				a.subjectDigests = append(a.subjectDigests, digest)
-			}
-		}
+		a.WitnessVerifyInfo.InitialSubjectDigests = append(a.WitnessVerifyInfo.InitialSubjectDigests, subjectDigests...)
 	}
 }
 
@@ -84,7 +87,13 @@ func VerifyWithCollectionSource(source source.Sourcer) Option {
 }
 
 func New(opts ...Option) *Attestor {
-	a := &Attestor{addtlSubjects: make(map[string]cryptoutil.DigestSet)}
+	a := &Attestor{
+		WitnessVerifyInfo: WitnessVerifyInfo{
+			AdditionalSubjects:    make(map[string]cryptoutil.DigestSet),
+			InitialSubjectDigests: make([]cryptoutil.DigestSet, 0),
+		},
+	}
+
 	for _, opt := range opts {
 		opt(a)
 	}
@@ -106,14 +115,12 @@ func (a *Attestor) RunType() attestation.RunType {
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subjects := map[string]cryptoutil.DigestSet{}
-	for _, digest := range a.subjectDigests {
-		subjects[fmt.Sprintf("artifact:%v", digest)] = cryptoutil.DigestSet{
-			cryptoutil.DigestValue{Hash: crypto.SHA256, GitOID: false}: digest,
-		}
+	for n, digestSet := range a.WitnessVerifyInfo.InitialSubjectDigests {
+		subjects[fmt.Sprintf("artifact:%v", n)] = digestSet
 	}
 
 	subjects[fmt.Sprintf("policy:%v", a.VerificationSummary.Policy.URI)] = a.VerificationSummary.Policy.Digest
-	for name, ds := range a.addtlSubjects {
+	for name, ds := range a.WitnessVerifyInfo.AdditionalSubjects {
 		subjects[name] = ds
 	}
 
@@ -173,7 +180,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	)
 
 	accepted := true
-	policyResult, policyErr := pol.Verify(ctx.Context(), policy.WithSubjectDigests(a.subjectDigests), policy.WithVerifiedSource(verifiedSource))
+	policyResult, policyErr := pol.Verify(ctx.Context(), policy.WithSubjectDigests(a.WitnessVerifyInfo.InitialSubjectDigests), policy.WithVerifiedSource(verifiedSource))
 	if _, ok := policyErr.(policy.ErrPolicyDenied); ok {
 		accepted = false
 	} else if policyErr != nil {
@@ -185,86 +192,83 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return fmt.Errorf("failed to generate verification summary: %w", err)
 	}
 
-	a.findRelevantSubjects(policyResult.EvidenceByStep)
+	a.findInterestingSubjects(policyResult.EvidenceByStep)
 	return nil
 }
 
-// findRelevantSubjects will find any image tags in attestations that passed our policy check.
-// we do this by searching the subject digests the user tested the policy against, and if we find
-// a collection with OCI subjects for an imageid that matches one of the provided subject digests,
-// we grab the imagetag subjects off of that attestation.
-// todo: we need a better solution for this
-func (a *Attestor) findRelevantSubjects(evidenceByStep map[string][]source.VerifiedCollection) {
-	const imageTagSubjectPrefix = "https://witness.dev/attestations/oci/v0.1/imagetag:"
+// findInterestingSubjects will search subjects of attestations used during the verification process
+// for interesting subjects, and package them onto the VSA as additional subjects. This is used
+// primarily to link a VSA back to a specific github or gitlab project, or an artifact hash to
+// a specific tagged image.
+func (a *Attestor) findInterestingSubjects(evidenceByStep map[string][]source.VerifiedCollection) {
+	// imageId is especially interesting, and we only treat the other interesting subject candidates
+	// as valid if we get a match on the imageId
 	const imageIdSubjectPrefix = "https://witness.dev/attestations/oci/v0.1/imageid:"
-	const githubProjectPrefix = "https://witness.dev/attestations/github/v0.1/projecturl:"
-	const gitlabProjectPrefix = "https://witness.dev/attestations/gitlab/v0.1/projecturl:"
+
+	// a map of subjects we consider interesting. the value of this map is just a value we'll use
+	// to repackage the subject as a subject of the VSA itself.
+	interestingSubjects := map[string]string{
+		"https://witness.dev/attestations/oci/v0.1/imagetag:":      "imagetag",
+		"https://witness.dev/attestations/github/v0.1/projecturl:": "projecturl",
+		"https://witness.dev/attestations/gitlab/v0.1/projecturl:": "projecturl",
+		"https://witness.dev/attestations/git/v0.1/commithash:":    "commithash",
+	}
 
 	for _, collections := range evidenceByStep {
 		for _, collection := range collections {
 			candidates := make([]intoto.Subject, 0)
 			matchedSubject := false
 
-			// search through every subject on the in-toto statment. if we find imagetags, we set them aside as possible candidates.
-			// if we find an imageid subject that matches, we consider all the candidates to be matching subjects and return them
+			// search through every subject on the in-toto statment. if we find any interesting subjects, we set them aside as possible candidates.
+			// if we find an imageid subject that matches, we consider all the candidates to be matching subjects and add them to our list
 			for _, subject := range collection.Statement.Subject {
 				// if we find an image tag subject, add it to the list of candidates
-				if strings.HasPrefix(subject.Name, imageTagSubjectPrefix) {
-					candidates = append(candidates, intoto.Subject{
-						Name:   fmt.Sprintf("imagetag:%v", strings.TrimPrefix(subject.Name, imageTagSubjectPrefix)),
-						Digest: subject.Digest,
-					})
-				}
+				for interstingSubject, transformedSubject := range interestingSubjects {
+					if strings.HasPrefix(subject.Name, interstingSubject) {
+						candidates = append(candidates, intoto.Subject{
+							Name:   fmt.Sprintf("%v:%v", transformedSubject, strings.TrimPrefix(subject.Name, interstingSubject)),
+							Digest: subject.Digest,
+						})
+					}
 
-				if strings.HasPrefix(subject.Name, githubProjectPrefix) {
-					candidates = append(candidates, intoto.Subject{
-						Name:   fmt.Sprintf("projecturl:%v", strings.TrimPrefix(subject.Name, githubProjectPrefix)),
-						Digest: subject.Digest,
-					})
-				}
+					// if we find an imageid subject, check to see if any the digests we verified match the imageid
+					if strings.HasPrefix(subject.Name, imageIdSubjectPrefix) {
+						for _, imageIdDigest := range subject.Digest {
+							for _, testDigestSet := range a.WitnessVerifyInfo.InitialSubjectDigests {
+								for _, testImageIdDigest := range testDigestSet {
+									if imageIdDigest == testImageIdDigest {
+										matchedSubject = true
+										candidates = append(candidates, intoto.Subject{
+											Name:   fmt.Sprintf("imageid:%v", testImageIdDigest),
+											Digest: subject.Digest,
+										})
+									}
+								}
+							}
 
-				if strings.HasPrefix(subject.Name, gitlabProjectPrefix) {
-					candidates = append(candidates, intoto.Subject{
-						Name:   fmt.Sprintf("projecturl:%v", strings.TrimPrefix(subject.Name, gitlabProjectPrefix)),
-						Digest: subject.Digest,
-					})
-				}
-
-				// if we find an imageid subject, check to see if any the digests we verified match the imageid
-				if strings.HasPrefix(subject.Name, imageIdSubjectPrefix) {
-					for _, imageIdDigest := range subject.Digest {
-						for _, testImageIdDigest := range a.subjectDigests {
-							if imageIdDigest == testImageIdDigest {
-								matchedSubject = true
-								candidates = append(candidates, intoto.Subject{
-									Name:   fmt.Sprintf("imageid:%v", testImageIdDigest),
-									Digest: subject.Digest,
-								})
+							// if we found a matching imageid subject with one of our test subject digests, stop looking
+							if matchedSubject {
+								break
 							}
 						}
-
-						// if we found a matching imageid subject with one of our test subject digests, stop looking
-						if matchedSubject {
-							break
-						}
 					}
 				}
-			}
 
-			// after we've checked all the subjects, if we found a match, add our candidates to our additional subjects
-			if matchedSubject {
-				for _, candidate := range candidates {
-					ds := cryptoutil.DigestSet{}
-					for hash, value := range candidate.Digest {
-						digestValue, err := cryptoutil.DigestValueFromString(hash)
-						if err != nil {
-							continue
+				// after we've checked all the subjects, if we found a match, add our candidates to our additional subjects
+				if matchedSubject {
+					for _, candidate := range candidates {
+						ds := cryptoutil.DigestSet{}
+						for hash, value := range candidate.Digest {
+							digestValue, err := cryptoutil.DigestValueFromString(hash)
+							if err != nil {
+								continue
+							}
+
+							ds[digestValue] = value
 						}
 
-						ds[digestValue] = value
+						a.WitnessVerifyInfo.AdditionalSubjects[candidate.Name] = ds
 					}
-
-					a.addtlSubjects[candidate.Name] = ds
 				}
 			}
 		}

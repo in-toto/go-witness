@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/testifysec/go-witness/archivista"
+	"github.com/testifysec/go-witness/cryptoutil"
 )
 
 type ArchivistaSource struct {
@@ -32,10 +33,16 @@ func NewArchvistSource(client *archivista.Client) *ArchivistaSource {
 	}
 }
 
-func (s *ArchivistaSource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
+func (s *ArchivistaSource) Search(ctx context.Context, collectionName string, subjectDigests []cryptoutil.DigestSet, attestations []string) ([]CollectionEnvelope, error) {
+	digestArray := make([]string, 0)
+	for _, ds := range subjectDigests {
+		for _, digest := range ds {
+			digestArray = append(digestArray, digest)
+		}
+	}
 	gitoids, err := s.client.SearchGitoids(ctx, archivista.SearchGitoidVariables{
 		CollectionName: collectionName,
-		SubjectDigests: subjectDigests,
+		SubjectDigests: digestArray,
 		Attestations:   attestations,
 		ExcludeGitoids: s.seenGitoids,
 	})

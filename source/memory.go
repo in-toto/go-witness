@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
 )
 
@@ -103,7 +104,7 @@ func (s *MemorySource) LoadEnvelope(reference string, env dsse.Envelope) error {
 	return nil
 }
 
-func (s *MemorySource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
+func (s *MemorySource) Search(ctx context.Context, collectionName string, subjectDigests []cryptoutil.DigestSet, attestations []string) ([]CollectionEnvelope, error) {
 	matches := make([]CollectionEnvelope, 0)
 	for _, potentialMatchReference := range s.referencesByCollectionName[collectionName] {
 		env, ok := s.envelopesByReference[potentialMatchReference]
@@ -114,10 +115,12 @@ func (s *MemorySource) Search(ctx context.Context, collectionName string, subjec
 		// make sure at least one of the subjects digests exists on the potential matches
 		subjectMatchFound := false
 		indexSubjects := s.subjectDigestsByReference[potentialMatchReference]
-		for _, checkDigest := range subjectDigests {
-			if _, ok := indexSubjects[checkDigest]; ok {
-				subjectMatchFound = true
-				break
+		for _, checkDigestSet := range subjectDigests {
+			for _, checkDigest := range checkDigestSet {
+				if _, ok := indexSubjects[checkDigest]; ok {
+					subjectMatchFound = true
+					break
+				}
 			}
 		}
 

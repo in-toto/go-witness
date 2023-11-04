@@ -146,7 +146,7 @@ deny[msg] {
 
 	_, err = policy.Verify(
 		context.Background(),
-		WithSubjectDigests([]string{"dummy"}),
+		WithSubjectDigests([]cryptoutil.DigestSet{{cryptoutil.DigestValue{Hash: crypto.SHA256}: "dummy"}}),
 		WithVerifiedSource(
 			newDummyVerifiedSourcer([]source.VerifiedCollection{
 				{
@@ -164,7 +164,7 @@ deny[msg] {
 
 	_, err = policy.Verify(
 		context.Background(),
-		WithSubjectDigests([]string{"dummy"}),
+		WithSubjectDigests([]cryptoutil.DigestSet{{cryptoutil.DigestValue{Hash: crypto.SHA256}: "dummy"}}),
 		WithVerifiedSource(
 			newDummyVerifiedSourcer([]source.VerifiedCollection{
 				{
@@ -262,7 +262,7 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 	_, err = policy.Verify(
 		context.Background(),
-		WithSubjectDigests([]string{dummySha}),
+		WithSubjectDigests([]cryptoutil.DigestSet{{cryptoutil.DigestValue{Hash: crypto.SHA256}: dummySha}}),
 		WithVerifiedSource(newDummyVerifiedSourcer([]source.VerifiedCollection{
 			{
 				Verifiers: []cryptoutil.Verifier{verifier},
@@ -301,7 +301,7 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 	_, err = policy.Verify(
 		context.Background(),
-		WithSubjectDigests([]string{dummySha}),
+		WithSubjectDigests([]cryptoutil.DigestSet{{cryptoutil.DigestValue{Hash: crypto.SHA256}: dummySha}}),
 		WithVerifiedSource(newDummyVerifiedSourcer([]source.VerifiedCollection{
 			{
 				Verifiers: []cryptoutil.Verifier{verifier},
@@ -381,6 +381,6 @@ func newDummyVerifiedSourcer(verifiedCollections []source.VerifiedCollection) *d
 	return &dummyVerifiedSourcer{verifiedCollections}
 }
 
-func (s *dummyVerifiedSourcer) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]source.VerifiedCollection, error) {
+func (s *dummyVerifiedSourcer) Search(ctx context.Context, collectionName string, subjectDigests []cryptoutil.DigestSet, attestations []string) ([]source.VerifiedCollection, error) {
 	return s.verifiedCollections, nil
 }
