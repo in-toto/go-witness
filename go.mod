@@ -98,6 +98,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
+replace github.com/testifysec/go-witness => ./
+
 replace github.com/sigstore/rekor => github.com/testifysec/rekor v0.4.0-dsse-intermediates-2
 
 replace github.com/gin-gonic/gin v1.5.0 => github.com/gin-gonic/gin v1.7.7
