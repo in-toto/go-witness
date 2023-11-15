@@ -80,7 +80,7 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/sigstore/fulcio v1.1.0
-	github.com/sigstore/sigstore v1.5.1
+	github.com/sigstore/sigstore v1.5.2
 	github.com/theupdateframework/go-tuf v0.5.2-0.20220930112810-3890c1e7ace4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
