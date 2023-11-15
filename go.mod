@@ -14,7 +14,7 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.1.6
 	github.com/stretchr/testify v1.8.2
 	github.com/testifysec/archivista-api v0.0.0-20230220215059-632b84b82b76
-	go.step.sm/crypto v0.25.0
+	go.step.sm/crypto v0.25.2
 	golang.org/x/sys v0.13.0
 	google.golang.org/grpc v1.56.3
 	gopkg.in/square/go-jose.v2 v2.6.0
