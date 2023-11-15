@@ -90,7 +90,7 @@ func (a *Attestor) Schema() *jsonschema.Schema {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	materials, err := file.RecordArtifacts(ctx.WorkingDir(), nil, ctx.Hashes(), map[string]struct{}{}, false, map[string]bool{}, ctx.DirHashGlob())
+	materials, err := file.RecordArtifacts(ctx.WorkingDir(), nil, ctx.Hashes(), map[string]struct{}{}, false, map[string]bool{}, ctx.DirHashGlob(), nil, nil)
 	if err != nil {
 		return err
 	}

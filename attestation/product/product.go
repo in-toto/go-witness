@@ -208,7 +208,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		}
 	}
 
-	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, processWasTraced, openedFileSet, ctx.DirHashGlob())
+	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, processWasTraced, openedFileSet, ctx.DirHashGlob(), compiledIncludeGlob, compiledExcludeGlob)
 	if err != nil {
 		return err
 	}
@@ -241,21 +241,24 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		// Normalize path to forward slashes for glob matching
 		// This ensures Windows paths like "subdir\test.txt" are converted to "subdir/test.txt"
 		// to match glob patterns which always use forward slashes
+
 		normalizedPath := filepath.ToSlash(productName)
 
+		includeSubject := true
 		if a.compiledExcludeGlob != nil && a.compiledExcludeGlob.Match(normalizedPath) {
-			continue
+			includeSubject = false
+		}
+		if a.compiledIncludeGlob != nil && a.compiledIncludeGlob.Match(normalizedPath) {
+			includeSubject = true
 		}
 
-		if a.compiledIncludeGlob != nil && !a.compiledIncludeGlob.Match(normalizedPath) {
-			continue
+		if includeSubject {
+			subjectType := "file"
+			if product.MimeType == "text/directory" {
+				subjectType = "dir"
+			}
+			subjects[fmt.Sprintf("%v:%v", subjectType, productName)] = product.Digest
 		}
-
-		subjectType := "file"
-		if product.MimeType == "text/directory" {
-			subjectType = "dir"
-		}
-		subjects[fmt.Sprintf("%v:%v", subjectType, productName)] = product.Digest
 	}
 
 	return subjects
