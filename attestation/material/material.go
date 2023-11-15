@@ -69,7 +69,7 @@ func New(opts ...Option) *Attestor {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	materials, err := file.RecordArtifacts(ctx.WorkingDir(), nil, ctx.Hashes(), map[string]struct{}{})
+	materials, err := file.RecordArtifacts(ctx.WorkingDir(), nil, ctx.Hashes(), map[string]struct{}{}, nil, nil)
 	if err != nil {
 		return err
 	}
