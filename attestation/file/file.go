@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 )
@@ -26,7 +27,7 @@ import (
 // recordArtifacts will walk basePath and record the digests of each file with each of the functions in hashes.
 // If file already exists in baseArtifacts and the two artifacts are equal the artifact will not be in the
 // returned map of artifacts.
-func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.DigestSet, hashes []cryptoutil.DigestValue, visitedSymlinks map[string]struct{}, processWasTraced bool, openedFiles map[string]bool) (map[string]cryptoutil.DigestSet, error) {
+func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.DigestSet, hashes []cryptoutil.DigestValue, visitedSymlinks map[string]struct{}, processWasTraced bool, openedFiles map[string]bool, includeGlob glob.Glob, excludeGlob glob.Glob) (map[string]cryptoutil.DigestSet, error) {
 	artifacts := make(map[string]cryptoutil.DigestSet)
 	err := filepath.Walk(basePath, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
@@ -57,7 +58,7 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 			}
 
 			visitedSymlinks[linkedPath] = struct{}{}
-			symlinkedArtifacts, err := RecordArtifacts(linkedPath, baseArtifacts, hashes, visitedSymlinks, processWasTraced, openedFiles)
+			symlinkedArtifacts, err := RecordArtifacts(linkedPath, baseArtifacts, hashes, visitedSymlinks, processWasTraced, openedFiles, includeGlob, excludeGlob)
 			if err != nil {
 				return err
 			}
@@ -65,7 +66,8 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 			for artifactPath, artifact := range symlinkedArtifacts {
 				// all artifacts in the symlink should be recorded relative to our basepath
 				joinedPath := filepath.Join(relPath, artifactPath)
-				if shouldRecord(joinedPath, artifact, baseArtifacts, processWasTraced, openedFiles) {
+
+				if shouldRecord(joinedPath, artifact, baseArtifacts, processWasTraced, openedFiles, includeGlob, excludeGlob) {
 					artifacts[filepath.Join(relPath, artifactPath)] = artifact
 				}
 			}
@@ -78,7 +80,7 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 			return err
 		}
 
-		if shouldRecord(relPath, artifact, baseArtifacts, processWasTraced, openedFiles) {
+		if shouldRecord(relPath, artifact, baseArtifacts, processWasTraced, openedFiles, includeGlob, excludeGlob) {
 			artifacts[relPath] = artifact
 		}
 
@@ -92,10 +94,23 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 // if the process was traced and the artifact was not one of the opened files, return false
 // if the artifact is already in baseArtifacts, check if it's changed
 // if it is not equal to the existing artifact, return true, otherwise return false
-func shouldRecord(path string, artifact cryptoutil.DigestSet, baseArtifacts map[string]cryptoutil.DigestSet, processWasTraced bool, openedFiles map[string]bool) bool {
+func shouldRecord(path string, artifact cryptoutil.DigestSet, baseArtifacts map[string]cryptoutil.DigestSet, processWasTraced bool, openedFiles map[string]bool, includeGlob glob.Glob, excludeGlob glob.Glob) bool {
+	includePath := true
+	if excludeGlob != nil && excludeGlob.Match(path) {
+		includePath = false
+	}
+	if includeGlob != nil && includeGlob.Match(path) {
+		includePath = true
+	}
+
+	if !includePath {
+		return false
+	}
+
 	if _, ok := openedFiles[path]; !ok && processWasTraced {
 		return false
 	}
+
 	if previous, ok := baseArtifacts[path]; ok && artifact.Equal(previous) {
 		return false
 	}

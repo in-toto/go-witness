@@ -199,7 +199,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		}
 	}
 
-	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, processWasTraced, openedFileSet)
+	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, processWasTraced, openedFileSet, compiledIncludeGlob, compiledExcludeGlob)
 	if err != nil {
 		return err
 	}
@@ -229,15 +229,18 @@ func (a *Attestor) Products() map[string]attestation.Product {
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subjects := make(map[string]cryptoutil.DigestSet)
 	for productName, product := range a.products {
+
+		includeSubject := true
 		if a.compiledExcludeGlob != nil && a.compiledExcludeGlob.Match(productName) {
-			continue
+			includeSubject = false
+		}
+		if a.compiledIncludeGlob != nil && a.compiledIncludeGlob.Match(productName) {
+			includeSubject = true
 		}
 
-		if a.compiledIncludeGlob != nil && !a.compiledIncludeGlob.Match(productName) {
-			continue
+		if includeSubject {
+			subjects[fmt.Sprintf("file:%v", productName)] = product.Digest
 		}
-
-		subjects[fmt.Sprintf("file:%v", productName)] = product.Digest
 	}
 
 	return subjects
