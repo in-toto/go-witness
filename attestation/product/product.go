@@ -125,15 +125,15 @@ func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attesta
 	return products
 }
 
-func (a Attestor) Name() string {
+func (a *Attestor) Name() string {
 	return Name
 }
 
-func (a Attestor) Type() string {
+func (a *Attestor) Type() string {
 	return Type
 }
 
-func (rc *Attestor) RunType() attestation.RunType {
+func (a *Attestor) RunType() attestation.RunType {
 	return RunType
 }
 
