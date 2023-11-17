@@ -36,7 +36,8 @@ func TestFromDigestMap(t *testing.T) {
 	testDigestSet["test"] = testDigest
 	result := fromDigestMap(testDigestSet)
 	assert.Len(t, result, 1)
-	assert.True(t, result["test"].Digest.Equal(testDigest))
+	digest := result["test"].Digest
+	assert.True(t, digest.Equal(testDigest))
 }
 
 func TestAttestorName(t *testing.T) {
