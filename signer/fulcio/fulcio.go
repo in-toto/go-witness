@@ -105,14 +105,29 @@ func init() {
 				return fsp, nil
 			},
 		),
+		registry.StringConfigOption(
+			"oidc-redirect-url",
+			"OIDC redirect URL (Optional). The default oidc-redirect-url is 'http://localhost:0/auth/callback'.",
+			"",
+			func(sp signer.SignerProvider, oidcRedirectUrl string) (signer.SignerProvider, error) {
+				fsp, ok := sp.(FulcioSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a fulcio signer provider")
+				}
+
+				WithOidcRedirectUrl(oidcRedirectUrl)(&fsp)
+				return fsp, nil
+			},
+		),
 	)
 }
 
 type FulcioSignerProvider struct {
-	FulcioURL    string
-	OidcIssuer   string
-	OidcClientID string
-	Token        string
+	FulcioURL        string
+	OidcIssuer       string
+	OidcClientID     string
+	Token            string
+	OidcRedirectUrl  string
 }
 
 type Option func(*FulcioSignerProvider)
@@ -138,6 +153,12 @@ func WithOidcClientID(oidcClientID string) Option {
 func WithToken(tokenOption string) Option {
 	return func(fsp *FulcioSignerProvider) {
 		fsp.Token = tokenOption
+	}
+}
+
+func WithOidcRedirectUrl(oidcRedirectUrl string) Option {
+	return func(fsp *FulcioSignerProvider) {
+		fsp.OidcRedirectUrl = oidcRedirectUrl
 	}
 }
 
@@ -214,7 +235,7 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 		raw = fsp.Token
 
 	case fsp.Token == "" && isatty.IsTerminal(os.Stdin.Fd()):
-		tok, err := oauthflow.OIDConnect(fsp.OidcIssuer, fsp.OidcClientID, "", "", oauthflow.DefaultIDTokenGetter)
+		tok, err := oauthflow.OIDConnect(fsp.OidcIssuer, fsp.OidcClientID, "", fsp.OidcRedirectUrl, oauthflow.DefaultIDTokenGetter)
 		if err != nil {
 			return nil, err
 		}
