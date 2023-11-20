@@ -12,7 +12,7 @@ require (
 	github.com/open-policy-agent/opa v0.49.1
 	github.com/owenrumney/go-sarif v1.1.1
 	github.com/spiffe/go-spiffe/v2 v2.1.6
-	github.com/stretchr/testify v1.8.2
+	github.com/stretchr/testify v1.8.4
 	github.com/testifysec/archivista-api v0.0.0-20230220215059-632b84b82b76
 	go.step.sm/crypto v0.25.2
 	golang.org/x/sys v0.13.0
