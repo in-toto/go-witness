@@ -103,6 +103,11 @@ func TestIDToken(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, string(testTok), out)
 
+	// test that when neither valid token nor a path is supplied, an error is returned
+	tok = "test"
+	out, err = idToken(tok)
+	require.Error(t, err)
+
 }
 
 type dummyCAClientService struct {
