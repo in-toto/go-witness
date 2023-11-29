@@ -35,7 +35,7 @@ type Attestor interface {
 }
 
 // Subjecter allows attestors to expose bits of information that will be added to
-// the in-toto statement as subjects. External services such as Rekor and Archivist
+// the in-toto statement as subjects. External services such as Rekor and Archivista
 // use in-toto subjects as indexes back to attestations.
 type Subjecter interface {
 	Subjects() map[string]cryptoutil.DigestSet
