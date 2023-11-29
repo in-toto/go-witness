@@ -107,7 +107,6 @@ func TestIDToken(t *testing.T) {
 	tok = "test"
 	out, err = idToken(tok)
 	require.Error(t, err)
-
 }
 
 type dummyCAClientService struct {
