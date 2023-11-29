@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,7 @@ import (
 	fulciopb "github.com/sigstore/fulcio/pkg/generated/protobuf"
 	"github.com/stretchr/testify/require"
 	"go.step.sm/crypto/jose"
+	"path/filepath"
 
 	"google.golang.org/grpc"
 	"gopkg.in/square/go-jose.v2/jwt"
@@ -74,6 +76,33 @@ func TestNewClient(t *testing.T) {
 	client, err := newClient(ctx, "https://fulcio.url", 0, false)
 	require.NoError(t, err)
 	require.NotNil(t, client)
+}
+
+func TestIDToken(t *testing.T) {
+	// test when supplying a raw token, the same token is returned
+	tok := generateTestToken("test@example.com", "testsubject")
+	out, err := idToken(tok)
+	require.NoError(t, err)
+	require.Equal(t, tok, out)
+
+	// test when supplying a path, a valid token is returned
+	// NOTE: this function could be refactored to accept a fileSystem or io.Reader so reading the file can be mocked,
+	// but unsure if this is the way we want to go for now
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	rootDir := filepath.Dir(filepath.Dir(wd))
+	tok = filepath.Join(rootDir, "hack", "test.token")
+	testTok, err := os.ReadFile(tok)
+	if err != nil {
+		t.Fatalf("failed to read test token file: %v", err)
+	}
+
+	out, err = idToken(tok)
+	require.NoError(t, err)
+	require.Equal(t, string(testTok), out)
+
 }
 
 type dummyCAClientService struct {

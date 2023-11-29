@@ -93,7 +93,7 @@ func init() {
 		),
 		registry.StringConfigOption(
 			"token",
-			"Raw token to use for authentication",
+			"Raw token to use for authentication. The token or a path to the file containing the token is accepted",
 			"",
 			func(sp signer.SignerProvider, token string) (signer.SignerProvider, error) {
 				fsp, ok := sp.(FulcioSignerProvider)
@@ -211,7 +211,11 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 		}
 
 	case fsp.Token != "":
-		raw = fsp.Token
+		// reading from file if a path was supplied
+		raw, err = idToken(fsp.Token)
+		if err != nil {
+			return nil, err
+		}
 
 	case fsp.Token == "" && isatty.IsTerminal(os.Stdin.Fd()):
 		tok, err := oauthflow.OIDConnect(fsp.OidcIssuer, fsp.OidcClientID, "", "", oauthflow.DefaultIDTokenGetter)
@@ -402,4 +406,18 @@ func newClient(ctx context.Context, fulcioURL string, fulcioPort int, isInsecure
 
 	// Create the Fulcio client
 	return fulciopb.NewCAClient(conn), nil
+}
+
+// idToken allows users to either pass in an identity token directly
+// or a path to an identity token via the --identity-token flag
+func idToken(s string) (string, error) {
+	// If this is a valid raw token or is empty, just return it
+	// NOTE: could be replaced with https://pkg.go.dev/go.step.sm/crypto/jose in future if features helpful
+	if _, err := jwt.ParseSigned(s); err == nil || s == "" {
+		return s, nil
+	}
+
+	// Otherwise, if this is a path to a token return the contents
+	c, err := os.ReadFile(s)
+	return string(c), err
 }
