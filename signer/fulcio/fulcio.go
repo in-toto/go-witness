@@ -408,12 +408,12 @@ func newClient(ctx context.Context, fulcioURL string, fulcioPort int, isInsecure
 	return fulciopb.NewCAClient(conn), nil
 }
 
-// idToken allows users to either pass in an identity token directly
-// or a path to an identity token via the --identity-token flag
+// idToken tries to parse a string as a token in JWS form. If it fails,
+// it treats the string as a path and tries to open the file at that path
 func idToken(s string) (string, error) {
-	// If this is a valid raw token or is empty, just return it
+	// If this is a valid raw token, just return it
 	// NOTE: could be replaced with https://pkg.go.dev/go.step.sm/crypto/jose in future if features helpful
-	if _, err := jwt.ParseSigned(s); err == nil || s == "" {
+	if _, err := jwt.ParseSigned(s); err == nil {
 		return s, nil
 	}
 
