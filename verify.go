@@ -32,7 +32,7 @@ func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelo
 	decoder := json.NewDecoder(r)
 	envelope := dsse.Envelope{}
 	if err := decoder.Decode(&envelope); err != nil {
-		return envelope, fmt.Errorf("failed to parse dsse envelope: %v", err)
+		return envelope, fmt.Errorf("failed to parse dsse envelope: %w", err)
 	}
 
 	_, err := envelope.Verify(dsse.VerifyWithVerifiers(verifiers...))

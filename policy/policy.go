@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"fmt"
 	"time"
 
 	"github.com/testifysec/go-witness/attestation"
@@ -238,7 +239,8 @@ func (step Step) checkFunctionaries(verifiedStatements []source.VerifiedCollecti
 		for _, verifier := range verifiedStatement.Verifiers {
 			verifierID, err := verifier.KeyID()
 			if err != nil {
-				log.Debugf("(policy) skipping verifier: could not get key id: %v", err)
+				err := fmt.Errorf("(policy) skipping verifier: could not get key id: %w", err)
+				log.Debug(err)
 				continue
 			}
 
@@ -260,7 +262,8 @@ func (step Step) checkFunctionaries(verifiedStatements []source.VerifiedCollecti
 				}
 
 				if err := functionary.CertConstraint.Check(x509Verifier, trustBundles); err != nil {
-					log.Debugf("(policy) skipping verifier: verifier with ID %v doesn't meet certificate constraint: %w", verifierID, err)
+					err := fmt.Errorf("(policy) skipping verifier: verifier with ID %v doesn't meet certificate constraint: %w", verifierID, err)
+					log.Debug(err)
 					continue
 				}
 

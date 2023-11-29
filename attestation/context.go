@@ -185,7 +185,8 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) error {
 	log.Infof("Starting %v attestor...", attestor.Name())
 	startTime := time.Now()
 	if err := attestor.Attest(ctx); err != nil {
-		log.Errorf("Error running %v attestor: %v", attestor.Name(), err)
+		err := fmt.Errorf("Error running %v attestor: %w", attestor.Name(), err)
+		log.Error(err)
 		ctx.completedAttestors = append(ctx.completedAttestors, CompletedAttestor{
 			Attestor:  attestor,
 			StartTime: startTime,

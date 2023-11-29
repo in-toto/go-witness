@@ -16,6 +16,7 @@ package source
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/dsse"
@@ -50,7 +51,8 @@ func (s *VerifiedSource) Search(ctx context.Context, collectionName string, subj
 	for _, toVerify := range unverified {
 		envelopeVerifiers, err := toVerify.Envelope.Verify(s.verifyOpts...)
 		if err != nil {
-			log.Debugf("(verified source) skipping envelope: couldn't verify enveloper's signature with the policy's verifiers: %+v", err)
+			err := fmt.Errorf("(verified source) skipping envelope: couldn't verify enveloper's signature with the policy's verifiers: %w", err)
+			log.Debug(err)
 			continue
 		}
 

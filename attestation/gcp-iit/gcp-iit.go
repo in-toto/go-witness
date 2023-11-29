@@ -150,7 +150,8 @@ func (a *Attestor) getInstanceData() {
 	for k, v := range endpoints {
 		data, err := getMetadata(v)
 		if err != nil {
-			log.Warnf("failed to retrieve gcp metadata from %v: %v", v, err)
+			err := fmt.Errorf("failed to retrieve gcp metadata from %v: %w", v, err)
+			log.Warn(err)
 			continue
 		}
 		metadata[k] = string(data)
@@ -165,7 +166,8 @@ func (a *Attestor) getInstanceData() {
 
 	projID, projNum, err := parseJWTProjectInfo(a.JWT)
 	if err != nil {
-		log.Warnf("unable to parse gcp project info from JWT: %v\n", err)
+		err := fmt.Errorf("unable to parse gcp project info from JWT: %w\n", err)
+		log.Warn(err)
 	}
 
 	a.ProjectID = projID
@@ -179,31 +181,36 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.InstanceID), hashes); err == nil {
 		subjects[fmt.Sprintf("instanceid:%v", a.InstanceID)] = ds
 	} else {
-		log.Debugf("(attestation/gcp) failed to record gcp instanceid subject: %v", err)
+		err := fmt.Errorf("(attestation/gcp) failed to record gcp instanceid subject: %w", err)
+		log.Debug(err)
 	}
 
 	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.InstanceHostname), hashes); err == nil {
 		subjects[fmt.Sprintf("instancename:%v", a.InstanceHostname)] = ds
 	} else {
-		log.Debugf("(attestation/gcp) failed to record gcp instancename subject: %v", err)
+		err := fmt.Errorf("(attestation/gcp) failed to record gcp instancename subject: %w", err)
+		log.Debug(err)
 	}
 
 	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectID), hashes); err == nil {
 		subjects[fmt.Sprintf("projectid:%v", a.ProjectID)] = ds
 	} else {
-		log.Debugf("(attestation/gcp) failed to record gcp projectid subject: %v", err)
+		err := fmt.Errorf("(attestation/gcp) failed to record gcp projectid subject: %w", err)
+		log.Debug(err)
 	}
 
 	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectNumber), hashes); err == nil {
 		subjects[fmt.Sprintf("projectnumber:%v", a.ProjectNumber)] = ds
 	} else {
-		log.Debugf("(attestation/gcp) failed to record gcp projectnumber subject: %v", err)
+		err := fmt.Errorf("(attestation/gcp) failed to record gcp projectnumber subject: %w", err)
+		log.Debug(err)
 	}
 
 	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ClusterUID), hashes); err == nil {
 		subjects[fmt.Sprintf("clusteruid:%v", a.ClusterUID)] = ds
 	} else {
-		log.Debugf("(attestation/gcp) failed to record gcp clusteruid subject: %v", err)
+		err := fmt.Errorf("(attestation/gcp) failed to record gcp clusteruid subject: %w", err)
+		log.Debug(err)
 	}
 
 	return subjects

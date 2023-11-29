@@ -140,13 +140,15 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	if pipelineSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.PipelineUrl), hashes); err == nil {
 		subjects[fmt.Sprintf("pipelineurl:%v", a.PipelineUrl)] = pipelineSubj
 	} else {
-		log.Debugf("(attestation/github) failed to record github pipelineurl subject: %v", err)
+		err := fmt.Errorf("(attestation/github) failed to record github pipelineurl subject: %w", err)
+		log.Debug(err)
 	}
 
 	if projectSubj, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ProjectUrl), hashes); err == nil {
 		subjects[fmt.Sprintf("projecturl:%v", a.ProjectUrl)] = projectSubj
 	} else {
-		log.Debugf("(attestation/github) failed to record github projecturl subject: %v", err)
+		err := fmt.Errorf("(attestation/github) failed to record github projecturl subject: %w", err)
+		log.Debug(err)
 	}
 
 	return subjects

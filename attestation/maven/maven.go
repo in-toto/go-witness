@@ -121,14 +121,16 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(projectSubject), hashes); err == nil {
 		subjects[projectSubject] = ds
 	} else {
-		log.Debugf("(attestation/maven) failed to record %v subject: %v", projectSubject, err)
+		err := fmt.Errorf("(attestation/maven) failed to record %v subject: %w", projectSubject, err)
+		log.Debug(err)
 	}
 
 	for _, dep := range a.Dependencies {
 		depSubject := fmt.Sprintf("dependency:%v/%v@%v", dep.GroupId, dep.ArtifactId, dep.Version)
 		depDigest, err := cryptoutil.CalculateDigestSetFromBytes([]byte(depSubject), hashes)
 		if err != nil {
-			log.Debugf("(attestation/maven) failed to record %v subject: %v", depSubject, err)
+			err := fmt.Errorf("(attestation/maven) failed to record %v subject: %w", depSubject, err)
+			log.Debug(err)
 		}
 
 		subjects[depSubject] = depDigest

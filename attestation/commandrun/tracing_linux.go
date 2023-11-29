@@ -112,12 +112,14 @@ func (p *ptraceContext) runTrace() error {
 		if status.Stopped() && isPtraceTrap {
 			injectedSig = 0
 			if err := p.nextSyscall(pid); err != nil {
-				log.Debugf("(tracing) got error while processing syscall: %v", err)
+				err := fmt.Errorf("(tracing) got error while processing syscall: %w", err)
+				log.Debug(err)
 			}
 		}
 
 		if err := unix.PtraceSyscall(pid, injectedSig); err != nil {
-			log.Debugf("(tracing) got error from ptrace syscall: %v", err)
+			err := fmt.Errorf("(tracing) got error from ptrace syscall: %w", err)
+			log.Debug(err)
 		}
 	}
 }
