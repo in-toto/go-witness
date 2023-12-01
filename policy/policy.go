@@ -238,7 +238,7 @@ func (step Step) checkFunctionaries(verifiedStatements []source.VerifiedCollecti
 		for _, verifier := range verifiedStatement.Verifiers {
 			verifierID, err := verifier.KeyID()
 			if err != nil {
-				log.Debugf("(policy) skipping verifier: could not get key id: %v", err)
+				log.Debugf("(policy) skipping verifier: could not get key id: %w", err)
 				continue
 			}
 
