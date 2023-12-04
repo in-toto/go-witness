@@ -105,7 +105,7 @@ func TestIDToken(t *testing.T) {
 
 	// test that when neither valid token nor a path is supplied, an error is returned
 	tok = "test"
-	out, err = idToken(tok)
+	_, err = idToken(tok)
 	require.Error(t, err)
 }
 
