@@ -1,0 +1,30 @@
+name: "Fossa Scan"
+
+on:
+    push:
+      branches: ["main"]
+    pull_request:
+      # The branches below must be a subset of the branches above
+      branches: ["main"]
+    schedule:
+      - cron: "0 0 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+    fossa-scan:
+      runs-on: ubuntu-latest
+      steps:
+        - name: "Checkout Code"
+          uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        - name: Check secret
+          id: checksecret
+          uses: ./.github/actions/exists
+          with:
+            value: ${{ secrets.fossaApiKey }}
+        - name: "Run FOSSA Scan"
+          if: steps.checksecret.outputs.result == 'true'
+          uses: fossas/fossa-action@f61a4c0c263690f2ddb54b9822a719c25a7b608f # v1.3.1
+          with:
+            api-key: ${{ secrets.fossaApiKey }}

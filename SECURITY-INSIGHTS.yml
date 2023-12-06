@@ -1,0 +1,10 @@
+header:
+  schema-version: 1.0.0
+  expiration-date: '2024-08-31T10:10:09.000Z'
+  last-updated: '2023-12-06'
+  last-reviewed: '2023-12-06'
+  commit-hash: cd0c222058a8830a8e190b840e466098b25a3c41
+  project-url: https://github.com/in-toto/go-witness
+  project-release: 'v0.17.0'
+  changelog: https://github.com/in-toto/go-witness/releases/tag/v0.17.0
+  license: https://github.com/in-toto/go-witness/blob/main/LICENSE
