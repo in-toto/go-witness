@@ -287,7 +287,7 @@ During the verification process witness will use the [Rekor](https://github.com/
 - Vault Key Provider
 - Cloud KMS Support
 - Kubernetes Admission Controller
-- SIEM Collection Agent 
+- SIEM Collection Agent
 - Cosign Signature Validation
 - Notary v2 Signature Validation
 - [Zarf](https://github.com/defenseunicorns/zarf) Integration
