@@ -1,3 +1,6 @@
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/8164/badge)](https://www.bestpractices.dev/projects/8164)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/in-toto/go-witness/badge)](https://securityscorecards.dev/viewer/?uri=github.com/in-toto/go-witness)
+[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B41709%2Fgithub.com%2Fin-toto%2Fgo-witness.svg?type=shield&issueType=license)](https://app.fossa.com/projects/custom%2B41709%2Fgithub.com%2Fin-toto%2Fgo-witness?ref=badge_shield&issueType=license)
 
 [![asciicast](https://asciinema.org/a/2DZRRh8uzrzHcUVL8md86Zj4D.svg)](https://asciinema.org/a/2DZRRh8uzrzHcUVL8md86Zj4D)
 

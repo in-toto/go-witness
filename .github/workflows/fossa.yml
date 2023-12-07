@@ -12,31 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-version: 2
+name: "Fossa Scan"
 
-updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
+on:
+    push:
+      branches: ["main"]
+    pull_request:
+      # The branches below must be a subset of the branches above
+      branches: ["main"]
     schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "chore"
+      - cron: "0 0 * * 1"
 
-  - package-ecosystem: "gomod"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "chore"
-    ignore:
-      - dependency-name: "*"
-        update-types:
-        - "version-update:semver-major"
-        - "version-update:semver-minor"
+permissions:
+  contents: read
 
-  - package-ecosystem: docker
-    directory: /
-    schedule:
-      interval: daily
-    commit-message:
-      prefix: "chore"
+jobs:
+    fossa-scan:
+      runs-on: ubuntu-latest
+      steps:
+        - name: "Checkout Code"
+          uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        - name: "Run FOSSA Scan"
+          uses: fossas/fossa-action@f61a4c0c263690f2ddb54b9822a719c25a7b608f # v1.3.1
+          with:
+            api-key: ${{ secrets.fossaApiKey }}
