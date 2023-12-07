@@ -212,12 +212,12 @@ func TestSigner(t *testing.T) {
 	tp := filepath.Join(rootDir, "hack", "test.token")
 
 	provider = New(WithFulcioURL(fmt.Sprintf("http://%v:%v", hostname, port)), WithTokenPath(tp))
-	signer, err = provider.Signer(ctx)
+	_, err = provider.Signer(ctx)
 	require.NoError(t, err)
 
 	// Test signer with both token read from file and raw token
 	provider = New(WithFulcioURL(fmt.Sprintf("http://%v:%v", hostname, port)), WithTokenPath(tp), WithToken(token))
-	signer, err = provider.Signer(ctx)
+	_, err = provider.Signer(ctx)
 	require.ErrorContains(t, err, "only one of --fulcio-token-path or --fulcio-raw-token can be used")
 }
 
