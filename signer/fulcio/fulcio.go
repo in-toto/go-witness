@@ -215,7 +215,7 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 	var raw string
 
 	switch {
-	case fsp.Token == "" && os.Getenv("GITHUB_ACTIONS") == "true":
+	case fsp.Token == "" && fsp.TokenPath == "" && os.Getenv("GITHUB_ACTIONS") == "true":
 		tokenURL := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL")
 		if tokenURL == "" {
 			return nil, errors.New("ACTIONS_ID_TOKEN_REQUEST_URL is not set")
