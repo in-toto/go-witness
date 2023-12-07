@@ -93,7 +93,7 @@ func init() {
 		),
 		registry.StringConfigOption(
 			"token",
-			"Raw token to use for authentication. The token or a path to the file containing the token is accepted",
+			"Raw token string to use for authentication to fulcio (cannot be used in conjunction with --fulcio-token-path)",
 			"",
 			func(sp signer.SignerProvider, token string) (signer.SignerProvider, error) {
 				fsp, ok := sp.(FulcioSignerProvider)
@@ -105,6 +105,20 @@ func init() {
 				return fsp, nil
 			},
 		),
+		registry.StringConfigOption(
+			"token-path",
+			"Path to the file containing a raw token to use for authentication to fulcio (cannot be used in conjunction with --fulcio-token)",
+			"",
+			func(sp signer.SignerProvider, tokenPath string) (signer.SignerProvider, error) {
+				fsp, ok := sp.(FulcioSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a fulcio signer provider")
+				}
+
+				WithTokenPath(tokenPath)(&fsp)
+				return fsp, nil
+			},
+		),
 	)
 }
 
@@ -113,6 +127,7 @@ type FulcioSignerProvider struct {
 	OidcIssuer   string
 	OidcClientID string
 	Token        string
+	TokenPath    string
 }
 
 type Option func(*FulcioSignerProvider)
@@ -138,6 +153,12 @@ func WithOidcClientID(oidcClientID string) Option {
 func WithToken(tokenOption string) Option {
 	return func(fsp *FulcioSignerProvider) {
 		fsp.Token = tokenOption
+	}
+}
+
+func WithTokenPath(tokenPathOption string) Option {
+	return func(fsp *FulcioSignerProvider) {
+		fsp.TokenPath = tokenPathOption
 	}
 }
 
@@ -210,13 +231,18 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 			return nil, err
 		}
 
-	case fsp.Token != "":
-		// reading from file if a path was supplied
-		raw, err = idToken(fsp.Token)
+		// we want to fail if both flags used (they're mutually exclusive)
+	case fsp.TokenPath != "" && fsp.Token != "":
+		return nil, errors.New("only one of --fulcio-token-path or --fulcio-raw-token can be used")
+	case fsp.Token != "" && fsp.TokenPath == "":
+		raw = fsp.Token
+	case fsp.TokenPath != "" && fsp.Token == "":
+		f, err := os.ReadFile(fsp.TokenPath)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read fulcio token from filepath %s: %w", fsp.TokenPath, err)
 		}
 
+		raw = string(f)
 	case fsp.Token == "" && isatty.IsTerminal(os.Stdin.Fd()):
 		tok, err := oauthflow.OIDConnect(fsp.OidcIssuer, fsp.OidcClientID, "", "", oauthflow.DefaultIDTokenGetter)
 		if err != nil {
@@ -285,7 +311,7 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 func getCert(ctx context.Context, key *rsa.PrivateKey, fc fulciopb.CAClient, token string) (*fulciopb.SigningCertificate, error) {
 	t, err := jwt.ParseSigned(token)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to parse jwt token for fulcio: %w", err)
 	}
 
 	var claims struct {
@@ -406,18 +432,4 @@ func newClient(ctx context.Context, fulcioURL string, fulcioPort int, isInsecure
 
 	// Create the Fulcio client
 	return fulciopb.NewCAClient(conn), nil
-}
-
-// idToken tries to parse a string as a token in JWS form. If it fails,
-// it treats the string as a path and tries to open the file at that path
-func idToken(s string) (string, error) {
-	// If this is a valid raw token, just return it
-	// NOTE: could be replaced with https://pkg.go.dev/go.step.sm/crypto/jose in future if features helpful
-	if _, err := jwt.ParseSigned(s); err == nil {
-		return s, nil
-	}
-
-	// Otherwise, if this is a path to a token return the contents
-	c, err := os.ReadFile(s)
-	return string(c), err
 }

@@ -78,37 +78,6 @@ func TestNewClient(t *testing.T) {
 	require.NotNil(t, client)
 }
 
-func TestIDToken(t *testing.T) {
-	// test when supplying a raw token, the same token is returned
-	tok := generateTestToken("test@example.com", "testsubject")
-	out, err := idToken(tok)
-	require.NoError(t, err)
-	require.Equal(t, tok, out)
-
-	// test when supplying a path, a valid token is returned
-	// NOTE: this function could be refactored to accept a fileSystem or io.Reader so reading the file can be mocked,
-	// but unsure if this is the way we want to go for now
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
-	}
-	rootDir := filepath.Dir(filepath.Dir(wd))
-	tok = filepath.Join(rootDir, "hack", "test.token")
-	testTok, err := os.ReadFile(tok)
-	if err != nil {
-		t.Fatalf("failed to read test token file: %v", err)
-	}
-
-	out, err = idToken(tok)
-	require.NoError(t, err)
-	require.Equal(t, string(testTok), out)
-
-	// test that when neither valid token nor a path is supplied, an error is returned
-	tok = "test"
-	_, err = idToken(tok)
-	require.Error(t, err)
-}
-
 type dummyCAClientService struct {
 	client fulciopb.CAClient
 	server *grpc.Server
@@ -231,6 +200,25 @@ func TestSigner(t *testing.T) {
 	_, err = provider.Signer(ctx)
 	//this should be a tranport err since we cant actually test on 443 which is the default
 	require.ErrorContains(t, err, "lookup test")
+
+	// Test signer with token read from file
+	// NOTE: this function could be refactored to accept a fileSystem or io.Reader so reading the file can be mocked,
+	// but unsure if this is the way we want to go for now
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	rootDir := filepath.Dir(filepath.Dir(wd))
+	tp := filepath.Join(rootDir, "hack", "test.token")
+
+	provider = New(WithFulcioURL(fmt.Sprintf("http://%v:%v", hostname, port)), WithTokenPath(tp))
+	signer, err = provider.Signer(ctx)
+	require.NoError(t, err)
+
+	// Test signer with both token read from file and raw token
+	provider = New(WithFulcioURL(fmt.Sprintf("http://%v:%v", hostname, port)), WithTokenPath(tp), WithToken(token))
+	signer, err = provider.Signer(ctx)
+	require.ErrorContains(t, err, "only one of --fulcio-token-path or --fulcio-raw-token can be used")
 }
 
 func generateCertChain(t *testing.T) []string {
