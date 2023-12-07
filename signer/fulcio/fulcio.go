@@ -230,8 +230,7 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 		if err != nil {
 			return nil, err
 		}
-
-		// we want to fail if both flags used (they're mutually exclusive)
+	// we want to fail if both flags used (they're mutually exclusive)
 	case fsp.TokenPath != "" && fsp.Token != "":
 		return nil, errors.New("only one of --fulcio-token-path or --fulcio-raw-token can be used")
 	case fsp.Token != "" && fsp.TokenPath == "":
