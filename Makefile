@@ -20,7 +20,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
 .PHONY: test
-test: ## Run go tests
+test: ## Run the go unit tests
 	go test -v -coverprofile=profile.cov -covermode=atomic ./...
 
 help: ## Display this help screen
