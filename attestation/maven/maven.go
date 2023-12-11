@@ -24,12 +24,14 @@ import (
 	"github.com/testifysec/go-witness/attestation"
 	"github.com/testifysec/go-witness/cryptoutil"
 	"github.com/testifysec/go-witness/log"
+	"github.com/testifysec/go-witness/registry"
 )
 
 const (
-	Name    = "maven"
-	Type    = "https://witness.dev/attestations/maven/v0.1"
-	RunType = attestation.PreMaterialRunType
+	Name           = "maven"
+	Type           = "https://witness.dev/attestations/maven/v0.1"
+	RunType        = attestation.PreMaterialRunType
+	defaultPomPath = "pom.xml"
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -42,7 +44,22 @@ var (
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
-	})
+	},
+		registry.StringConfigOption(
+			"include-glob",
+			fmt.Sprintf("The path to the Project Object Model (POM) XML file used for task being attested (default \"%s\").", defaultPomPath),
+			defaultPomPath,
+			func(a attestation.Attestor, includeGlob string) (attestation.Attestor, error) {
+				prodAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a product attestor", a)
+				}
+
+				WithIncludeGlob(includeGlob)(prodAttestor)
+				return prodAttestor, nil
+			},
+		),
+	)
 }
 
 type Attestor struct {
