@@ -6,7 +6,7 @@ A client library for [Witness](https://github.com/in-toto/witness), written in G
 [![OpenSSF-Scorecard](https://api.securityscorecards.dev/projects/github.com/in-toto/go-witness/badge)](https://api.securityscorecards.dev/projects/github.com/in-toto/go-witness)
 
 ## Status
-This library is currently pre-1.0 and therefore should be considered unstable and subject to change.
+This library is currently pre-1.0 and therefore the API may be subject to breaking changes.
 
 ## Features
 - Creation and signing of in-toto attestations
