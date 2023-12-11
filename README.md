@@ -3,7 +3,9 @@ A client library for [Witness](https://github.com/in-toto/witness), written in G
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/in-toto/go-witness.svg)](https://pkg.go.dev/github.com/in-toto/go-witness)
 [![Go Report Card](https://goreportcard.com/badge/github.com/in-toto/go-witness)](https://goreportcard.com/report/github.com/in-toto/go-witness)
-[![OpenSSF-Scorecard](https://api.securityscorecards.dev/projects/github.com/in-toto/go-witness/badge)](https://api.securityscorecards.dev/projects/github.com/in-toto/go-witness)
+![OpenSSF Best Practices](https://www.bestpractices.dev/projects/8164/badge)](https://www.bestpractices.dev/projects/8164)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/in-toto/go-witness/badge)](https://securityscorecards.dev/viewer/?uri=github.com/in-toto/go-witness)
+[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B41709%2Fgithub.com%2Fin-toto%2Fgo-witness.svg?type=shield&issueType=license)](https://app.fossa.com/projects/custom%2B41709%2Fgithub.com%2Fin-toto%2Fgo-witness?ref=badge_shield&issueType=license)
 
 ## Status
 This library is currently pre-1.0 and therefore should be considered unstable and subject to change.
