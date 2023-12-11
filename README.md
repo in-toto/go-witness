@@ -1,5 +1,19 @@
 # go-witness
 A client library for [Witness](https://github.com/in-toto/witness), written in Go.
 
-Features:
+[![Go Reference](https://pkg.go.dev/badge/github.com/in-toto/go-witness.svg)](https://pkg.go.dev/github.com/in-toto/go-witness)
+[![Go Report Card](https://goreportcard.com/badge/github.com/in-toto/go-witness)](https://goreportcard.com/report/github.com/in-toto/go-witness)
+[![OpenSSF-Scorecard](https://api.securityscorecards.dev/projects/github.com/in-toto/go-witness/badge)](https://api.securityscorecards.dev/projects/github.com/in-toto/go-witness)
+## Features
 - Creation and signing of in-toto attestations
+- Verification of in-toto attestations and associated signatures with:
+  - Witness policy engine
+  - [OPA Rego policy language](https://www.openpolicyagent.org/docs/latest/policy-language/)
+- A growing list of attestor types defined under a common interface
+- A selection of attestation sources to search for attestation collections
+
+## Documentation
+For more detail regarding the library itself, we recommend viewing [pkg.go.dev](https://pkg.go.dev/github.com/testifysec/go-witness). For
+the documentation of the witness project, please view [the main witness repository](https://github.com/in-toto/witness/tree/main/docs).
+
+
