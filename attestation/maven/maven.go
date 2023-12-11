@@ -46,17 +46,17 @@ func init() {
 		return New()
 	},
 		registry.StringConfigOption(
-			"include-glob",
+			"pom-path",
 			fmt.Sprintf("The path to the Project Object Model (POM) XML file used for task being attested (default \"%s\").", defaultPomPath),
 			defaultPomPath,
-			func(a attestation.Attestor, includeGlob string) (attestation.Attestor, error) {
-				prodAttestor, ok := a.(*Attestor)
+			func(a attestation.Attestor, pomPath string) (attestation.Attestor, error) {
+				mavAttestor, ok := a.(*Attestor)
 				if !ok {
-					return a, fmt.Errorf("unexpected attestor type: %T is not a product attestor", a)
+					return a, fmt.Errorf("unexpected attestor type: %T is not a maven attestor", a)
 				}
 
-				WithIncludeGlob(includeGlob)(prodAttestor)
-				return prodAttestor, nil
+				WithPom(pomPath)(mavAttestor)
+				return mavAttestor, nil
 			},
 		),
 	)
@@ -90,7 +90,7 @@ func WithPom(path string) Option {
 
 func New(opts ...Option) *Attestor {
 	attestor := &Attestor{
-		pomPath: "pom.xml",
+		pomPath: defaultPomPath,
 	}
 
 	for _, opt := range opts {
