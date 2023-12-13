@@ -18,7 +18,7 @@ import (
 	"context"
 
 	archivistaapi "github.com/testifysec/archivista-api"
-	"github.com/testifysec/go-witness/dsse"
+	"github.com/in-toto/go-witness/dsse"
 )
 
 func (c *Client) Store(ctx context.Context, env dsse.Envelope) (string, error) {

@@ -27,9 +27,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/log"
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 )
 
 const (
@@ -42,8 +42,8 @@ const (
 const (
 	docPath = "instance-identity/document"
 	sigPath = "instance-identity/signature"
-	//https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/verify-signature.html
-	//The following AWS public certificate is for all AWS Regions, except Hong Kong, Bahrain, China, and GovCloud.
+	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/verify-signature.html
+	// The following AWS public certificate is for all AWS Regions, except Hong Kong, Bahrain, China, and GovCloud.
 	awsCACertPEM = `-----BEGIN CERTIFICATE-----
 MIIDIjCCAougAwIBAgIJAKnL4UEDMN/FMA0GCSqGSIb3DQEBBQUAMGoxCzAJBgNV
 BAYTAlVTMRMwEQYDVQQIEwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdTZWF0dGxlMRgw

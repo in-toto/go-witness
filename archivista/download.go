@@ -18,7 +18,7 @@ import (
 	"context"
 
 	archivistaapi "github.com/testifysec/archivista-api"
-	"github.com/testifysec/go-witness/dsse"
+	"github.com/in-toto/go-witness/dsse"
 )
 
 func (c *Client) Download(ctx context.Context, gitoid string) (dsse.Envelope, error) {
