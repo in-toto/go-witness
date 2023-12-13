@@ -17,7 +17,7 @@ package archivista
 import (
 	"context"
 
-	archivistaapi "github.com/in-toto/archivista/pkg/api"
+	archivistaapi "github.com/testifysec/archivista-api"
 )
 
 type searchGitoidResponse struct {
