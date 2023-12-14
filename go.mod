@@ -1,4 +1,4 @@
-module github.com/testifysec/go-witness
+module github.com/in-toto/go-witness
 
 go 1.19
 
@@ -8,12 +8,12 @@ require (
 	github.com/digitorus/timestamp v0.0.0-20230220124323-d542479a2425
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
 	github.com/go-git/go-git/v5 v5.5.2
+	github.com/in-toto/archivista v0.1.3-0.20231214050507-e28a4170a9fe
 	github.com/mattn/go-isatty v0.0.20
 	github.com/open-policy-agent/opa v0.49.2
 	github.com/owenrumney/go-sarif v1.1.1
 	github.com/spiffe/go-spiffe/v2 v2.1.6
 	github.com/stretchr/testify v1.8.4
-	github.com/testifysec/archivista-api v0.0.0-20230220215059-632b84b82b76
 	go.step.sm/crypto v0.25.2
 	golang.org/x/sys v0.13.0
 	google.golang.org/grpc v1.56.3
@@ -28,7 +28,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.1 // indirect
-	github.com/go-logr/logr v1.2.3 // indirect
+	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/flatbuffers v2.0.8+incompatible // indirect
 	github.com/google/go-containerregistry v0.13.0 // indirect
@@ -50,9 +50,9 @@ require (
 	github.com/tchap/go-patricia/v2 v2.3.1 // indirect
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
 	github.com/zclconf/go-cty v1.12.1 // indirect
-	golang.org/x/mod v0.8.0 // indirect
+	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/oauth2 v0.7.0 // indirect
-	golang.org/x/tools v0.6.0 // indirect
+	golang.org/x/tools v0.9.3 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/klog/v2 v2.90.0 // indirect
@@ -103,3 +103,5 @@ replace github.com/sigstore/rekor => github.com/testifysec/rekor v0.4.0-dsse-int
 replace github.com/gin-gonic/gin v1.5.0 => github.com/gin-gonic/gin v1.7.7
 
 replace github.com/opencontainers/image-spec => github.com/opencontainers/image-spec v1.0.3-0.20220303224323-02efb9a75ee1
+
+replace github.com/in-toto/archivista v0.1.3-0.20231213123840-c6750e051f5c => github.com/in-toto/archivista v0.1.3-0.20231214050507-e28a4170a9fe

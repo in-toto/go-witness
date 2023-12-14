@@ -17,8 +17,8 @@ package attestation
 import (
 	"fmt"
 
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/registry"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/registry"
 )
 
 var (

@@ -21,7 +21,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/cryptoutil"
 )
 
 type TimestampVerifier interface {

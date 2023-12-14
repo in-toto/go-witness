@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/dsse"
-	"github.com/testifysec/go-witness/policy"
-	"github.com/testifysec/go-witness/source"
-	"github.com/testifysec/go-witness/timestamp"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/dsse"
+	"github.com/in-toto/go-witness/policy"
+	"github.com/in-toto/go-witness/source"
+	"github.com/in-toto/go-witness/timestamp"
 )
 
 func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelope, error) {

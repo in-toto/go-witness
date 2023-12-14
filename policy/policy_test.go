@@ -25,13 +25,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/attestation/commandrun"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/intoto"
+	"github.com/in-toto/go-witness/source"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/attestation/commandrun"
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/intoto"
-	"github.com/testifysec/go-witness/source"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

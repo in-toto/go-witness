@@ -20,10 +20,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/attestation/jwt"
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/log"
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/attestation/jwt"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 )
 
 const (

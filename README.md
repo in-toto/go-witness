@@ -19,7 +19,7 @@ This library is currently pre-1.0 and therefore the API may be subject to breaki
 - A selection of attestation sources to search for attestation collections
 
 ## Documentation
-For more detail regarding the library itself, we recommend viewing [pkg.go.dev](https://pkg.go.dev/github.com/testifysec/go-witness). For
+For more detail regarding the library itself, we recommend viewing [pkg.go.dev](https://pkg.go.dev/github.com/in-toto/go-witness). For
 the documentation of the witness project, please view [the main witness repository](https://github.com/in-toto/witness/tree/main/docs).
 
 ## Requirements

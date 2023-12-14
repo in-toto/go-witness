@@ -17,9 +17,9 @@ package source
 import (
 	"context"
 
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/dsse"
-	"github.com/testifysec/go-witness/log"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/dsse"
+	"github.com/in-toto/go-witness/log"
 )
 
 type VerifiedCollection struct {
