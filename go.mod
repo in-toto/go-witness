@@ -8,12 +8,12 @@ require (
 	github.com/digitorus/timestamp v0.0.0-20230220124323-d542479a2425
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
 	github.com/go-git/go-git/v5 v5.5.2
+	github.com/in-toto/archivista v0.1.3-0.20231214050507-e28a4170a9fe
 	github.com/mattn/go-isatty v0.0.20
 	github.com/open-policy-agent/opa v0.49.2
 	github.com/owenrumney/go-sarif v1.1.1
 	github.com/spiffe/go-spiffe/v2 v2.1.6
 	github.com/stretchr/testify v1.8.4
-	github.com/testifysec/archivista-api v0.0.0-20231212151753-a38ec6c5ba96
 	go.step.sm/crypto v0.25.2
 	golang.org/x/sys v0.13.0
 	google.golang.org/grpc v1.56.3
@@ -26,30 +26,33 @@ require (
 	github.com/agnivade/levenshtein v1.1.1 // indirect
 	github.com/cloudflare/circl v1.3.3 // indirect
 	github.com/coreos/go-oidc/v3 v3.5.0 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.1 // indirect
-	github.com/go-logr/logr v1.2.3 // indirect
+	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/google/flatbuffers v2.0.8+incompatible // indirect
 	github.com/google/go-containerregistry v0.13.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.15.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/kr/pretty v0.3.0 // indirect
 	github.com/letsencrypt/boulder v0.0.0-20221109233200-85aa52084eaf // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pjbgf/sha1cd v0.2.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/rogpeppe/go-internal v1.8.0 // indirect
 	github.com/segmentio/ksuid v1.0.4 // indirect
 	github.com/skeema/knownhosts v1.1.0 // indirect
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.1 // indirect
-	github.com/testifysec/go-witness v0.1.17 // indirect
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
 	github.com/zclconf/go-cty v1.12.1 // indirect
-	golang.org/x/mod v0.8.0 // indirect
+	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/oauth2 v0.7.0 // indirect
-	golang.org/x/tools v0.6.0 // indirect
+	golang.org/x/tools v0.9.3 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/klog/v2 v2.90.0 // indirect
@@ -100,3 +103,5 @@ replace github.com/sigstore/rekor => github.com/testifysec/rekor v0.4.0-dsse-int
 replace github.com/gin-gonic/gin v1.5.0 => github.com/gin-gonic/gin v1.7.7
 
 replace github.com/opencontainers/image-spec => github.com/opencontainers/image-spec v1.0.3-0.20220303224323-02efb9a75ee1
+
+replace github.com/in-toto/archivista v0.1.3-0.20231213123840-c6750e051f5c => github.com/in-toto/archivista v0.1.3-0.20231214050507-e28a4170a9fe
