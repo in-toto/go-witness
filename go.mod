@@ -8,7 +8,7 @@ require (
 	github.com/digitorus/timestamp v0.0.0-20230220124323-d542479a2425
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
 	github.com/go-git/go-git/v5 v5.5.2
-	github.com/in-toto/archivista v0.1.3-0.20231214050507-e28a4170a9fe
+	github.com/in-toto/archivista v0.2.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/open-policy-agent/opa v0.49.2
 	github.com/owenrumney/go-sarif v1.1.1
@@ -103,5 +103,3 @@ replace github.com/sigstore/rekor => github.com/testifysec/rekor v0.4.0-dsse-int
 replace github.com/gin-gonic/gin v1.5.0 => github.com/gin-gonic/gin v1.7.7
 
 replace github.com/opencontainers/image-spec => github.com/opencontainers/image-spec v1.0.3-0.20220303224323-02efb9a75ee1
-
-replace github.com/in-toto/archivista v0.1.3-0.20231213123840-c6750e051f5c => github.com/in-toto/archivista v0.1.3-0.20231214050507-e28a4170a9fe
