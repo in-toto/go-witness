@@ -58,8 +58,11 @@ func Warnf(format string, args ...interface{}) {
 		if _, ok := a.(error); ok {
 			err := fmt.Errorf(format, args...)
 			log.Warn(err)
+			return
 		}
 	}
+
+	log.Warnf(format, args...)
 }
 
 func Warn(args ...interface{}) {
@@ -71,8 +74,11 @@ func Debugf(format string, args ...interface{}) {
 		if _, ok := a.(error); ok {
 			err := fmt.Errorf(format, args...)
 			log.Debug(err)
+			return
 		}
 	}
+
+	log.Debugf(format, args...)
 }
 
 func Debug(args ...interface{}) {
