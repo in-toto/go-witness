@@ -15,9 +15,10 @@
 package cryptoutil
 
 import (
+	"context"
+	"crypto"
 	"crypto/x509"
 	"encoding/pem"
-	"io"
 	"time"
 )
 
@@ -48,7 +49,7 @@ func (v *X509Verifier) KeyID() (string, error) {
 	return v.verifier.KeyID()
 }
 
-func (v *X509Verifier) Verify(body io.Reader, sig []byte) error {
+func (v *X509Verifier) Verify(ctx context.Context, body []byte, sig []byte) error {
 	rootPool := certificatesToPool(v.roots)
 	intermediatePool := certificatesToPool(v.intermediates)
 	if _, err := v.cert.Verify(x509.VerifyOptions{
@@ -60,7 +61,12 @@ func (v *X509Verifier) Verify(body io.Reader, sig []byte) error {
 		return err
 	}
 
-	return v.verifier.Verify(body, sig)
+	return v.verifier.Verify(context.TODO(), body, sig)
+}
+
+// TODO: THIS NEEDS TESTED
+func (v *X509Verifier) Public() crypto.PublicKey {
+	return (crypto.PublicKey)(v.cert.PublicKey)
 }
 
 func (v *X509Verifier) BelongsToRoot(root *x509.Certificate) error {
@@ -133,12 +139,18 @@ func (s *X509Signer) KeyID() (string, error) {
 	return s.signer.KeyID()
 }
 
-func (s *X509Signer) Sign(r io.Reader) ([]byte, error) {
-	return s.signer.Sign(r)
+func (s *X509Signer) Sign(ctx context.Context, data []byte) ([]byte, error) {
+	return s.signer.Sign(ctx, data)
+}
+
+// TODO: THIS NEEDS TESTED
+func (s *X509Signer) Public() crypto.PublicKey {
+	return (crypto.PublicKey)(s.cert.PublicKey)
 }
 
 func (s *X509Signer) Verifier() (Verifier, error) {
-	verifier, err := s.signer.Verifier()
+	// Left trustedTime as time.Time{} for now, this may need to be changed
+	verifier, err := NewX509Verifier(s.cert, s.intermediates, s.roots, time.Time{})
 	if err != nil {
 		return nil, err
 	}

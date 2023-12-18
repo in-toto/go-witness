@@ -47,7 +47,7 @@ func SignWithTimestampers(timestampers ...Timestamper) SignOption {
 	}
 }
 
-func Sign(bodyType string, body io.Reader, opts ...SignOption) (Envelope, error) {
+func Sign(bodyType string, body []byte, opts ...SignOption) (Envelope, error) {
 	so := &signOptions{}
 	env := Envelope{}
 	for _, opt := range opts {
@@ -58,17 +58,12 @@ func Sign(bodyType string, body io.Reader, opts ...SignOption) (Envelope, error)
 		return env, fmt.Errorf("must have at least one signer, have %v", len(so.signers))
 	}
 
-	bodyBytes, err := io.ReadAll(body)
-	if err != nil {
-		return env, err
-	}
-
 	env.PayloadType = bodyType
-	env.Payload = bodyBytes
+	env.Payload = body
 	env.Signatures = make([]Signature, 0)
-	pae := preauthEncode(bodyType, bodyBytes)
+	pae := preauthEncode(bodyType, body)
 	for _, signer := range so.signers {
-		sig, err := signer.Sign(bytes.NewReader(pae))
+		sig, err := signer.Sign(context.TODO(), pae)
 		if err != nil {
 			return env, err
 		}

@@ -15,10 +15,10 @@
 package cryptoutil
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	"io"
 )
 
 type RSASigner struct {
@@ -34,8 +34,8 @@ func (s *RSASigner) KeyID() (string, error) {
 	return GeneratePublicKeyID(&s.priv.PublicKey, s.hash)
 }
 
-func (s *RSASigner) Sign(r io.Reader) ([]byte, error) {
-	digest, err := Digest(r, s.hash)
+func (s *RSASigner) Sign(ctx context.Context, data []byte) ([]byte, error) {
+	digest, err := DigestBytes(data, s.hash)
 	if err != nil {
 		return nil, err
 	}
@@ -65,8 +65,8 @@ func (v *RSAVerifier) KeyID() (string, error) {
 	return GeneratePublicKeyID(v.pub, v.hash)
 }
 
-func (v *RSAVerifier) Verify(data io.Reader, sig []byte) error {
-	digest, err := Digest(data, v.hash)
+func (v *RSAVerifier) Verify(ctx context.Context, data []byte, sig []byte) error {
+	digest, err := DigestBytes(data, v.hash)
 	if err != nil {
 		return err
 	}
@@ -77,6 +77,10 @@ func (v *RSAVerifier) Verify(data io.Reader, sig []byte) error {
 	}
 
 	return rsa.VerifyPSS(v.pub, v.hash, digest, sig, pssOpts)
+}
+
+func (v *RSAVerifier) Public() crypto.PublicKey {
+	return v.pub
 }
 
 func (v *RSAVerifier) Bytes() ([]byte, error) {

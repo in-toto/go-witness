@@ -15,10 +15,10 @@
 package cryptoutil
 
 import (
+	"context"
 	"crypto"
 	"crypto/ed25519"
 	"fmt"
-	"io"
 )
 
 type ED25519Signer struct {
@@ -33,13 +33,8 @@ func (s *ED25519Signer) KeyID() (string, error) {
 	return GeneratePublicKeyID(s.priv.Public(), crypto.SHA256)
 }
 
-func (s *ED25519Signer) Sign(r io.Reader) ([]byte, error) {
-	msg, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	return ed25519.Sign(s.priv, msg), nil
+func (s *ED25519Signer) Sign(ctx context.Context, data []byte) ([]byte, error) {
+	return ed25519.Sign(s.priv, data), nil
 }
 
 func (s *ED25519Signer) Verifier() (Verifier, error) {
@@ -64,18 +59,17 @@ func (v *ED25519Verifier) KeyID() (string, error) {
 	return GeneratePublicKeyID(v.pub, crypto.SHA256)
 }
 
-func (v *ED25519Verifier) Verify(r io.Reader, sig []byte) error {
-	msg, err := io.ReadAll(r)
-	if err != nil {
-		return err
-	}
-
-	verified := ed25519.Verify(v.pub, msg, sig)
+func (v *ED25519Verifier) Verify(ctx context.Context, payload []byte, sig []byte) error {
+	verified := ed25519.Verify(v.pub, payload, sig)
 	if !verified {
 		return ErrVerifyFailed{}
 	}
 
 	return nil
+}
+
+func (v *ED25519Verifier) Public() crypto.PublicKey {
+	return v.pub
 }
 
 func (v *ED25519Verifier) Bytes() ([]byte, error) {

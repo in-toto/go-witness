@@ -15,10 +15,10 @@
 package cryptoutil
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
-	"io"
 )
 
 type ErrVerifyFailed struct{}
@@ -40,8 +40,8 @@ func (s *ECDSASigner) KeyID() (string, error) {
 	return GeneratePublicKeyID(&s.priv.PublicKey, s.hash)
 }
 
-func (s *ECDSASigner) Sign(r io.Reader) ([]byte, error) {
-	digest, err := Digest(r, s.hash)
+func (s *ECDSASigner) Sign(ctx context.Context, data []byte) ([]byte, error) {
+	digest, err := DigestBytes(data, s.hash)
 	if err != nil {
 		return nil, err
 	}
@@ -66,8 +66,8 @@ func (v *ECDSAVerifier) KeyID() (string, error) {
 	return GeneratePublicKeyID(v.pub, v.hash)
 }
 
-func (v *ECDSAVerifier) Verify(data io.Reader, sig []byte) error {
-	digest, err := Digest(data, v.hash)
+func (v *ECDSAVerifier) Verify(ctx context.Context, data []byte, sig []byte) error {
+	digest, err := DigestBytes(data, v.hash)
 	if err != nil {
 		return err
 	}
@@ -78,6 +78,10 @@ func (v *ECDSAVerifier) Verify(data io.Reader, sig []byte) error {
 	}
 
 	return nil
+}
+
+func (v *ECDSAVerifier) Public() crypto.PublicKey {
+	return v.pub
 }
 
 func (v *ECDSAVerifier) Bytes() ([]byte, error) {

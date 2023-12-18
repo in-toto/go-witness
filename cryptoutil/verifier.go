@@ -15,6 +15,7 @@
 package cryptoutil
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -26,9 +27,9 @@ import (
 )
 
 type Verifier interface {
-	KeyIdentifier
-	Verify(body io.Reader, sig []byte) error
-	Bytes() ([]byte, error)
+	Verify(ctx context.Context, data, sig []byte) error
+	KeyID() (string, error)
+	Public() crypto.PublicKey
 }
 
 type VerifierOption func(*verifierOptions)

@@ -78,9 +78,6 @@ func PublicPemBytes(pub interface{}) ([]byte, error) {
 	}
 
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: keyBytes})
-	if err != nil {
-		return nil, err
-	}
 
 	return pemBytes, err
 }

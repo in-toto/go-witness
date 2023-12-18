@@ -15,6 +15,7 @@
 package cryptoutil
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -32,15 +33,22 @@ func (e ErrUnsupportedKeyType) Error() string {
 	return fmt.Sprintf("unsupported signer key type: %v", e.t)
 }
 
-type Signer interface {
-	KeyIdentifier
-	Sign(r io.Reader) ([]byte, error)
-	Verifier() (Verifier, error)
+type SignerVerifier struct {
+	Signer
+	Verifier
 }
 
-type KeyIdentifier interface {
-	KeyID() (string, error)
+// NOTE: Signer verifier required this function and I don't know why
+func (sv SignerVerifier) KeyID() (string, error) {
+	return sv.Signer.KeyID()
 }
+
+type Signer interface {
+	KeyID() (string, error)
+	Sign(ctx context.Context, data []byte) ([]byte, error)
+}
+
+type KeyIdentifier interface{}
 
 type TrustBundler interface {
 	Certificate() *x509.Certificate
