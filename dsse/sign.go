@@ -59,7 +59,7 @@ func Sign(bodyType string, body []byte, opts ...SignOption) (Envelope, error) {
 	}
 
 	env.PayloadType = bodyType
-	env.Payload = body
+	env.Payload = string(body)
 	env.Signatures = make([]Signature, 0)
 	pae := preauthEncode(bodyType, body)
 	for _, signer := range so.signers {

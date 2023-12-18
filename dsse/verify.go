@@ -86,7 +86,7 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 		return nil, ErrInvalidThreshold(options.threshold)
 	}
 
-	pae := preauthEncode(e.PayloadType, e.Payload)
+	pae := preauthEncode(e.PayloadType, []byte(e.Payload))
 	if len(e.Signatures) == 0 {
 		return nil, ErrNoSignatures{}
 	}
@@ -146,7 +146,7 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 
 		for _, verifier := range options.verifiers {
 			if verifier != nil {
-				if err := verifier.Verify(bytes.NewReader(pae), sig.Signature); err == nil {
+				if err := verifier.Verify(context.TODO(), pae, sig.Signature); err == nil {
 					passedVerifiers = append(passedVerifiers, PassedVerifier{Verifier: verifier})
 					matchingSigFound = true
 				}
@@ -171,7 +171,7 @@ func verifyX509Time(cert *x509.Certificate, sigIntermediates, roots []*x509.Cert
 		return nil, err
 	}
 
-	if err := verifier.Verify(bytes.NewReader(pae), sig); err != nil {
+	if err := verifier.Verify(context.TODO(), pae, sig); err != nil {
 		return nil, err
 	}
 

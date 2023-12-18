@@ -17,5 +17,18 @@ type Envelope interface {
 
 	// Content returns the payload and signer information of the envelope.
 	// Content is trusted only after the successful call to `Verify()`.
-	Content() ([]byte, error)
+	Content() (EnvelopeContent, error)
+}
+
+type EnvelopeContent struct {
+	PayloadType string
+	Payload     string
+	Signatures  []SignatureInfo
+}
+
+type SignatureInfo struct {
+	// NOTE: Made this a string for now but I think it might be better in antother form later
+	SignatureAlgorithm string
+
+	Signature []byte
 }

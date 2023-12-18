@@ -48,7 +48,7 @@ func (e ErrInvalidThreshold) Error() string {
 const PemTypeCertificate = "CERTIFICATE"
 
 type Envelope struct {
-	Payload     []byte      `json:"payload"`
+	Payload     string      `json:"payload"`
 	PayloadType string      `json:"payloadType"`
 	Signatures  []Signature `json:"signatures"`
 }
