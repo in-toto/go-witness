@@ -15,8 +15,8 @@
 header:
   schema-version: 1.0.0
   expiration-date: '2024-08-31T10:10:09.000Z'
-  last-updated: '2023-12-17'
-  last-reviewed: '2023-12-17'
+  last-updated: '2023-12-20'
+  last-reviewed: '2023-12-20'
   commit-hash: cd0c222058a8830a8e190b840e466098b25a3c41
   project-url: https://github.com/in-toto/go-witness
   project-release: 'v0.2.0'
@@ -76,6 +76,6 @@ dependencies:
     comment: |
       All dependencies are subject to the Witness Security Policy.
   env-dependencies-policy:
-    policy-url: https://github.com/in-toto/go-witness/SECURITY.md
+    policy-url: https://github.com/in-toto/go-witness/DEPENDENCY.md
     comment: |
-      All dependencies are subject to the Witness Security Policy.
+      All dependencies are subject to the Witness Dependency Policy.
