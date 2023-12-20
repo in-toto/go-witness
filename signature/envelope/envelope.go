@@ -1,23 +1,21 @@
 package envelope
 
 import (
-	"crypto"
-
 	"github.com/in-toto/go-witness/cryptoutil"
 )
 
 // Envelope provides basic functions to manipulate signatures.
 type Envelope interface {
 	// Sign generates and sign the envelope according to the sign request.
-	Sign(signer *crypto.Signer, opts ...cryptoutil.SignerOption) (interface{}, error)
+	Sign(signer *cryptoutil.Signer) error
 
 	// Verify verifies the envelope and returns its enclosed payload and signer
 	// info.
-	Verify(pub *crypto.PublicKey, opts ...cryptoutil.VerifierOption) (interface{}, error)
+	Verify(pub *cryptoutil.Verifier) error
 
 	// Content returns the payload and signer information of the envelope.
 	// Content is trusted only after the successful call to `Verify()`.
-	Content() (EnvelopeContent, error)
+	Content() (*EnvelopeContent, error)
 }
 
 type EnvelopeContent struct {
@@ -27,8 +25,8 @@ type EnvelopeContent struct {
 }
 
 type SignatureInfo struct {
-	// NOTE: Made this a string for now but I think it might be better in antother form later
-	SignatureAlgorithm string
-
-	Signature []byte
+	KeyID         string   `json:"keyid"`
+	Signature     []byte   `json:"sig"`
+	Certificate   []byte   `json:"certificate,omitempty"`
+	Intermediates [][]byte `json:"intermediates,omitempty"`
 }

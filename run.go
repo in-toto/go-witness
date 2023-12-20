@@ -15,7 +15,6 @@
 package witness
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -23,19 +22,28 @@ import (
 	"github.com/in-toto/go-witness/attestation/environment"
 	"github.com/in-toto/go-witness/attestation/git"
 	"github.com/in-toto/go-witness/cryptoutil"
-	"github.com/in-toto/go-witness/dsse"
+	idsse "github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
+	"github.com/in-toto/go-witness/signature/envelope"
+	dsse "github.com/in-toto/go-witness/signature/envelope/dsse"
 )
 
 type runOptions struct {
 	stepName        string
 	signer          cryptoutil.Signer
+	envelopeType    string
 	attestors       []attestation.Attestor
 	attestationOpts []attestation.AttestationContextOption
-	timestampers    []dsse.Timestamper
+	timestampers    []idsse.Timestamper
 }
 
 type RunOption func(ro *runOptions)
+
+func RunWithEnvelopeType(envelopeType string) RunOption {
+	return func(ro *runOptions) {
+		ro.envelopeType = envelopeType
+	}
+}
 
 func RunWithAttestors(attestors []attestation.Attestor) RunOption {
 	return func(ro *runOptions) {
@@ -49,7 +57,7 @@ func RunWithAttestationOpts(opts ...attestation.AttestationContextOption) RunOpt
 	}
 }
 
-func RunWithTimestampers(ts ...dsse.Timestamper) RunOption {
+func RunWithTimestampers(ts ...idsse.Timestamper) RunOption {
 	return func(ro *runOptions) {
 		ro.timestampers = ts
 	}
@@ -57,7 +65,7 @@ func RunWithTimestampers(ts ...dsse.Timestamper) RunOption {
 
 type RunResult struct {
 	Collection     attestation.Collection
-	SignedEnvelope dsse.Envelope
+	SignedEnvelope envelope.Envelope
 }
 
 func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResult, error) {
@@ -86,10 +94,12 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 	}
 
 	result.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
-	result.SignedEnvelope, err = signCollection(result.Collection, dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
+	se, err := signCollection(result.Collection, ro.signer, ro.envelopeType)
 	if err != nil {
 		return result, fmt.Errorf("failed to sign collection: %w", err)
 	}
+
+	result.SignedEnvelope = *se
 
 	return result, nil
 }
@@ -106,21 +116,39 @@ func validateRunOpts(ro runOptions) error {
 	return nil
 }
 
-func signCollection(collection attestation.Collection, opts ...dsse.SignOption) (dsse.Envelope, error) {
+func signCollection(collection attestation.Collection, signer cryptoutil.Signer, envelopeType string) (*envelope.Envelope, error) {
 	data, err := json.Marshal(&collection)
 	if err != nil {
-		return dsse.Envelope{}, err
+		return nil, err
 	}
 
 	stmt, err := intoto.NewStatement(attestation.CollectionType, data, collection.Subjects())
 	if err != nil {
-		return dsse.Envelope{}, err
+		return nil, err
 	}
 
 	stmtJson, err := json.Marshal(&stmt)
 	if err != nil {
-		return dsse.Envelope{}, err
+		return nil, err
 	}
 
-	return dsse.Sign(intoto.PayloadType, bytes.NewReader(stmtJson), opts...)
+	var env envelope.Envelope
+	switch envelopeType {
+	case "dsse":
+		env = &dsse.Envelope{
+			Envelope: &idsse.Envelope{
+				PayloadType: intoto.PayloadType,
+				Payload:     string(stmtJson),
+			},
+		}
+	default:
+		return nil, fmt.Errorf("envelope type %s not recognized", envelopeType)
+	}
+
+	err = env.Sign(&signer)
+	if err != nil {
+		return nil, err
+	}
+
+	return &env, nil
 }

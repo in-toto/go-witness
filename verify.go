@@ -81,7 +81,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 	}
 
 	pol := policy.Policy{}
-	if err := json.Unmarshal(vo.policyEnvelope.Payload, &pol); err != nil {
+	if err := json.Unmarshal([]byte(vo.policyEnvelope.Payload), &pol); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal policy from envelope: %w", err)
 	}
 

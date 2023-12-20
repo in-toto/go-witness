@@ -36,7 +36,7 @@ type Sourcer interface {
 
 func envelopeToCollectionEnvelope(reference string, env dsse.Envelope) (CollectionEnvelope, error) {
 	statement := intoto.Statement{}
-	if err := json.Unmarshal(env.Payload, &statement); err != nil {
+	if err := json.Unmarshal([]byte(env.Payload), &statement); err != nil {
 		return CollectionEnvelope{}, err
 	}
 

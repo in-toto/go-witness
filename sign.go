@@ -16,17 +16,48 @@ package witness
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 
-	"github.com/in-toto/go-witness/dsse"
+	"github.com/in-toto/go-witness/cryptoutil"
+	idsse "github.com/in-toto/go-witness/dsse"
+	"github.com/in-toto/go-witness/intoto"
+	"github.com/in-toto/go-witness/signature/envelope"
+	dsse "github.com/in-toto/go-witness/signature/envelope/dsse"
 )
 
-func Sign(r io.Reader, dataType string, w io.Writer, opts ...dsse.SignOption) error {
-	env, err := dsse.Sign(dataType, r, opts...)
+type signOptions struct {
+	signer       cryptoutil.Signer
+	envelopeType string
+}
+
+type SignOption func(ro *signOptions)
+
+func SignWithEnvelopeType(envelopeType string) SignOption {
+	return func(so *signOptions) {
+		so.envelopeType = envelopeType
+	}
+}
+
+func Sign(s cryptoutil.Signer, r io.Reader, dataType string, w io.Writer, envelopeType string) error {
+	stmtJson, err := io.ReadAll(r)
+	var env envelope.Envelope
+	switch envelopeType {
+	case "dsse":
+		env = &dsse.Envelope{
+			Envelope: &idsse.Envelope{
+				PayloadType: intoto.PayloadType,
+				Payload:     string([]byte(stmtJson)),
+			},
+		}
+	default:
+		return fmt.Errorf("envelope type %s not recognized", envelopeType)
+	}
+
+	err = env.Sign(&s)
 	if err != nil {
 		return err
 	}
-
 	encoder := json.NewEncoder(w)
 	return encoder.Encode(&env)
 }
