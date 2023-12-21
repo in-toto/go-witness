@@ -17,6 +17,7 @@ package dsse
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -59,7 +60,7 @@ func Sign(bodyType string, body []byte, opts ...SignOption) (Envelope, error) {
 	}
 
 	env.PayloadType = bodyType
-	env.Payload = string(body)
+	env.Payload = base64.StdEncoding.EncodeToString(body)
 	env.Signatures = make([]Signature, 0)
 	pae := preauthEncode(bodyType, body)
 	for _, signer := range so.signers {

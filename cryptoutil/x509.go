@@ -139,6 +139,14 @@ func (s *X509Signer) KeyID() (string, error) {
 	return s.signer.KeyID()
 }
 
+func (s *X509Signer) Algorithm() (x509.PublicKeyAlgorithm, crypto.Hash) {
+	return s.signer.Algorithm()
+}
+
+func (s *X509Signer) Signer() (crypto.Signer, error) {
+	return s.signer.Signer()
+}
+
 func (s *X509Signer) Sign(ctx context.Context, data []byte) ([]byte, error) {
 	return s.signer.Sign(ctx, data)
 }

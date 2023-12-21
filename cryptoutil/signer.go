@@ -46,6 +46,8 @@ func (sv SignerVerifier) KeyID() (string, error) {
 type Signer interface {
 	KeyID() (string, error)
 	Sign(ctx context.Context, data []byte) ([]byte, error)
+	Algorithm() (x509.PublicKeyAlgorithm, crypto.Hash)
+	Signer() (crypto.Signer, error)
 }
 
 type KeyIdentifier interface{}

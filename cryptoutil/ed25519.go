@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ed25519"
+	"crypto/x509"
 	"fmt"
 )
 
@@ -57,6 +58,14 @@ func NewED25519Verifier(pub ed25519.PublicKey) *ED25519Verifier {
 
 func (v *ED25519Verifier) KeyID() (string, error) {
 	return GeneratePublicKeyID(v.pub, crypto.SHA256)
+}
+
+func (s *ED25519Signer) Algorithm() (x509.PublicKeyAlgorithm, crypto.Hash) {
+	return x509.Ed25519, 0
+}
+
+func (s *ED25519Signer) Signer() (crypto.Signer, error) {
+	return s.priv, nil
 }
 
 func (v *ED25519Verifier) Verify(ctx context.Context, payload []byte, sig []byte) error {

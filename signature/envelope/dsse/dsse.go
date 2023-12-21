@@ -1,6 +1,7 @@
 package dsse
 
 import (
+	"encoding/base64"
 	"fmt"
 
 	"github.com/in-toto/go-witness/cryptoutil"
@@ -15,12 +16,30 @@ type Envelope struct {
 	Envelope *idsse.Envelope
 }
 
-func (e *Envelope) Sign(signer *cryptoutil.Signer) error {
+// NewEnvelope creates a new envelope from specified payload type and non-base64 encoded payload
+func NewEnvelope(payloadType string, payload []byte) (*Envelope, error) {
+	// simple if statement to detect if payload is base64 encoded
+	if _, err := base64.StdEncoding.DecodeString(string(payload)); err == nil {
+		return nil, fmt.Errorf("please supply payload as a non-base64 encoded byte array")
+	}
+	e := idsse.Envelope{}
+	e.PayloadType = payloadType
+	e.Payload = string(payload)
+	return &Envelope{Envelope: &e}, nil
+}
+
+func (e *Envelope) Sign(signer *cryptoutil.Signer, opts ...envelope.EnvelopeOption) error {
+	so := envelope.EnvelopeOptions{}
+
+	for _, opt := range opts {
+		opt(&so)
+	}
+
 	if e.Envelope.PayloadType == "" || e.Envelope.Payload == "" {
 		return fmt.Errorf("PayloadType and Payload not populated correctly")
 	}
 
-	se, err := idsse.Sign(e.Envelope.PayloadType, []byte(e.Envelope.Payload), idsse.SignWithSigners(*signer))
+	se, err := idsse.Sign(e.Envelope.PayloadType, []byte(e.Envelope.Payload), idsse.SignWithSigners(*signer), idsse.SignWithTimestampers(so.Timestampers...))
 	if err != nil {
 		return err
 	}

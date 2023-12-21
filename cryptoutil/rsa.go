@@ -19,6 +19,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 )
 
 type RSASigner struct {
@@ -32,6 +33,14 @@ func NewRSASigner(priv *rsa.PrivateKey, hash crypto.Hash) *RSASigner {
 
 func (s *RSASigner) KeyID() (string, error) {
 	return GeneratePublicKeyID(&s.priv.PublicKey, s.hash)
+}
+
+func (s *RSASigner) Algorithm() (x509.PublicKeyAlgorithm, crypto.Hash) {
+	return x509.RSA, s.hash
+}
+
+func (s *RSASigner) Signer() (crypto.Signer, error) {
+	return s.priv, nil
 }
 
 func (s *RSASigner) Sign(ctx context.Context, data []byte) ([]byte, error) {

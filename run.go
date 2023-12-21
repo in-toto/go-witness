@@ -25,6 +25,7 @@ import (
 	idsse "github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
 	"github.com/in-toto/go-witness/signature/envelope"
+	"github.com/in-toto/go-witness/signature/envelope/cose"
 	dsse "github.com/in-toto/go-witness/signature/envelope/dsse"
 )
 
@@ -79,6 +80,10 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 		opt(&ro)
 	}
 
+	if ro.envelopeType == "" {
+		return RunResult{}, fmt.Errorf("envelope type must be specified")
+	}
+
 	result := RunResult{}
 	if err := validateRunOpts(ro); err != nil {
 		return result, err
@@ -94,7 +99,7 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 	}
 
 	result.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
-	se, err := signCollection(result.Collection, ro.signer, ro.envelopeType)
+	se, err := signCollection(result.Collection, ro.signer, ro.envelopeType, ro.timestampers)
 	if err != nil {
 		return result, fmt.Errorf("failed to sign collection: %w", err)
 	}
@@ -116,7 +121,9 @@ func validateRunOpts(ro runOptions) error {
 	return nil
 }
 
-func signCollection(collection attestation.Collection, signer cryptoutil.Signer, envelopeType string) (*envelope.Envelope, error) {
+// NOTE: The way payloads are being carried around won't be good for performance. needs optimization.
+// NOTE: Needs refactored so Timestamper is genericized for compatibility with other envelope types
+func signCollection(collection attestation.Collection, signer cryptoutil.Signer, envelopeType string, timestampers []idsse.Timestamper) (*envelope.Envelope, error) {
 	data, err := json.Marshal(&collection)
 	if err != nil {
 		return nil, err
@@ -132,23 +139,36 @@ func signCollection(collection attestation.Collection, signer cryptoutil.Signer,
 		return nil, err
 	}
 
-	var env envelope.Envelope
-	switch envelopeType {
-	case "dsse":
-		env = &dsse.Envelope{
-			Envelope: &idsse.Envelope{
-				PayloadType: intoto.PayloadType,
-				Payload:     string(stmtJson),
-			},
-		}
-	default:
-		return nil, fmt.Errorf("envelope type %s not recognized", envelopeType)
+	env, err := initEnvelope(envelopeType, intoto.PayloadType, &stmtJson)
+	if err != nil {
+		return nil, err
 	}
 
-	err = env.Sign(&signer)
+	err = env.Sign(&signer, envelope.WithTimestampers(timestampers))
 	if err != nil {
 		return nil, err
 	}
 
 	return &env, nil
+}
+
+func initEnvelope(envelopeType string, payloadType string, stmtJson *[]byte) (envelope.Envelope, error) {
+	var env envelope.Envelope
+	var err error
+	switch envelopeType {
+	case "dsse":
+		env, err = dsse.NewEnvelope(payloadType, *stmtJson)
+		if err != nil {
+			return nil, err
+		}
+	case "cose":
+		env, err = cose.NewEnvelope(payloadType, *stmtJson)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("envelope type %s not recognized", envelopeType)
+	}
+
+	return env, nil
 }

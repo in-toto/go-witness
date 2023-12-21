@@ -19,6 +19,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/x509"
 )
 
 type ErrVerifyFailed struct{}
@@ -38,6 +39,14 @@ func NewECDSASigner(priv *ecdsa.PrivateKey, hash crypto.Hash) *ECDSASigner {
 
 func (s *ECDSASigner) KeyID() (string, error) {
 	return GeneratePublicKeyID(&s.priv.PublicKey, s.hash)
+}
+
+func (s *ECDSASigner) Algorithm() (x509.PublicKeyAlgorithm, crypto.Hash) {
+	return x509.ECDSA, s.hash
+}
+
+func (s *ECDSASigner) Signer() (crypto.Signer, error) {
+	return s.priv, nil
 }
 
 func (s *ECDSASigner) Sign(ctx context.Context, data []byte) ([]byte, error) {

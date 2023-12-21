@@ -16,19 +16,16 @@ package witness
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	idsse "github.com/in-toto/go-witness/dsse"
-	"github.com/in-toto/go-witness/intoto"
 	"github.com/in-toto/go-witness/signature/envelope"
-	dsse "github.com/in-toto/go-witness/signature/envelope/dsse"
 )
 
 type signOptions struct {
-	signer       cryptoutil.Signer
 	envelopeType string
+	timestampers []idsse.Timestamper
 }
 
 type SignOption func(ro *signOptions)
@@ -39,22 +36,27 @@ func SignWithEnvelopeType(envelopeType string) SignOption {
 	}
 }
 
-func Sign(s cryptoutil.Signer, r io.Reader, dataType string, w io.Writer, envelopeType string) error {
-	stmtJson, err := io.ReadAll(r)
-	var env envelope.Envelope
-	switch envelopeType {
-	case "dsse":
-		env = &dsse.Envelope{
-			Envelope: &idsse.Envelope{
-				PayloadType: intoto.PayloadType,
-				Payload:     string([]byte(stmtJson)),
-			},
-		}
-	default:
-		return fmt.Errorf("envelope type %s not recognized", envelopeType)
+func SignWithTimestampers(timestampers ...idsse.Timestamper) SignOption {
+	return func(so *signOptions) {
+		so.timestampers = timestampers
+	}
+}
+
+func Sign(s cryptoutil.Signer, r io.Reader, payloadType string, w io.Writer, opts ...SignOption) error {
+	so := signOptions{}
+
+	for _, opt := range opts {
+		opt(&so)
 	}
 
-	err = env.Sign(&s)
+	stmtJson, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+
+	env, err := initEnvelope(so.envelopeType, payloadType, &stmtJson)
+
+	err = env.Sign(&s, envelope.WithTimestampers(so.timestampers))
 	if err != nil {
 		return err
 	}

@@ -2,15 +2,15 @@ package envelope
 
 import (
 	"github.com/in-toto/go-witness/cryptoutil"
+	idsse "github.com/in-toto/go-witness/dsse"
 )
 
 // Envelope provides basic functions to manipulate signatures.
 type Envelope interface {
-	// Sign generates and sign the envelope according to the sign request.
-	Sign(signer *cryptoutil.Signer) error
+	// Sign signs the pre-generated envelope with relevant fields already populated.
+	Sign(signer *cryptoutil.Signer, opts ...EnvelopeOption) error
 
-	// Verify verifies the envelope and returns its enclosed payload and signer
-	// info.
+	// Verify verifies the envelope.
 	Verify(pub *cryptoutil.Verifier) error
 
 	// Content returns the payload and signer information of the envelope.
@@ -29,4 +29,16 @@ type SignatureInfo struct {
 	Signature     []byte   `json:"sig"`
 	Certificate   []byte   `json:"certificate,omitempty"`
 	Intermediates [][]byte `json:"intermediates,omitempty"`
+}
+
+type EnvelopeOptions struct {
+	Timestampers []idsse.Timestamper
+}
+
+type EnvelopeOption func(ro *EnvelopeOptions)
+
+func WithTimestampers(timestampers []idsse.Timestamper) EnvelopeOption {
+	return func(eo *EnvelopeOptions) {
+		eo.Timestampers = timestampers
+	}
 }
