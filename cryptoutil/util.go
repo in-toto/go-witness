@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -146,4 +147,75 @@ func TryParseCertificate(data []byte) (*x509.Certificate, error) {
 	}
 
 	return cert, nil
+}
+
+// ComputeDigestForSigning calculates the digest value for the specified message using a hash function selected by the following process:
+//
+// - if a digest value is already specified in a SignOption and the length of the digest matches that of the selected hash function, the
+// digest value will be returned without any further computation
+// - if a hash function is given using WithCryptoSignerOpts(opts) as a SignOption, it will be used (if it is in the supported list)
+// - otherwise defaultHashFunc will be used (if it is in the supported list)
+func ComputeDigestForSigning(rawMessage io.Reader, defaultHashFunc crypto.Hash, supportedHashFuncs []crypto.Hash) (digest []byte, hashedWith crypto.Hash, err error) {
+	var cryptoSignerOpts crypto.SignerOpts = defaultHashFunc
+	hashedWith = cryptoSignerOpts.HashFunc()
+	if !isSupportedAlg(hashedWith, supportedHashFuncs) {
+		return nil, crypto.Hash(0), fmt.Errorf("unsupported hash algorithm: %q not in %v", hashedWith.String(), supportedHashFuncs)
+	}
+	if len(digest) > 0 {
+		if hashedWith != crypto.Hash(0) && len(digest) != hashedWith.Size() {
+			err = errors.New("unexpected length of digest for hash function specified")
+		}
+		return
+	}
+	digest, err = hashMessage(rawMessage, hashedWith)
+	return
+}
+
+// ComputeDigestForVerifying calculates the digest value for the specified message using a hash function selected by the following process:
+//
+// - if a digest value is already specified in a SignOption and the length of the digest matches that of the selected hash function, the
+// digest value will be returned without any further computation
+// - if a hash function is given using WithCryptoSignerOpts(opts) as a SignOption, it will be used (if it is in the supported list)
+// - otherwise defaultHashFunc will be used (if it is in the supported list)
+func ComputeDigestForVerifying(rawMessage io.Reader, defaultHashFunc crypto.Hash, supportedHashFuncs []crypto.Hash) (digest []byte, hashedWith crypto.Hash, err error) {
+	var cryptoSignerOpts crypto.SignerOpts = defaultHashFunc
+	hashedWith = cryptoSignerOpts.HashFunc()
+	if !isSupportedAlg(hashedWith, supportedHashFuncs) {
+		return nil, crypto.Hash(0), fmt.Errorf("unsupported hash algorithm: %q not in %v", hashedWith.String(), supportedHashFuncs)
+	}
+	if len(digest) > 0 {
+		if hashedWith != crypto.Hash(0) && len(digest) != hashedWith.Size() {
+			err = errors.New("unexpected length of digest for hash function specified")
+		}
+		return
+	}
+	digest, err = hashMessage(rawMessage, hashedWith)
+	return
+}
+
+func isSupportedAlg(alg crypto.Hash, supportedAlgs []crypto.Hash) bool {
+	if supportedAlgs == nil {
+		return true
+	}
+	for _, supportedAlg := range supportedAlgs {
+		if alg == supportedAlg {
+			return true
+		}
+	}
+	return false
+}
+
+func hashMessage(rawMessage io.Reader, hashFunc crypto.Hash) ([]byte, error) {
+	if rawMessage == nil {
+		return nil, errors.New("message cannot be nil")
+	}
+	if hashFunc == crypto.Hash(0) {
+		return io.ReadAll(rawMessage)
+	}
+	hasher := hashFunc.New()
+	// avoids reading entire message into memory
+	if _, err := io.Copy(hasher, rawMessage); err != nil {
+		return nil, fmt.Errorf("hashing message: %w", err)
+	}
+	return hasher.Sum(nil), nil
 }
