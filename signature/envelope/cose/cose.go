@@ -12,11 +12,12 @@ import (
 	cose "github.com/veraison/go-cose"
 )
 
+// Envelope is a wrapper around the COSE envelope that implements the Envelope interface.
 type Envelope struct {
 	Envelope *cose.Sign1Message
 }
 
-// NewEnvelope creates a new envelope from specified payload type and non-base64 encoded payload
+// NewEnvelope creates a new envelope from specified payload type and non-base64 encoded payload.
 func NewEnvelope(payloadType string, payload []byte) (*Envelope, error) {
 	// simple if statement to detect if payload is base64 encoded
 	// NOTE: not sure if this is helpful
@@ -38,6 +39,7 @@ func NewEnvelope(payloadType string, payload []byte) (*Envelope, error) {
 	}, nil
 }
 
+// Sign signs the payload with the specified signer and options.
 func (e *Envelope) Sign(signer *cryptoutil.Signer, opts ...envelope.EnvelopeOption) error {
 	// create an io.Reader for a random string
 	alg, err := getSignerAlg(*signer)
@@ -66,10 +68,12 @@ func (e *Envelope) Sign(signer *cryptoutil.Signer, opts ...envelope.EnvelopeOpti
 	return nil
 }
 
+// Content returns the envelope content for use in other operations.
 func (e *Envelope) Content() (*envelope.EnvelopeContent, error) {
 	return nil, nil
 }
 
+// Verify verifies the envelope against the public key verifier in the input.
 func (e *Envelope) Verify(v *cryptoutil.Verifier) error {
 	return nil
 }

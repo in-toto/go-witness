@@ -38,11 +38,6 @@ type SignerVerifier struct {
 	Verifier
 }
 
-// NOTE: Signer verifier required this function and I don't know why
-func (sv SignerVerifier) KeyID() (string, error) {
-	return sv.Signer.KeyID()
-}
-
 type Signer interface {
 	KeyID() (string, error)
 	Sign(ctx context.Context, data []byte) ([]byte, error)

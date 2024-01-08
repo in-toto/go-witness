@@ -12,11 +12,13 @@ import (
 	idsse "github.com/in-toto/go-witness/dsse"
 )
 
+// Envelope is a wrapper around the DSSE envelope that implements the Envelope interface.
 type Envelope struct {
+	// Envelope is the DSSE envelope.
 	Envelope *idsse.Envelope
 }
 
-// NewEnvelope creates a new envelope from specified payload type and non-base64 encoded payload
+// NewEnvelope creates a new envelope from specified payload type and non-base64 encoded payload.
 func NewEnvelope(payloadType string, payload []byte) (*Envelope, error) {
 	// simple if statement to detect if payload is base64 encoded
 	if _, err := base64.StdEncoding.DecodeString(string(payload)); err == nil {
@@ -28,6 +30,7 @@ func NewEnvelope(payloadType string, payload []byte) (*Envelope, error) {
 	return &Envelope{Envelope: &e}, nil
 }
 
+// Sign signs the payload with the specified signer and options.
 func (e *Envelope) Sign(signer *cryptoutil.Signer, opts ...envelope.EnvelopeOption) error {
 	so := envelope.EnvelopeOptions{}
 
@@ -49,6 +52,7 @@ func (e *Envelope) Sign(signer *cryptoutil.Signer, opts ...envelope.EnvelopeOpti
 	return nil
 }
 
+// Verify verifies the envelope against the public key verifier in the input.
 func (e *Envelope) Verify(v *cryptoutil.Verifier) error {
 	_, err := e.Envelope.Verify(idsse.VerifyWithVerifiers(*v))
 	if err != nil {
@@ -58,6 +62,7 @@ func (e *Envelope) Verify(v *cryptoutil.Verifier) error {
 	return nil
 }
 
+// Content returns the envelope content for use in other operations.
 func (e *Envelope) Content() (*envelope.EnvelopeContent, error) {
 	env := envelope.EnvelopeContent{}
 	env.Payload = e.Envelope.Payload
