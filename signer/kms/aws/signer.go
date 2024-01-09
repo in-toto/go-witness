@@ -43,7 +43,8 @@ var awsSupportedHashFuncs = []crypto.Hash{
 
 // SignerVerifier is a cryptoutil.SignerVerifier that uses the AWS Key Management Service
 type SignerVerifier struct {
-	client *awsClient
+	client   *awsClient
+	hashFunc crypto.Hash
 }
 
 // LoadSignerVerifier generates signatures using the specified key object in AWS KMS and hash algorithm.
@@ -54,6 +55,16 @@ func LoadSignerVerifier(ctx context.Context, ksp *kms.KMSSignerProvider) (*Signe
 	a.client, err = newAWSClient(ctx, ksp)
 	if err != nil {
 		return nil, err
+	}
+
+	for _, hashFunc := range awsSupportedHashFuncs {
+		if hashFunc == ksp.HashFunc {
+			a.hashFunc = ksp.HashFunc
+		}
+	}
+
+	if a.hashFunc == 0 {
+		return nil, fmt.Errorf("unsupported hash function: %v", ksp.HashFunc)
 	}
 
 	return a, nil
@@ -91,7 +102,7 @@ func (a *SignerVerifier) Sign(message io.Reader) ([]byte, error) {
 
 	hf := signerOpts.HashFunc()
 
-	digest, _, err = cryptoutil.ComputeDigestForVerifying(message, hf, awsSupportedHashFuncs)
+	digest, _, err = cryptoutil.ComputeDigestForSigning(message, hf, awsSupportedHashFuncs)
 	if err != nil {
 		return nil, err
 	}
