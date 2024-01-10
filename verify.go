@@ -87,7 +87,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 
 	pubKeysById, err := pol.PublicKeyVerifiers()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pulic keys from policy: %w", err)
+		return nil, fmt.Errorf("failed to get public keys from policy: %w", err)
 	}
 
 	pubkeys := make([]cryptoutil.Verifier, 0)
