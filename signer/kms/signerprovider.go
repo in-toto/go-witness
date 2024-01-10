@@ -56,6 +56,36 @@ func init() {
 			},
 		),
 	)
+	signer.RegisterVerifier("kms", func() signer.VerifierProvider { return New() },
+		registry.StringConfigOption(
+			"ref",
+			"The KMS Reference URI to use for connecting to the KMS service",
+			"",
+			func(sp signer.VerifierProvider, ref string) (signer.VerifierProvider, error) {
+				ksp, ok := sp.(*KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided verifier provider is not a kms verifier provider")
+				}
+
+				WithRef(ref)(ksp)
+				return ksp, nil
+			},
+		),
+		registry.StringConfigOption(
+			"hashType",
+			"The hash type used for verifying",
+			"",
+			func(sp signer.VerifierProvider, hash string) (signer.VerifierProvider, error) {
+				ksp, ok := sp.(*KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+				}
+
+				WithHash(hash)(ksp)
+				return ksp, nil
+			},
+		),
+	)
 }
 
 type KMSSignerProvider struct {
@@ -114,6 +144,22 @@ func (ksp *KMSSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, er
 	for ref, pi := range providersMap {
 		if strings.HasPrefix(ksp.Reference, ref) {
 			return pi(ctx, ksp)
+		}
+	}
+	return nil, &ProviderNotFoundError{ref: ksp.Reference}
+}
+
+// NOTE: This is a temprorary implementation until we have a SignerVerifier interface
+func (ksp *KMSSignerProvider) Verifier(ctx context.Context) (cryptoutil.Verifier, error) {
+	for ref, pi := range providersMap {
+		if strings.HasPrefix(ksp.Reference, ref) {
+			p, err := pi(ctx, ksp)
+			if err != nil {
+				return nil, err
+			}
+
+			// we need to conver this into a cryptoutil.Verifier
+			return p.Verifier()
 		}
 	}
 	return nil, &ProviderNotFoundError{ref: ksp.Reference}
