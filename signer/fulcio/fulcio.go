@@ -141,7 +141,7 @@ type FulcioSignerProvider struct {
 	OidcIssuer       string
 	OidcClientID     string
 	Token            string
-  TokenPath        string
+  	TokenPath        string
 	OidcRedirectUrl  string
 }
 
