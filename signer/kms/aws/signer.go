@@ -1,11 +1,10 @@
-//
-// Copyright 2021 The Sigstore Authors.
+// Copyright 2023 The Witness Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//      http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,6 +22,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 	kms "github.com/in-toto/go-witness/signer/kms"
 )
 
@@ -170,7 +170,14 @@ func (a *SignerVerifier) Verify(message io.Reader, sig []byte) (err error) {
 		return err
 	}
 
-	return a.client.verifyRemotely(ctx, sig, digest)
+	err = a.client.verifyRemotely(ctx, sig, digest)
+	if err != nil {
+		log.Info(err.Error())
+	} else {
+		log.Info("Verification Succeeded")
+	}
+
+	return err
 }
 
 // CreateKey attempts to create a new key in Vault with the specified algorithm.
