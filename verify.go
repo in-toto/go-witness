@@ -23,6 +23,7 @@ import (
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
+	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/policy"
 	"github.com/in-toto/go-witness/source"
 	"github.com/in-toto/go-witness/timestamp"
@@ -40,10 +41,12 @@ func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelo
 }
 
 type verifyOptions struct {
-	policyEnvelope   dsse.Envelope
-	policyVerifiers  []cryptoutil.Verifier
-	collectionSource source.Sourcer
-	subjectDigests   []string
+	policyTimestampServers []dsse.TimestampVerifier
+	policyCACerts          []*x509.Certificate
+	policyEnvelope         dsse.Envelope
+	policyVerifiers        []cryptoutil.Verifier
+	collectionSource       source.Sourcer
+	subjectDigests         []string
 }
 
 type VerifyOption func(*verifyOptions)
@@ -64,6 +67,18 @@ func VerifyWithCollectionSource(source source.Sourcer) VerifyOption {
 	}
 }
 
+func VerifyWithPolicyTimestampServers(servers []dsse.TimestampVerifier) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.policyTimestampServers = servers
+	}
+}
+
+func VerifyWithPolicyCACerts(certs []*x509.Certificate) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.policyCACerts = certs
+	}
+}
+
 // Verify verifies a set of attestations against a provided policy. The set of attestations that satisfy the policy will be returned
 // if verifiation is successful.
 func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (map[string][]source.VerifiedCollection, error) {
@@ -76,9 +91,11 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		opt(&vo)
 	}
 
-	if _, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...)); err != nil {
+	if _, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...), dsse.VerifyWithTimestampVerifiers(vo.policyTimestampServers...), dsse.VerifyWithRoots(vo.policyCACerts...)); err != nil {
 		return nil, fmt.Errorf("could not verify policy: %w", err)
 	}
+
+	log.Debug("Policy verified")
 
 	pol := policy.Policy{}
 	if err := json.Unmarshal(vo.policyEnvelope.Payload, &pol); err != nil {
