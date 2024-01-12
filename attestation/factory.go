@@ -17,8 +17,8 @@ package attestation
 import (
 	"fmt"
 
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/registry"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/registry"
 )
 
 var (
@@ -35,7 +35,7 @@ type Attestor interface {
 }
 
 // Subjecter allows attestors to expose bits of information that will be added to
-// the in-toto statement as subjects. External services such as Rekor and Archivist
+// the in-toto statement as subjects. External services such as Rekor and Archivista
 // use in-toto subjects as indexes back to attestations.
 type Subjecter interface {
 	Subjects() map[string]cryptoutil.DigestSet
