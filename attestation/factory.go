@@ -86,7 +86,20 @@ func FactoryByName(name string) (registry.FactoryFunc[Attestor], bool) {
 	return registrationEntry.Factory, ok
 }
 
+func AddAttestor(nameOrType string) (Attestor, error) {
+	attestors, err := AddAttestors([]string{nameOrType})
+	if err != nil {
+		return nil, err
+	}
+	return attestors[0], nil
+}
+
+// Deprecated: use AddAttestors instead
 func Attestors(nameOrTypes []string) ([]Attestor, error) {
+	return AddAttestors(nameOrTypes)
+}
+
+func AddAttestors(nameOrTypes []string) ([]Attestor, error) {
 	attestors := make([]Attestor, 0)
 	for _, nameOrType := range nameOrTypes {
 		factory, ok := FactoryByName(nameOrType)
