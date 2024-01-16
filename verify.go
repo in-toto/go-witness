@@ -23,7 +23,6 @@ import (
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
-	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/policy"
 	"github.com/in-toto/go-witness/source"
 	"github.com/in-toto/go-witness/timestamp"
@@ -41,12 +40,13 @@ func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelo
 }
 
 type verifyOptions struct {
-	policyTimestampServers []dsse.TimestampVerifier
-	policyCACerts          []*x509.Certificate
-	policyEnvelope         dsse.Envelope
-	policyVerifiers        []cryptoutil.Verifier
-	collectionSource       source.Sourcer
-	subjectDigests         []string
+	policyTimestampAuthorities []dsse.TimestampVerifier
+	policyCARoots              []*x509.Certificate
+	policyCAIntermediates      []*x509.Certificate
+	policyEnvelope             dsse.Envelope
+	policyVerifiers            []cryptoutil.Verifier
+	collectionSource           source.Sourcer
+	subjectDigests             []string
 }
 
 type VerifyOption func(*verifyOptions)
@@ -67,15 +67,15 @@ func VerifyWithCollectionSource(source source.Sourcer) VerifyOption {
 	}
 }
 
-func VerifyWithPolicyTimestampServers(servers []dsse.TimestampVerifier) VerifyOption {
+func VerifyWithPolicyTimestampAuthorities(authorities []dsse.TimestampVerifier) VerifyOption {
 	return func(vo *verifyOptions) {
-		vo.policyTimestampServers = servers
+		vo.policyTimestampAuthorities = authorities
 	}
 }
 
-func VerifyWithPolicyCACerts(certs []*x509.Certificate) VerifyOption {
+func VerifyWithPolicyCARoots(roots []*x509.Certificate) VerifyOption {
 	return func(vo *verifyOptions) {
-		vo.policyCACerts = certs
+		vo.policyCARoots = roots
 	}
 }
 
@@ -91,11 +91,9 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		opt(&vo)
 	}
 
-	if _, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...), dsse.VerifyWithTimestampVerifiers(vo.policyTimestampServers...), dsse.VerifyWithRoots(vo.policyCACerts...)); err != nil {
+	if _, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...), dsse.VerifyWithTimestampVerifiers(vo.policyTimestampAuthorities...), dsse.VerifyWithRoots(vo.policyCARoots...), dsse.VerifyWithIntermediates(vo.policyCAIntermediates...)); err != nil {
 		return nil, fmt.Errorf("could not verify policy: %w", err)
 	}
-
-	log.Debug("Policy verified")
 
 	pol := policy.Policy{}
 	if err := json.Unmarshal(vo.policyEnvelope.Payload, &pol); err != nil {
