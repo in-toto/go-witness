@@ -94,6 +94,11 @@ func AddAttestor(nameOrType string) (Attestor, error) {
 	return attestors[0], nil
 }
 
+// Deprecated: use AddAttestors instead
+func Attestors(nameOrTypes []string) ([]Attestor, error) {
+	return AddAttestors(nameOrTypes)
+}
+
 func AddAttestors(nameOrTypes []string) ([]Attestor, error) {
 	attestors := make([]Attestor, 0)
 	for _, nameOrType := range nameOrTypes {
