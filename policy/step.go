@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/source"
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/source"
 )
 
 // +kubebuilder:object:generate=true

@@ -24,9 +24,9 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/stretchr/testify/require"
-	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/cryptoutil"
 )
 
 const iid = `{

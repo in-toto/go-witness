@@ -17,9 +17,9 @@ package material
 import (
 	"encoding/json"
 
-	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/attestation/file"
-	"github.com/testifysec/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/attestation/file"
+	"github.com/in-toto/go-witness/cryptoutil"
 )
 
 const (

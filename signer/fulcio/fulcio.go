@@ -31,16 +31,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/registry"
+	"github.com/in-toto/go-witness/signer"
 	"github.com/mattn/go-isatty"
 	fulciopb "github.com/sigstore/fulcio/pkg/generated/protobuf"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/oauthflow"
 	"github.com/sigstore/sigstore/pkg/signature"
 	sigo "github.com/sigstore/sigstore/pkg/signature/options"
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/log"
-	"github.com/testifysec/go-witness/registry"
-	"github.com/testifysec/go-witness/signer"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -106,6 +106,20 @@ func init() {
 			},
 		),
 		registry.StringConfigOption(
+			"oidc-redirect-url",
+			"OIDC redirect URL (Optional). The default oidc-redirect-url is 'http://localhost:0/auth/callback'.",
+			"",
+			func(sp signer.SignerProvider, oidcRedirectUrl string) (signer.SignerProvider, error) {
+				fsp, ok := sp.(FulcioSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a fulcio signer provider")
+				}
+        
+        WithOidcRedirectUrl(oidcRedirectUrl)(&fsp)
+        return fsp, nil
+			},
+		),
+		registry.StringConfigOption(
 			"token-path",
 			"Path to the file containing a raw token to use for authentication to fulcio (cannot be used in conjunction with --fulcio-token)",
 			"",
@@ -123,11 +137,12 @@ func init() {
 }
 
 type FulcioSignerProvider struct {
-	FulcioURL    string
-	OidcIssuer   string
-	OidcClientID string
-	Token        string
-	TokenPath    string
+	FulcioURL        string
+	OidcIssuer       string
+	OidcClientID     string
+	Token            string
+  	TokenPath        string
+	OidcRedirectUrl  string
 }
 
 type Option func(*FulcioSignerProvider)
@@ -153,6 +168,13 @@ func WithOidcClientID(oidcClientID string) Option {
 func WithToken(tokenOption string) Option {
 	return func(fsp *FulcioSignerProvider) {
 		fsp.Token = tokenOption
+	}
+}
+
+
+func WithOidcRedirectUrl(oidcRedirectUrl string) Option {
+	return func(fsp *FulcioSignerProvider) {
+		fsp.OidcRedirectUrl = oidcRedirectUrl
 	}
 }
 
@@ -243,7 +265,7 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 
 		raw = string(f)
 	case fsp.Token == "" && isatty.IsTerminal(os.Stdin.Fd()):
-		tok, err := oauthflow.OIDConnect(fsp.OidcIssuer, fsp.OidcClientID, "", "", oauthflow.DefaultIDTokenGetter)
+		tok, err := oauthflow.OIDConnect(fsp.OidcIssuer, fsp.OidcClientID, "", fsp.OidcRedirectUrl, oauthflow.DefaultIDTokenGetter)
 		if err != nil {
 			return nil, err
 		}

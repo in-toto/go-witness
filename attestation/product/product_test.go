@@ -23,10 +23,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/cryptoutil"
 )
 
 func TestFromDigestMap(t *testing.T) {

@@ -21,8 +21,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/log"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 )
 
 type RunType string
