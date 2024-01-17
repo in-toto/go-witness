@@ -12,130 +12,131 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package aws
+package gcp
 
 import (
 	"context"
 	"crypto"
 	"fmt"
+	"hash/crc32"
 	"io"
 
-	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 	kms "github.com/in-toto/go-witness/signer/kms"
 )
 
-var awsSupportedAlgorithms = []types.CustomerMasterKeySpec{
-	types.CustomerMasterKeySpecRsa2048,
-	types.CustomerMasterKeySpecRsa3072,
-	types.CustomerMasterKeySpecRsa4096,
-	types.CustomerMasterKeySpecEccNistP256,
-	types.CustomerMasterKeySpecEccNistP384,
-	types.CustomerMasterKeySpecEccNistP521,
-}
-
-var awsSupportedHashFuncs = []crypto.Hash{
+var gcpSupportedHashFuncs = []crypto.Hash{
 	crypto.SHA256,
-	crypto.SHA384,
 	crypto.SHA512,
+	crypto.SHA384,
 }
 
 // SignerVerifier is a cryptoutil.SignerVerifier that uses the AWS Key Management Service
 type SignerVerifier struct {
-	client   *awsClient
+	client   *gcpClient
 	hashFunc crypto.Hash
 }
 
 // LoadSignerVerifier generates signatures using the specified key object in AWS KMS and hash algorithm.
 func LoadSignerVerifier(ctx context.Context, ksp *kms.KMSSignerProvider) (*SignerVerifier, error) {
-	a := &SignerVerifier{}
+	g := &SignerVerifier{}
 
 	var err error
-	a.client, err = newAWSClient(ctx, ksp)
+	g.client, err = newGCPClient(ctx, ksp)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, hashFunc := range awsSupportedHashFuncs {
+	for _, hashFunc := range gcpSupportedHashFuncs {
 		if hashFunc == ksp.HashFunc {
-			a.hashFunc = ksp.HashFunc
+			g.hashFunc = ksp.HashFunc
 		}
 	}
 
-	if a.hashFunc == 0 {
+	if g.hashFunc == 0 {
 		return nil, fmt.Errorf("unsupported hash function: %v", ksp.HashFunc)
 	}
 
-	return a, nil
+	return g, nil
 }
 
 // NOTE: This might be all wrong but setting it like so for now
 //
 // KeyID returns the key identifier for the key used by this signer.
-func (a *SignerVerifier) KeyID() (string, error) {
-	return a.client.keyID, nil
+func (g *SignerVerifier) KeyID() (string, error) {
+	return g.client.keyID, nil
 }
 
-// Sign signs the provided message using AWS KMS. If the message is provided,
+// Sign signs the provided message using GCP KMS. If the message is provided,
 // this method will compute the digest according to the hash function specified
 // when the Signer was created.
-func (a *SignerVerifier) Sign(message io.Reader) ([]byte, error) {
+func (g *SignerVerifier) Sign(message io.Reader) ([]byte, error) {
 	var err error
 	ctx := context.Background()
 	var digest []byte
 
 	var signerOpts crypto.SignerOpts
-	signerOpts, err = a.client.getHashFunc(ctx)
+	signerOpts, err = g.client.getHashFunc()
 	if err != nil {
 		return nil, fmt.Errorf("getting fetching default hash function: %w", err)
 	}
 
 	hf := signerOpts.HashFunc()
 
-	digest, _, err = cryptoutil.ComputeDigestForSigning(message, hf, awsSupportedHashFuncs)
+	digest, _, err = cryptoutil.ComputeDigestForSigning(message, hf, gcpSupportedHashFuncs)
 	if err != nil {
 		return nil, err
 	}
 
-	return a.client.sign(ctx, digest, hf)
+	crc32cHasher := crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	_, err = crc32cHasher.Write(digest)
+	if err != nil {
+		return nil, err
+	}
+
+	return g.client.sign(ctx, digest, hf, crc32cHasher.Sum32())
 }
 
 // Verifier returns a cryptoutil.Verifier that can be used to verify signatures created by this signer.
-func (a *SignerVerifier) Verifier() (cryptoutil.Verifier, error) {
-	return a, nil
+func (g *SignerVerifier) Verifier() (cryptoutil.Verifier, error) {
+	return g, nil
+}
+
+// PublicKey returns the public key that can be used to verify signatures created by
+// this signer.
+func (g *SignerVerifier) PublicKey(ctx context.Context) (crypto.PublicKey, error) {
+	return g.client.public(ctx)
 }
 
 // Bytes returns the bytes of the public key that can be used to verify signatures created by the signer.
-func (a *SignerVerifier) Bytes() ([]byte, error) {
-	ctx := context.Background()
-	p, err := a.client.fetchPublicKey(ctx)
+func (g *SignerVerifier) Bytes() ([]byte, error) {
+	ckv, err := g.client.getCKV()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get KMS key version: %w", err)
 	}
 
-	return cryptoutil.PublicPemBytes(p)
+	return cryptoutil.PublicPemBytes(ckv.PublicKey)
 }
 
 // VerifySignature verifies the signature for the given message, returning
 // nil if the verification succeeded, and an error message otherwise.
-func (a *SignerVerifier) Verify(message io.Reader, sig []byte) (err error) {
-	ctx := context.Background()
+func (g *SignerVerifier) Verify(message io.Reader, sig []byte) (err error) {
 	var digest []byte
 
 	var signerOpts crypto.SignerOpts
-	signerOpts, err = a.client.getHashFunc(ctx)
+	signerOpts, err = g.client.getHashFunc()
 	if err != nil {
 		return fmt.Errorf("getting hash func: %w", err)
 	}
 	hf := signerOpts.HashFunc()
 
-	digest, _, err = cryptoutil.ComputeDigestForVerifying(message, hf, awsSupportedHashFuncs)
+	digest, _, err = cryptoutil.ComputeDigestForVerifying(message, hf, gcpSupportedHashFuncs)
 	if err != nil {
 		return err
 	}
 
-	err = a.client.verifyRemotely(ctx, sig, digest)
+	err = g.client.verify(digest, sig)
 	if err != nil {
 		log.Info(err.Error())
 	}
@@ -160,12 +161,11 @@ type cryptoSignerWrapper struct {
 func (c *cryptoSignerWrapper) Public() crypto.PublicKey {
 	ctx := context.Background()
 
-	cmk, err := c.sv.client.getCMK(ctx)
-	if err != nil {
-		return nil
+	pk, err := c.sv.PublicKey(ctx)
+	if err != nil && c.errFunc != nil {
+		c.errFunc(err)
 	}
-
-	return cmk.PublicKey
+	return pk
 }
 
 func (c *cryptoSignerWrapper) Sign(message io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
@@ -178,15 +178,15 @@ func (c *cryptoSignerWrapper) Sign(message io.Reader, digest []byte, opts crypto
 
 // CryptoSigner returns a crypto.Signer object that uses the underlying SignerVerifier, along with a crypto.SignerOpts object
 // that allows the KMS to be used in APIs that only accept the standard golang objects
-func (a *SignerVerifier) CryptoSigner(ctx context.Context, errFunc func(error)) (crypto.Signer, crypto.SignerOpts, error) {
-	defaultHf, err := a.client.getHashFunc(ctx)
+func (g *SignerVerifier) CryptoSigner(ctx context.Context, errFunc func(error)) (crypto.Signer, crypto.SignerOpts, error) {
+	defaultHf, err := g.client.getHashFunc()
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting fetching default hash function: %w", err)
 	}
 
 	csw := &cryptoSignerWrapper{
 		ctx:      ctx,
-		sv:       a,
+		sv:       g,
 		hashFunc: defaultHf,
 		errFunc:  errFunc,
 	}
@@ -195,15 +195,14 @@ func (a *SignerVerifier) CryptoSigner(ctx context.Context, errFunc func(error)) 
 }
 
 // SupportedAlgorithms returns the list of algorithms supported by the AWS KMS service
-func (*SignerVerifier) SupportedAlgorithms() []string {
-	s := make([]string, len(awsSupportedAlgorithms))
-	for i := range awsSupportedAlgorithms {
-		s[i] = string(awsSupportedAlgorithms[i])
+func (*SignerVerifier) SupportedAlgorithms() (result []string) {
+	for k := range algorithmMap {
+		result = append(result, k)
 	}
-	return s
+	return
 }
 
-// DefaultAlgorithm returns the default algorithm for the AWS KMS service
-func (*SignerVerifier) DefaultAlgorithm() string {
-	return string(types.CustomerMasterKeySpecEccNistP256)
+// DefaultAlgorithm returns the default algorithm for the GCP KMS service
+func (g *SignerVerifier) DefaultAlgorithm() string {
+	return AlgorithmECDSAP256SHA256
 }

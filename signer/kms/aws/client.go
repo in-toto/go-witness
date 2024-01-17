@@ -51,14 +51,6 @@ const (
 	ReferenceScheme = "awskms://"
 )
 
-type awsClient struct {
-	client   *akms.Client
-	endpoint string
-	keyID    string
-	alias    string
-	keyCache *ttlcache.Cache[string, cmk]
-}
-
 var (
 	errKMSReference = errors.New("kms specification should be in the format awskms://[ENDPOINT]/[ID/ALIAS/ARN] (endpoint optional)")
 
@@ -107,6 +99,14 @@ func ParseReference(resourceID string) (endpoint, keyID, alias string, err error
 	}
 	err = fmt.Errorf("invalid awskms format %q", resourceID)
 	return
+}
+
+type awsClient struct {
+	client   *akms.Client
+	endpoint string
+	keyID    string
+	alias    string
+	keyCache *ttlcache.Cache[string, cmk]
 }
 
 func newAWSClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*awsClient, error) {
@@ -264,7 +264,7 @@ func (a *awsClient) createKey(ctx context.Context, algorithm string) (crypto.Pub
 	}
 
 	usage := types.KeyUsageTypeSignVerify
-	description := "Created by Sigstore"
+	description := "Created by Witness"
 	key, err := a.client.CreateKey(ctx, &akms.CreateKeyInput{
 		CustomerMasterKeySpec: types.CustomerMasterKeySpec(algorithm),
 		KeyUsage:              usage,
@@ -290,6 +290,7 @@ func (a *awsClient) createKey(ctx context.Context, algorithm string) (crypto.Pub
 	return cmk.PublicKey, err
 }
 
+// At the moment this function lies unused, but it is here for future if necessary
 func (a *awsClient) verify(ctx context.Context, sig, message io.Reader) error {
 	cmk, err := a.getCMK(ctx)
 	if err != nil {
