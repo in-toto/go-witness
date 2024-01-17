@@ -22,10 +22,10 @@ import (
 	"fmt"
 
 	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/registry"
+	"github.com/in-toto/go-witness/signer"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/registry"
-	"github.com/testifysec/go-witness/signer"
 )
 
 // X509SVID interface represents the X509-SVID. It provides a method to get the default SVID.
