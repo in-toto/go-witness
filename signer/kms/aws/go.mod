@@ -2,7 +2,7 @@ module github.com/in-toto/go-witness/signer/kms/aws
 
 replace github.com/in-toto/go-witness => ../../../
 
-go 1.21
+go 1.19
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.24.0
