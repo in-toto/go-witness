@@ -20,10 +20,10 @@ import (
 	"crypto/x509"
 	"time"
 
-	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/log"
-	"github.com/testifysec/go-witness/source"
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/source"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -238,7 +238,7 @@ func (step Step) checkFunctionaries(verifiedStatements []source.VerifiedCollecti
 		for _, verifier := range verifiedStatement.Verifiers {
 			verifierID, err := verifier.KeyID()
 			if err != nil {
-				log.Debugf("(policy) skipping verifier: could not get key id: %v", err)
+				log.Debugf("(policy) skipping verifier: could not get key id: %w", err)
 				continue
 			}
 
