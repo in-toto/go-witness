@@ -24,10 +24,10 @@ import (
 	"path/filepath"
 
 	"github.com/gobwas/glob"
-	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/attestation/file"
-	"github.com/testifysec/go-witness/cryptoutil"
-	"github.com/testifysec/go-witness/registry"
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/attestation/file"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/registry"
 )
 
 const (
