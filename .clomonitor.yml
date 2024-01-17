@@ -12,31 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-version: 2
+# CLOMonitor metadata file
+# This file must be located at the root of the repository
 
-updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "chore"
-
-  - package-ecosystem: "gomod"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "chore"
-    ignore:
-      - dependency-name: "*"
-        update-types:
-        - "version-update:semver-major"
-        - "version-update:semver-minor"
-
-  - package-ecosystem: docker
-    directory: /
-    schedule:
-      interval: daily
-    commit-message:
-      prefix: "chore"
+# Checks exemptions
+exemptions:
+  - check: artifacthub_badge # Check identifier (see https://github.com/cncf/clomonitor/blob/main/docs/checks.md#exemptions)
+    reason: "Project is a library and does not create an artifact" # Justification of this exemption (mandatory, it will be displayed on the UI)

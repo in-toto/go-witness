@@ -19,9 +19,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/in-toto/go-witness/attestation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testifysec/go-witness/attestation"
 )
 
 func writeTempPomXml(t *testing.T) (string, error) {
