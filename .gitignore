@@ -12,3 +12,4 @@ test/scorecard.json
 log
 sarif-report.json
 test/log
+.idea/
