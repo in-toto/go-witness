@@ -125,6 +125,8 @@ func (ctx *AttestationContext) RunAttestors() error {
 				Reason: fmt.Sprintf("unknown run type %v", attestor.RunType()),
 			}
 		}
+
+		attestors[attestor.RunType()] = append(attestors[attestor.RunType()], attestor)
 	}
 
 	for _, atts := range attestors {
