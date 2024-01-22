@@ -21,9 +21,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/testifysec/go-witness/attestation"
-	"github.com/testifysec/go-witness/dsse"
-	intoto "github.com/testifysec/go-witness/intoto"
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/dsse"
+	intoto "github.com/in-toto/go-witness/intoto"
 )
 
 func TestLoadEnvelope(t *testing.T) {
@@ -43,7 +43,7 @@ func TestLoadEnvelope(t *testing.T) {
 		wantLoadEnvelopeErr  bool
 		wantPredicateErr     bool
 		wantMemorySourceErr  bool
-		wantRefrenceExistErr bool
+		wantReferenceExistErr bool
 	}{
 		{
 			name:      "Valid intotoStatment",
@@ -91,7 +91,7 @@ func TestLoadEnvelope(t *testing.T) {
 			},
 			mSource:              NewMemorySource(),
 			wantLoadEnvelopeErr:  true,
-			wantRefrenceExistErr: true,
+			wantReferenceExistErr: true,
 		},
 	}
 
@@ -109,7 +109,7 @@ func TestLoadEnvelope(t *testing.T) {
 
 			// Initialize a new MemorySource
 			memorySource := NewMemorySource()
-			if tt.wantRefrenceExistErr {
+			if tt.wantReferenceExistErr {
 				collEnv, err := envelopeToCollectionEnvelope(tt.reference, envelope)
 				if err != nil {
 					t.Fatalf("Invalid intotoStatment, err = %v", err)
@@ -176,7 +176,7 @@ func TestSearch(t *testing.T) {
 		name          string
 		statements    []intoto.Statement
 		searchQuery   args
-		wantRefrences map[string]struct{}
+		wantReferences map[string]struct{}
 		wantErr       bool
 	}{
 		{
@@ -206,7 +206,7 @@ func TestSearch(t *testing.T) {
 				subDigest:      []string{"exampledigest", "notincluded"},
 				attestations:   []string{},
 			},
-			wantRefrences: map[string]struct{}{"ref0": {}, "ref1": {}, "ref2": {}},
+			wantReferences: map[string]struct{}{"ref0": {}, "ref1": {}, "ref2": {}},
 			wantErr:       false,
 		},
 		{
@@ -242,7 +242,7 @@ func TestSearch(t *testing.T) {
 				subDigest:      []string{"exampledigest"},
 				attestations:   []string{},
 			},
-			wantRefrences: map[string]struct{}{"ref0": {}, "ref1": {}, "ref2": {}},
+			wantReferences: map[string]struct{}{"ref0": {}, "ref1": {}, "ref2": {}},
 			wantErr:       false,
 		},
 		{
@@ -272,7 +272,7 @@ func TestSearch(t *testing.T) {
 				subDigest:      []string{},
 				attestations:   []string{},
 			},
-			wantRefrences: map[string]struct{}{},
+			wantReferences: map[string]struct{}{},
 			wantErr:       false,
 		},
 	}
@@ -297,7 +297,7 @@ func TestSearch(t *testing.T) {
 					t.Fatalf("invalid intoto statment, err = %v", err)
 				}
 
-				if _, ok := tt.wantRefrences["ref"+fmt.Sprint(i)]; ok {
+				if _, ok := tt.wantReferences["ref"+fmt.Sprint(i)]; ok {
 					collEnv, _ := envelopeToCollectionEnvelope("ref"+fmt.Sprint(i), dsseEnv)
 					expectedResult = append(expectedResult, collEnv)
 				}
