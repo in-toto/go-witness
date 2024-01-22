@@ -58,7 +58,7 @@ func TestLoadEnvelope(t *testing.T) {
 			mSource: NewMemorySource(),
 		},
 		{
-			name:                "Empty Invalid intotoStatment",
+			name:                "Empty intotoStatment",
 			reference:           "ref",
 			intotoStatment:      intoto.Statement{},
 			mSource:             NewMemorySource(),
