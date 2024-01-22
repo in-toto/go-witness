@@ -25,6 +25,7 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
+	"github.com/in-toto/go-witness/log"
 )
 
 type runOptions struct {
@@ -83,6 +84,18 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 
 	if err := runCtx.RunAttestors(); err != nil {
 		return result, fmt.Errorf("failed to run attestors: %w", err)
+	}
+
+	fail := false
+	for _, r := range runCtx.CompletedAttestors() {
+		if r.Error != nil {
+			fail = true
+			log.Errorf("attestor %s failed: %s", r.Attestor.Name(), r.Error)
+		}
+	}
+
+	if fail {
+		return result, fmt.Errorf("attestors failed with errors")
 	}
 
 	result.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
