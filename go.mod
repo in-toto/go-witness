@@ -17,7 +17,7 @@ require (
 	golang.org/x/sys v0.15.0
 	google.golang.org/grpc v1.60.1
 	gopkg.in/square/go-jose.v2 v2.6.0
-	k8s.io/apimachinery v0.26.12
+	k8s.io/apimachinery v0.26.13
 )
 
 require (
