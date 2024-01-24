@@ -17,7 +17,6 @@
 package gcp
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -25,7 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"log"
+	"io"
 	"regexp"
 	"time"
 
@@ -101,7 +100,6 @@ func parseReference(resourceID string) (projectID, locationID, keyRing, keyName,
 }
 
 type gcpClient struct {
-	keyID      string
 	projectID  string
 	locationID string
 	keyRing    string
@@ -382,14 +380,14 @@ func (g *gcpClient) public(ctx context.Context) (crypto.PublicKey, error) {
 	return crv.PublicKey, nil
 }
 
-// NOTE: Seems like GCP doesn't support any remote verification, so we'll just use the local verifier
-func (g *gcpClient) verify(message []byte, sig []byte, opts ...signature.VerifyOption) error {
+// Seems like GCP doesn't support any remote verification, so we'll just use the local verifier
+func (g *gcpClient) verify(message io.Reader, sig []byte, opts ...signature.VerifyOption) error {
 	crv, err := g.getCKV()
 	if err != nil {
 		return fmt.Errorf("transient error getting info from KMS: %w", err)
 	}
 
-	if err := crv.Verifier.Verify(bytes.NewBuffer(message), sig); err != nil {
+	if err := crv.Verifier.Verify(message, sig); err != nil {
 		// key could have been rotated, clear cache and try again if we're not pinned to a version
 		if g.version == "" {
 			g.kvCache.Delete(cacheKey)
@@ -397,61 +395,9 @@ func (g *gcpClient) verify(message []byte, sig []byte, opts ...signature.VerifyO
 			if err != nil {
 				return fmt.Errorf("transient error getting info from KMS: %w", err)
 			}
-			return crv.Verifier.Verify(bytes.NewBuffer(message), sig)
+			return crv.Verifier.Verify(message, sig)
 		}
 		return fmt.Errorf("failed to verify for fixed version: %w", err)
 	}
 	return nil
-}
-
-// NOTE: Not sure if we should be looking to keep this
-func (g *gcpClient) createKey(ctx context.Context, algorithm string) (crypto.PublicKey, error) {
-	if err := g.createKeyRing(ctx); err != nil {
-		return nil, fmt.Errorf("creating key ring: %w", err)
-	}
-
-	getKeyRequest := &kmspb.GetCryptoKeyRequest{
-		Name: fmt.Sprintf("projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s", g.projectID, g.locationID, g.keyRing, g.keyName),
-	}
-	if _, err := g.client.GetCryptoKey(ctx, getKeyRequest); err == nil {
-		return g.public(ctx)
-	}
-
-	if _, ok := algorithmMap[algorithm]; !ok {
-		return nil, errors.New("unknown algorithm requested")
-	}
-
-	createKeyRequest := &kmspb.CreateCryptoKeyRequest{
-		Parent:      fmt.Sprintf("projects/%s/locations/%s/keyRings/%s", g.projectID, g.locationID, g.keyRing),
-		CryptoKeyId: g.keyName,
-		CryptoKey: &kmspb.CryptoKey{
-			Purpose: kmspb.CryptoKey_ASYMMETRIC_SIGN,
-			VersionTemplate: &kmspb.CryptoKeyVersionTemplate{
-				Algorithm: algorithmMap[algorithm],
-			},
-		},
-	}
-	if _, err := g.client.CreateCryptoKey(ctx, createKeyRequest); err != nil {
-		return nil, fmt.Errorf("creating crypto key: %w", err)
-	}
-	return g.public(ctx)
-}
-
-func (g *gcpClient) createKeyRing(ctx context.Context) error {
-	getKeyRingRequest := &kmspb.GetKeyRingRequest{
-		Name: fmt.Sprintf("projects/%s/locations/%s/keyRings/%s", g.projectID, g.locationID, g.keyRing),
-	}
-	if result, err := g.client.GetKeyRing(ctx, getKeyRingRequest); err == nil {
-		log.Printf("Key ring %s already exists in GCP KMS, moving on to creating key.\n", result.GetName())
-		// key ring already exists, no need to create
-		return nil
-	}
-	// try to create key ring
-	createKeyRingRequest := &kmspb.CreateKeyRingRequest{
-		Parent:    fmt.Sprintf("projects/%s/locations/%s", g.projectID, g.locationID),
-		KeyRingId: g.keyRing,
-	}
-	result, err := g.client.CreateKeyRing(ctx, createKeyRingRequest)
-	log.Printf("Created key ring %s in GCP KMS.\n", result.GetName())
-	return err
 }
