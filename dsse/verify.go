@@ -18,22 +18,19 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
-	"io"
 	"time"
 
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/timestamp"
 )
-
-type TimestampVerifier interface {
-	Verify(context.Context, io.Reader, io.Reader) (time.Time, error)
-}
 
 type verificationOptions struct {
 	roots              []*x509.Certificate
 	intermediates      []*x509.Certificate
 	verifiers          []cryptoutil.Verifier
 	threshold          int
-	timestampVerifiers []TimestampVerifier
+	timestampVerifiers []timestamp.TimestampVerifier
 }
 
 type VerificationOption func(*verificationOptions)
@@ -62,7 +59,7 @@ func VerifyWithThreshold(threshold int) VerificationOption {
 	}
 }
 
-func VerifyWithTimestampVerifiers(verifiers ...TimestampVerifier) VerificationOption {
+func VerifyWithTimestampVerifiers(verifiers ...timestamp.TimestampVerifier) VerificationOption {
 	return func(vo *verificationOptions) {
 		vo.timestampVerifiers = verifiers
 	}
@@ -70,7 +67,7 @@ func VerifyWithTimestampVerifiers(verifiers ...TimestampVerifier) VerificationOp
 
 type PassedVerifier struct {
 	Verifier                 cryptoutil.Verifier
-	PassedTimestampVerifiers []TimestampVerifier
+	PassedTimestampVerifiers []timestamp.TimestampVerifier
 }
 
 func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
@@ -115,10 +112,12 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 				if verifier, err := verifyX509Time(cert, sigIntermediates, options.roots, pae, sig.Signature, time.Now()); err == nil {
 					matchingSigFound = true
 					passedVerifiers = append(passedVerifiers, PassedVerifier{Verifier: verifier})
+				} else {
+					log.Debugf("failed to verify with timestamp verifier: %w", err)
 				}
 			} else {
 				var passedVerifier cryptoutil.Verifier
-				passedTimestampVerifiers := []TimestampVerifier{}
+				passedTimestampVerifiers := []timestamp.TimestampVerifier{}
 
 				for _, timestampVerifier := range options.timestampVerifiers {
 					for _, sigTimestamp := range sig.Timestamps {
@@ -130,7 +129,10 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 						if verifier, err := verifyX509Time(cert, sigIntermediates, options.roots, pae, sig.Signature, timestamp); err == nil {
 							passedVerifier = verifier
 							passedTimestampVerifiers = append(passedTimestampVerifiers, timestampVerifier)
+						} else {
+							log.Debugf("failed to verify with timestamp verifier: %w", err)
 						}
+
 					}
 				}
 
@@ -159,7 +161,7 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 	}
 
 	if len(passedVerifiers) < options.threshold {
-		return passedVerifiers, ErrThresholdNotMet{Theshold: options.threshold, Acutal: len(passedVerifiers)}
+		return passedVerifiers, ErrThresholdNotMet{Theshold: options.threshold, Actual: len(passedVerifiers)}
 	}
 
 	return passedVerifiers, nil

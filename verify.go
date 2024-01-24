@@ -41,10 +41,13 @@ func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelo
 }
 
 type verifyOptions struct {
-	policyEnvelope   dsse.Envelope
-	policyVerifiers  []cryptoutil.Verifier
-	collectionSource source.Sourcer
-	subjectDigests   []string
+	policyTimestampAuthorities []timestamp.TimestampVerifier
+	policyCARoots              []*x509.Certificate
+	policyCAIntermediates      []*x509.Certificate
+	policyEnvelope             dsse.Envelope
+	policyVerifiers            []cryptoutil.Verifier
+	collectionSource           source.Sourcer
+	subjectDigests             []string
 }
 
 type VerifyOption func(*verifyOptions)
@@ -65,6 +68,18 @@ func VerifyWithCollectionSource(source source.Sourcer) VerifyOption {
 	}
 }
 
+func VerifyWithPolicyTimestampAuthorities(authorities []timestamp.TimestampVerifier) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.policyTimestampAuthorities = authorities
+	}
+}
+
+func VerifyWithPolicyCARoots(roots []*x509.Certificate) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.policyCARoots = roots
+	}
+}
+
 // Verify verifies a set of attestations against a provided policy. The set of attestations that satisfy the policy will be returned
 // if verifiation is successful.
 func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (map[string][]source.VerifiedCollection, error) {
@@ -77,7 +92,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		opt(&vo)
 	}
 
-	if _, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...)); err != nil {
+	if _, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...), dsse.VerifyWithTimestampVerifiers(vo.policyTimestampAuthorities...), dsse.VerifyWithRoots(vo.policyCARoots...), dsse.VerifyWithIntermediates(vo.policyCAIntermediates...)); err != nil {
 		return nil, fmt.Errorf("could not verify policy: %w", err)
 	}
 
@@ -115,7 +130,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		return nil, fmt.Errorf("failed to load policy timestamp authorities: %w", err)
 	}
 
-	timestampVerifiers := make([]dsse.TimestampVerifier, 0)
+	timestampVerifiers := make([]timestamp.TimestampVerifier, 0)
 	for _, timestampAuthority := range timestampAuthoritiesById {
 		certs := []*x509.Certificate{timestampAuthority.Root}
 		certs = append(certs, timestampAuthority.Intermediates...)
