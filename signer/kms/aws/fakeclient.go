@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package aws implement the interface with amazon aws kms service
 package aws
 
 import (
