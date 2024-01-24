@@ -87,7 +87,7 @@ func (g *SignerVerifier) Sign(message io.Reader) ([]byte, error) {
 
 	hf := signerOpts.HashFunc()
 
-	digest, _, err = cryptoutil.ComputeDigestForSigning(message, hf, gcpSupportedHashFuncs)
+	digest, _, err = cryptoutil.ComputeDigest(message, hf, gcpSupportedHashFuncs)
 	if err != nil {
 		return nil, err
 	}

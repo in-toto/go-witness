@@ -95,7 +95,7 @@ func (a *SignerVerifier) Sign(message io.Reader) ([]byte, error) {
 
 	hf := signerOpts.HashFunc()
 
-	digest, _, err = cryptoutil.ComputeDigestForSigning(message, hf, awsSupportedHashFuncs)
+	digest, _, err = cryptoutil.ComputeDigest(message, hf, awsSupportedHashFuncs)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func (a *SignerVerifier) Verify(message io.Reader, sig []byte) (err error) {
 	hf := signerOpts.HashFunc()
 
 	// if we verify remotely, we need to compute the digest first
-	digest, _, err = cryptoutil.ComputeDigestForVerifying(message, hf, awsSupportedHashFuncs)
+	digest, _, err = cryptoutil.ComputeDigest(message, hf, awsSupportedHashFuncs)
 	if err != nil {
 		return err
 	}

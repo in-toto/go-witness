@@ -218,7 +218,7 @@ func TestSign(t *testing.T) {
 	for _, tt := range tests {
 		fmt.Println("sign test: ", tt.name)
 		ctx := context.TODO()
-		dig, _, err := cryptoutil.ComputeDigestForSigning(bytes.NewReader([]byte(tt.message)), tt.hash, awsSupportedHashFuncs)
+		dig, _, err := cryptoutil.ComputeDigest(bytes.NewReader([]byte(tt.message)), tt.hash, awsSupportedHashFuncs)
 		if tt.wantErr && err != nil {
 			assert.ErrorAs(t, err, &tt.expectedErr)
 			continue
@@ -323,7 +323,7 @@ func TestVerify(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			sdig, _, err := cryptoutil.ComputeDigestForSigning(bytes.NewReader([]byte(mess)), tt.hash, awsSupportedHashFuncs)
+			dig, _, err := cryptoutil.ComputeDigest(bytes.NewReader([]byte(mess)), tt.hash, awsSupportedHashFuncs)
 			if tt.wantErr && err != nil {
 				errFound = true
 				assert.ErrorAs(t, err, &tt.expectedErr)
@@ -332,7 +332,7 @@ func TestVerify(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			sig, err := c.sign(ctx, []byte(sdig), crypto.SHA256)
+			sig, err := c.sign(ctx, []byte(dig), crypto.SHA256)
 			if tt.wantErr && err != nil {
 				errFound = true
 				assert.ErrorAs(t, err, &tt.expectedErr)
@@ -341,12 +341,12 @@ func TestVerify(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			bsig, err := bs.Sign(bytes.NewReader([]byte(sdig)))
+			bsig, err := bs.Sign(bytes.NewReader([]byte(dig)))
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			vdig, _, err := cryptoutil.ComputeDigestForVerifying(bytes.NewReader([]byte(mess)), tt.hash, awsSupportedHashFuncs)
+			err = c.verifyRemotely(ctx, sig, dig)
 			if tt.wantErr && err != nil {
 				errFound = true
 				assert.ErrorAs(t, err, &tt.expectedErr)
@@ -355,21 +355,12 @@ func TestVerify(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err = c.verifyRemotely(ctx, sig, vdig)
-			if tt.wantErr && err != nil {
-				errFound = true
-				assert.ErrorAs(t, err, &tt.expectedErr)
-				continue
-			} else if err != nil {
-				t.Fatal(err)
-			}
-
-			err = c.verifyRemotely(ctx, bsig, vdig)
+			err = c.verifyRemotely(ctx, bsig, dig)
 			if err == nil {
 				t.Fatal("expected verification to fail")
 			}
 
-			err = bv.Verify(bytes.NewReader([]byte(vdig)), sig)
+			err = bv.Verify(bytes.NewReader([]byte(dig)), sig)
 			if err == nil {
 				t.Fatal("expected verification to fail")
 			}
