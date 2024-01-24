@@ -18,11 +18,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/signer/kms"
 	"github.com/in-toto/go-witness/source"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,10 +57,24 @@ type PublicKey struct {
 // PublicKeyVerifiers returns verifiers for each of the policy's embedded public keys grouped by the key's ID
 func (p Policy) PublicKeyVerifiers() (map[string]cryptoutil.Verifier, error) {
 	verifiers := make(map[string]cryptoutil.Verifier)
+	var verifier cryptoutil.Verifier
+	var err error
+
 	for _, key := range p.PublicKeys {
-		verifier, err := cryptoutil.NewVerifierFromReader(bytes.NewReader(key.Key))
-		if err != nil {
-			return nil, err
+		for _, prefix := range kms.SupportedProviders() {
+			if strings.HasPrefix(key.KeyID, prefix) {
+				verifier, err = kms.New(kms.WithRef(key.KeyID), kms.WithHash("SHA256")).Verifier(context.TODO())
+				if err != nil {
+					return nil, fmt.Errorf("KMS Key ID recognized but not valid: %w", err)
+				}
+			}
+		}
+
+		if verifier == nil {
+			verifier, err = cryptoutil.NewVerifierFromReader(bytes.NewReader(key.Key))
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		keyID, err := verifier.KeyID()

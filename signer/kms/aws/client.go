@@ -39,6 +39,17 @@ import (
 	ttlcache "github.com/jellydator/ttlcache/v3"
 )
 
+type client interface {
+	sign(ctx context.Context, digest []byte, _ crypto.Hash) ([]byte, error)
+	verifyRemotely(ctx context.Context, sig, digest []byte) error
+	verify(ctx context.Context, sig, message io.Reader) error
+	fetchCMK(ctx context.Context) (*cmk, error)
+	getHashFunc(ctx context.Context) (crypto.Hash, error)
+	setupClient(ctx context.Context, ksp *kms.KMSSignerProvider) (err error)
+	fetchKeyMetadata(ctx context.Context) (*types.KeyMetadata, error)
+	fetchPublicKey(ctx context.Context) (crypto.PublicKey, error)
+}
+
 func init() {
 	kms.AddProvider(ReferenceScheme, func(ctx context.Context, ksp *kms.KMSSignerProvider) (cryptoutil.Signer, error) {
 		return LoadSignerVerifier(ctx, ksp)
@@ -159,49 +170,6 @@ func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider)
 	return
 }
 
-type cmk struct {
-	KeyMetadata *types.KeyMetadata
-	PublicKey   crypto.PublicKey
-}
-
-func (c *cmk) HashFunc() crypto.Hash {
-	switch c.KeyMetadata.SigningAlgorithms[0] {
-	case types.SigningAlgorithmSpecRsassaPssSha256, types.SigningAlgorithmSpecRsassaPkcs1V15Sha256, types.SigningAlgorithmSpecEcdsaSha256:
-		return crypto.SHA256
-	case types.SigningAlgorithmSpecRsassaPssSha384, types.SigningAlgorithmSpecRsassaPkcs1V15Sha384, types.SigningAlgorithmSpecEcdsaSha384:
-		return crypto.SHA384
-	case types.SigningAlgorithmSpecRsassaPssSha512, types.SigningAlgorithmSpecRsassaPkcs1V15Sha512, types.SigningAlgorithmSpecEcdsaSha512:
-		return crypto.SHA512
-	default:
-		return 0
-	}
-}
-
-func (c *cmk) Verifier() (cryptoutil.Verifier, error) {
-	switch c.KeyMetadata.SigningAlgorithms[0] {
-	case types.SigningAlgorithmSpecRsassaPssSha256, types.SigningAlgorithmSpecRsassaPssSha384, types.SigningAlgorithmSpecRsassaPssSha512:
-		pub, ok := c.PublicKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		return cryptoutil.NewRSAVerifier(pub, c.HashFunc()), nil
-	case types.SigningAlgorithmSpecRsassaPkcs1V15Sha256, types.SigningAlgorithmSpecRsassaPkcs1V15Sha384, types.SigningAlgorithmSpecRsassaPkcs1V15Sha512:
-		pub, ok := c.PublicKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		return cryptoutil.NewRSAVerifier(pub, c.HashFunc()), nil
-	case types.SigningAlgorithmSpecEcdsaSha256, types.SigningAlgorithmSpecEcdsaSha384, types.SigningAlgorithmSpecEcdsaSha512:
-		pub, ok := c.PublicKey.(*ecdsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not ecdsa")
-		}
-		return cryptoutil.NewECDSAVerifier(pub, c.HashFunc()), nil
-	default:
-		return nil, fmt.Errorf("signing algorithm unsupported")
-	}
-}
-
 func (a *awsClient) fetchCMK(ctx context.Context) (*cmk, error) {
 	var err error
 	cmk := &cmk{}
@@ -243,51 +211,6 @@ func (a *awsClient) getCMK(ctx context.Context) (*cmk, error) {
 		return &cmk, nil
 	}
 	return nil, lerr
-}
-
-func (a *awsClient) createKey(ctx context.Context, algorithm string) (crypto.PublicKey, error) {
-	if a.alias == "" {
-		return nil, errors.New("must use alias key format")
-	}
-
-	// look for existing key first
-	cmk, err := a.getCMK(ctx)
-	if err == nil {
-		out := cmk.PublicKey
-		return out, nil
-	}
-
-	// return error if not *kms.NotFoundException
-	var errNotFound *types.NotFoundException
-	if !errors.As(err, &errNotFound) {
-		return nil, fmt.Errorf("looking up key: %w", err)
-	}
-
-	usage := types.KeyUsageTypeSignVerify
-	description := "Created by Witness"
-	key, err := a.client.CreateKey(ctx, &akms.CreateKeyInput{
-		CustomerMasterKeySpec: types.CustomerMasterKeySpec(algorithm),
-		KeyUsage:              usage,
-		Description:           &description,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("creating key: %w", err)
-	}
-
-	_, err = a.client.CreateAlias(ctx, &akms.CreateAliasInput{
-		AliasName:   &a.alias,
-		TargetKeyId: key.KeyMetadata.KeyId,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("creating alias %q: %w", a.alias, err)
-	}
-
-	cmk, err = a.getCMK(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("retrieving PublicKey from cache: %w", err)
-	}
-
-	return cmk.PublicKey, err
 }
 
 // At the moment this function lies unused, but it is here for future if necessary
@@ -373,4 +296,47 @@ func (a *awsClient) fetchKeyMetadata(ctx context.Context) (*types.KeyMetadata, e
 		return nil, fmt.Errorf("getting key metadata: %w", err)
 	}
 	return out.KeyMetadata, nil
+}
+
+type cmk struct {
+	KeyMetadata *types.KeyMetadata
+	PublicKey   crypto.PublicKey
+}
+
+func (c *cmk) HashFunc() crypto.Hash {
+	switch c.KeyMetadata.SigningAlgorithms[0] {
+	case types.SigningAlgorithmSpecRsassaPssSha256, types.SigningAlgorithmSpecRsassaPkcs1V15Sha256, types.SigningAlgorithmSpecEcdsaSha256:
+		return crypto.SHA256
+	case types.SigningAlgorithmSpecRsassaPssSha384, types.SigningAlgorithmSpecRsassaPkcs1V15Sha384, types.SigningAlgorithmSpecEcdsaSha384:
+		return crypto.SHA384
+	case types.SigningAlgorithmSpecRsassaPssSha512, types.SigningAlgorithmSpecRsassaPkcs1V15Sha512, types.SigningAlgorithmSpecEcdsaSha512:
+		return crypto.SHA512
+	default:
+		return 0
+	}
+}
+
+func (c *cmk) Verifier() (cryptoutil.Verifier, error) {
+	switch c.KeyMetadata.SigningAlgorithms[0] {
+	case types.SigningAlgorithmSpecRsassaPssSha256, types.SigningAlgorithmSpecRsassaPssSha384, types.SigningAlgorithmSpecRsassaPssSha512:
+		pub, ok := c.PublicKey.(*rsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("public key is not rsa")
+		}
+		return cryptoutil.NewRSAVerifier(pub, c.HashFunc()), nil
+	case types.SigningAlgorithmSpecRsassaPkcs1V15Sha256, types.SigningAlgorithmSpecRsassaPkcs1V15Sha384, types.SigningAlgorithmSpecRsassaPkcs1V15Sha512:
+		pub, ok := c.PublicKey.(*rsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("public key is not rsa")
+		}
+		return cryptoutil.NewRSAVerifier(pub, c.HashFunc()), nil
+	case types.SigningAlgorithmSpecEcdsaSha256, types.SigningAlgorithmSpecEcdsaSha384, types.SigningAlgorithmSpecEcdsaSha512:
+		pub, ok := c.PublicKey.(*ecdsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("public key is not ecdsa")
+		}
+		return cryptoutil.NewECDSAVerifier(pub, c.HashFunc()), nil
+	default:
+		return nil, fmt.Errorf("signing algorithm unsupported")
+	}
 }

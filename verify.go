@@ -23,6 +23,7 @@ import (
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
+	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/policy"
 	"github.com/in-toto/go-witness/source"
 	"github.com/in-toto/go-witness/timestamp"
@@ -79,6 +80,8 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 	if _, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...)); err != nil {
 		return nil, fmt.Errorf("could not verify policy: %w", err)
 	}
+
+	log.Info("policy signature verified")
 
 	pol := policy.Policy{}
 	if err := json.Unmarshal(vo.policyEnvelope.Payload, &pol); err != nil {
