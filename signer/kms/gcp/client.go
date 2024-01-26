@@ -33,8 +33,6 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/signer/kms"
 	"github.com/jellydator/ttlcache/v3"
-	"github.com/sigstore/sigstore/pkg/cryptoutils"
-	"github.com/sigstore/sigstore/pkg/signature"
 )
 
 func init() {
@@ -277,7 +275,7 @@ func (g *gcpClient) fetchPublicKey(ctx context.Context, name string) (crypto.Pub
 	if err != nil {
 		return nil, fmt.Errorf("public key: %w", err)
 	}
-	return cryptoutils.UnmarshalPEMToPublicKey([]byte(pk.GetPem()))
+	return cryptoutil.UnmarshalPEMToPublicKey([]byte(pk.GetPem()))
 }
 
 func (g *gcpClient) getHashFunc() (crypto.Hash, error) {
@@ -379,7 +377,7 @@ func (g *gcpClient) public(ctx context.Context) (crypto.PublicKey, error) {
 }
 
 // Seems like GCP doesn't support any remote verification, so we'll just use the local verifier
-func (g *gcpClient) verify(message io.Reader, sig []byte, opts ...signature.VerifyOption) error {
+func (g *gcpClient) verify(message io.Reader, sig []byte) error {
 	crv, err := g.getCKV()
 	if err != nil {
 		return fmt.Errorf("transient error getting info from KMS: %w", err)

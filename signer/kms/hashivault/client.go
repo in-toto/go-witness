@@ -1,11 +1,10 @@
-//
-// Copyright 2021 The Sigstore Authors.
+// Copyright 2023 The Witness Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//      http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package hashivault implement the interface with hashivault kms service
 package hashivault
 
 import (
@@ -32,7 +30,6 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	kms "github.com/in-toto/go-witness/signer/kms"
 	"github.com/jellydator/ttlcache/v3"
-	"github.com/sigstore/sigstore/pkg/cryptoutils"
 )
 
 func init() {
@@ -205,7 +202,7 @@ func (h *vaultClient) fetchPublicKey(_ context.Context) (crypto.PublicKey, error
 		return nil, fmt.Errorf("could not parse public key pem as string")
 	}
 
-	return cryptoutils.UnmarshalPEMToPublicKey([]byte(strPublicKeyPem))
+	return cryptoutil.UnmarshalPEMToPublicKey([]byte(strPublicKeyPem))
 }
 
 func (h *vaultClient) public() (crypto.PublicKey, error) {
