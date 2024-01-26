@@ -55,7 +55,22 @@ func init() {
 				return ksp, nil
 			},
 		),
+		registry.StringConfigOption(
+			"keyVersion",
+			"The key version to use for signing",
+			"",
+			func(sp signer.SignerProvider, keyVersion string) (signer.SignerProvider, error) {
+				ksp, ok := sp.(*KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+				}
+
+				WithKeyVersion(keyVersion)(ksp)
+				return ksp, nil
+			},
+		),
 	)
+
 	signer.RegisterVerifier("kms", func() signer.VerifierProvider { return New() },
 		registry.StringConfigOption(
 			"ref",
@@ -78,10 +93,24 @@ func init() {
 			func(sp signer.VerifierProvider, hash string) (signer.VerifierProvider, error) {
 				ksp, ok := sp.(*KMSSignerProvider)
 				if !ok {
-					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+					return sp, fmt.Errorf("provided verifier provider is not a kms verifier provider")
 				}
 
 				WithHash(hash)(ksp)
+				return ksp, nil
+			},
+		),
+		registry.StringConfigOption(
+			"keyVersion",
+			"The key version to use for signing",
+			"",
+			func(sp signer.VerifierProvider, keyVersion string) (signer.VerifierProvider, error) {
+				ksp, ok := sp.(*KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided verifier provider is not a kms verifier provider")
+				}
+
+				WithKeyVersion(keyVersion)(ksp)
 				return ksp, nil
 			},
 		),
@@ -89,8 +118,9 @@ func init() {
 }
 
 type KMSSignerProvider struct {
-	Reference string
-	HashFunc  crypto.Hash
+	Reference  string
+	KeyVersion string
+	HashFunc   crypto.Hash
 }
 
 type Option func(*KMSSignerProvider)
@@ -102,8 +132,7 @@ func WithRef(ref string) Option {
 }
 
 func WithHash(hash string) Option {
-	return func(ksp *KMSSignerProvider) {
-		// case switch to match hash type string and set hashFunc
+	return func(ksp *KMSSignerProvider) { // case switch to match hash type string and set hashFunc
 		switch hash {
 		case "SHA224":
 			ksp.HashFunc = crypto.SHA224
@@ -116,6 +145,12 @@ func WithHash(hash string) Option {
 		default:
 			ksp.HashFunc = crypto.SHA256
 		}
+	}
+}
+
+func WithKeyVersion(keyVersion string) Option {
+	return func(ksp *KMSSignerProvider) {
+		ksp.KeyVersion = keyVersion
 	}
 }
 
