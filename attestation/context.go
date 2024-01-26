@@ -35,6 +35,10 @@ const (
 	PostProductRunType RunType = "postproduct"
 )
 
+func runTypeOrder() []RunType {
+	return []RunType{PreMaterialRunType, MaterialRunType, ExecuteRunType, ProductRunType, PostProductRunType}
+}
+
 func (r RunType) String() string {
 	return string(r)
 }
@@ -122,15 +126,17 @@ func (ctx *AttestationContext) RunAttestors() error {
 		if attestor.RunType() == "" {
 			return ErrInvalidOption{
 				Option: "RunType",
-				Reason: fmt.Sprintf("unknown run type %v", attestor.RunType()),
+				Reason: fmt.Sprintf("unknown run type for attestor %s", attestor.Name()),
 			}
 		}
 
 		attestors[attestor.RunType()] = append(attestors[attestor.RunType()], attestor)
 	}
 
-	for _, atts := range attestors {
-		for _, att := range atts {
+	order := runTypeOrder()
+	for _, k := range order {
+		log.Debugf("starting %s attestors...", k.String())
+		for _, att := range attestors[k] {
 			log.Infof("Starting %v attestor...", att.Name())
 			if err := ctx.runAttestor(att); err != nil {
 				log.Errorf("Error running %v attestor: %w", att.Name(), err)
@@ -173,7 +179,9 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) error {
 }
 
 func (ctx *AttestationContext) CompletedAttestors() []CompletedAttestor {
-	return ctx.completedAttestors
+	out := make([]CompletedAttestor, len(ctx.completedAttestors))
+	copy(out, ctx.completedAttestors)
+	return out
 }
 
 func (ctx *AttestationContext) WorkingDir() string {
@@ -181,6 +189,8 @@ func (ctx *AttestationContext) WorkingDir() string {
 }
 
 func (ctx *AttestationContext) Hashes() []crypto.Hash {
+	out := make([]crypto.Hash, len(ctx.hashes))
+	copy(out, ctx.hashes)
 	return ctx.hashes
 }
 
@@ -189,11 +199,19 @@ func (ctx *AttestationContext) Context() context.Context {
 }
 
 func (ctx *AttestationContext) Materials() map[string]cryptoutil.DigestSet {
-	return ctx.materials
+	out := make(map[string]cryptoutil.DigestSet)
+	for k, v := range ctx.materials {
+		out[k] = v
+	}
+	return out
 }
 
 func (ctx *AttestationContext) Products() map[string]Product {
-	return ctx.products
+	out := make(map[string]Product)
+	for k, v := range ctx.products {
+		out[k] = v
+	}
+	return out
 }
 
 func (ctx *AttestationContext) addMaterials(materialer Materialer) {
