@@ -41,8 +41,6 @@ type Subjecter interface {
 	Subjects() map[string]cryptoutil.DigestSet
 }
 
-// NOTE: not sure on the name of this interface, however I can't think of an alternative for now
-
 // Materialer allows attestors to communicate about materials that were observed
 // while the attestor executed. For example the material attestor records the hashes
 // of all files before a command is run.

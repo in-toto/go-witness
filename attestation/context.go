@@ -43,13 +43,14 @@ func (r RunType) String() string {
 	return string(r)
 }
 
-type ErrInvalidOption struct {
-	Option string
-	Reason string
+type ErrAttestor struct {
+	Name    string
+	RunType RunType
+	Reason  string
 }
 
-func (e ErrInvalidOption) Error() string {
-	return fmt.Sprintf("invalid value for option %v: %v", e.Option, e.Reason)
+func (e ErrAttestor) Error() string {
+	return fmt.Sprintf("error returned for attestor %s of run type %s: %s", e.Name, e.RunType, e.Reason)
 }
 
 type AttestationContextOption func(ctx *AttestationContext)
@@ -124,9 +125,10 @@ func (ctx *AttestationContext) RunAttestors() error {
 	attestors := make(map[RunType][]Attestor)
 	for _, attestor := range ctx.attestors {
 		if attestor.RunType() == "" {
-			return ErrInvalidOption{
-				Option: "RunType",
-				Reason: fmt.Sprintf("unknown run type %v for attestor %s", attestor.RunType(), attestor.Name()),
+			return ErrAttestor{
+				Name:    attestor.Name(),
+				RunType: attestor.RunType(),
+				Reason:  "attestor run type not set",
 			}
 		}
 
@@ -138,19 +140,15 @@ func (ctx *AttestationContext) RunAttestors() error {
 		log.Debugf("starting %s attestors...", k.String())
 		for _, att := range attestors[k] {
 			log.Infof("Starting %v attestor...", att.Name())
-			if err := ctx.runAttestor(att); err != nil {
-				log.Errorf("Error running %v attestor: %w", att.Name(), err)
-				return err
-			}
+			ctx.runAttestor(att)
 		}
 	}
 
 	return nil
 }
 
-func (ctx *AttestationContext) runAttestor(attestor Attestor) error {
+func (ctx *AttestationContext) runAttestor(attestor Attestor) {
 	startTime := time.Now()
-	// NOTE: Not sure if this is the right place to check for an error running the attestor - might be better to let the caller handle it
 	if err := attestor.Attest(ctx); err != nil {
 		ctx.completedAttestors = append(ctx.completedAttestors, CompletedAttestor{
 			Attestor:  attestor,
@@ -158,7 +156,6 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) error {
 			EndTime:   time.Now(),
 			Error:     err,
 		})
-		return err
 	}
 
 	ctx.completedAttestors = append(ctx.completedAttestors, CompletedAttestor{
@@ -174,8 +171,6 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) error {
 	if producer, ok := attestor.(Producer); ok {
 		ctx.addProducts(producer)
 	}
-
-	return nil
 }
 
 func (ctx *AttestationContext) CompletedAttestors() []CompletedAttestor {

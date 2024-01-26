@@ -17,6 +17,7 @@ package witness
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/in-toto/go-witness/attestation"
@@ -25,7 +26,6 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
-	"github.com/in-toto/go-witness/log"
 )
 
 type runOptions struct {
@@ -82,20 +82,20 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 		return result, fmt.Errorf("failed to create attestation context: %w", err)
 	}
 
-	if err := runCtx.RunAttestors(); err != nil {
+	if err = runCtx.RunAttestors(); err != nil {
 		return result, fmt.Errorf("failed to run attestors: %w", err)
 	}
 
-	fail := false
+	errs := make([]error, 0)
 	for _, r := range runCtx.CompletedAttestors() {
 		if r.Error != nil {
-			fail = true
-			log.Errorf("attestor %s failed: %s", r.Attestor.Name(), r.Error)
+			errs = append(errs, r.Error)
 		}
 	}
 
-	if fail {
-		return result, fmt.Errorf("attestors failed with errors")
+	if len(errs) > 0 {
+		errs := append([]error{errors.New("attestors failed with error messages")}, errs...)
+		return result, errors.Join(errs...)
 	}
 
 	result.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
