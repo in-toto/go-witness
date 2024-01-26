@@ -126,7 +126,7 @@ func (ctx *AttestationContext) RunAttestors() error {
 		if attestor.RunType() == "" {
 			return ErrInvalidOption{
 				Option: "RunType",
-				Reason: fmt.Sprintf("unknown run type for attestor %s", attestor.Name()),
+				Reason: fmt.Sprintf("unknown run type %v for attestor %s", attestor.RunType(), attestor.Name()),
 			}
 		}
 
@@ -191,7 +191,7 @@ func (ctx *AttestationContext) WorkingDir() string {
 func (ctx *AttestationContext) Hashes() []crypto.Hash {
 	out := make([]crypto.Hash, len(ctx.hashes))
 	copy(out, ctx.hashes)
-	return ctx.hashes
+	return out
 }
 
 func (ctx *AttestationContext) Context() context.Context {
