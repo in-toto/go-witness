@@ -171,35 +171,38 @@ func verifyPolicySignature(ctx context.Context, vo verifyOptions) error {
 		if err != nil {
 			return fmt.Errorf("could not get verifier key id: %w", err)
 		}
-		v, ok := verifier.Verifier.(*cryptoutil.X509Verifier)
-		if !ok {
-			log.Debug("Policy Verifier %s is not an X509Verifier, continuing...", kid)
-		}
 
-		rootIDs := make([]string, 0)
+		var f policy.Functionary
 		trustBundle := make(map[string]policy.TrustBundle)
-		for _, root := range vo.policyCARoots {
-			id := base64.StdEncoding.EncodeToString(root.Raw)
-			rootIDs = append(rootIDs, id)
-			trustBundle[id] = policy.TrustBundle{
-				Root: root,
+		if _, ok := verifier.Verifier.(*cryptoutil.X509Verifier); ok {
+			rootIDs := make([]string, 0)
+			for _, root := range vo.policyCARoots {
+				id := base64.StdEncoding.EncodeToString(root.Raw)
+				rootIDs = append(rootIDs, id)
+				trustBundle[id] = policy.TrustBundle{
+					Root: root,
+				}
+			}
+
+			f = policy.Functionary{
+				Type: "root",
+				CertConstraint: policy.CertConstraint{
+					Roots:      rootIDs,
+					CommonName: "*",
+				},
+			}
+		} else {
+			f = policy.Functionary{
+				Type:        "key",
+				PublicKeyID: kid,
 			}
 		}
 
-		f := policy.Functionary{
-			Type: "root",
-			CertConstraint: policy.CertConstraint{
-				Roots:      rootIDs,
-				CommonName: "*",
-			},
-		}
-
-		err = f.Validate(v, trustBundle)
+		err = f.Validate(verifier.Verifier, trustBundle)
 		if err != nil {
 			log.Debugf("Policy Verifier %s failed failed to match supplied constraints: %w, continuing...", err, kid)
 			continue
 		}
-
 		passed = true
 	}
 
