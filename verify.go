@@ -45,6 +45,11 @@ type verifyOptions struct {
 	policyTimestampAuthorities []timestamp.TimestampVerifier
 	policyCARoots              []*x509.Certificate
 	policyCAIntermediates      []*x509.Certificate
+	policyCommonName           string
+	policyDNSNames             []string
+	policyEmails               []string
+	policyOrganizations        []string
+	policyURIs                 []string
 	policyEnvelope             dsse.Envelope
 	policyVerifiers            []cryptoutil.Verifier
 	collectionSource           source.Sourcer
@@ -84,6 +89,16 @@ func VerifyWithPolicyCARoots(roots []*x509.Certificate) VerifyOption {
 func VerifyWithPolicyCAIntermediates(intermediates []*x509.Certificate) VerifyOption {
 	return func(vo *verifyOptions) {
 		vo.policyCAIntermediates = intermediates
+	}
+}
+
+func VerifyWithPolicyCertConstraints(commonName string, dnsNames []string, emails []string, organizations []string, uris []string) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.policyCommonName = commonName
+		vo.policyDNSNames = dnsNames
+		vo.policyEmails = emails
+		vo.policyOrganizations = organizations
+		vo.policyURIs = uris
 	}
 }
 
@@ -187,8 +202,12 @@ func verifyPolicySignature(ctx context.Context, vo verifyOptions) error {
 			f = policy.Functionary{
 				Type: "root",
 				CertConstraint: policy.CertConstraint{
-					Roots:      rootIDs,
-					CommonName: "*",
+					Roots:         rootIDs,
+					CommonName:    vo.policyCommonName,
+					URIs:          vo.policyURIs,
+					Emails:        vo.policyEmails,
+					Organizations: vo.policyOrganizations,
+					DNSNames:      vo.policyDNSNames,
 				},
 			}
 		} else {
@@ -200,7 +219,7 @@ func verifyPolicySignature(ctx context.Context, vo verifyOptions) error {
 
 		err = f.Validate(verifier.Verifier, trustBundle)
 		if err != nil {
-			log.Debugf("Policy Verifier %s failed failed to match supplied constraints: %w, continuing...", err, kid)
+			log.Debugf("Policy Verifier %s failed failed to match supplied constraints: %w, continuing...", kid, err)
 			continue
 		}
 		passed = true
