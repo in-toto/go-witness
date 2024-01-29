@@ -40,7 +40,7 @@ func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelo
 }
 
 type verifyOptions struct {
-	policyTimestampAuthorities []dsse.TimestampVerifier
+	policyTimestampAuthorities []timestamp.TimestampVerifier
 	policyCARoots              []*x509.Certificate
 	policyCAIntermediates      []*x509.Certificate
 	policyEnvelope             dsse.Envelope
@@ -67,7 +67,7 @@ func VerifyWithCollectionSource(source source.Sourcer) VerifyOption {
 	}
 }
 
-func VerifyWithPolicyTimestampAuthorities(authorities []dsse.TimestampVerifier) VerifyOption {
+func VerifyWithPolicyTimestampAuthorities(authorities []timestamp.TimestampVerifier) VerifyOption {
 	return func(vo *verifyOptions) {
 		vo.policyTimestampAuthorities = authorities
 	}
@@ -76,6 +76,12 @@ func VerifyWithPolicyTimestampAuthorities(authorities []dsse.TimestampVerifier) 
 func VerifyWithPolicyCARoots(roots []*x509.Certificate) VerifyOption {
 	return func(vo *verifyOptions) {
 		vo.policyCARoots = roots
+	}
+}
+
+func VerifyWithPolicyCAIntermediates(intermediates []*x509.Certificate) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.policyCAIntermediates = intermediates
 	}
 }
 
@@ -127,7 +133,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		return nil, fmt.Errorf("failed to load policy timestamp authorities: %w", err)
 	}
 
-	timestampVerifiers := make([]dsse.TimestampVerifier, 0)
+	timestampVerifiers := make([]timestamp.TimestampVerifier, 0)
 	for _, timestampAuthority := range timestampAuthoritiesById {
 		certs := []*x509.Certificate{timestampAuthority.Root}
 		certs = append(certs, timestampAuthority.Intermediates...)

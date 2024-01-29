@@ -26,6 +26,7 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
+	"github.com/in-toto/go-witness/timestamp"
 )
 
 type runOptions struct {
@@ -33,7 +34,7 @@ type runOptions struct {
 	signer          cryptoutil.Signer
 	attestors       []attestation.Attestor
 	attestationOpts []attestation.AttestationContextOption
-	timestampers    []dsse.Timestamper
+	timestampers    []timestamp.Timestamper
 }
 
 type RunOption func(ro *runOptions)
@@ -50,7 +51,7 @@ func RunWithAttestationOpts(opts ...attestation.AttestationContextOption) RunOpt
 	}
 }
 
-func RunWithTimestampers(ts ...dsse.Timestamper) RunOption {
+func RunWithTimestampers(ts ...timestamp.Timestamper) RunOption {
 	return func(ro *runOptions) {
 		ro.timestampers = ts
 	}
