@@ -61,7 +61,7 @@ func WithContext(ctx context.Context) AttestationContextOption {
 	}
 }
 
-func WithHashes(hashes []crypto.Hash) AttestationContextOption {
+func WithHashes(hashes []cryptoutil.DigestValue) AttestationContextOption {
 	return func(ctx *AttestationContext) {
 		if len(hashes) > 0 {
 			ctx.hashes = hashes
@@ -88,7 +88,7 @@ type AttestationContext struct {
 	ctx                context.Context
 	attestors          []Attestor
 	workingDir         string
-	hashes             []crypto.Hash
+	hashes             []cryptoutil.DigestValue
 	completedAttestors []CompletedAttestor
 	products           map[string]Product
 	materials          map[string]cryptoutil.DigestSet
@@ -109,7 +109,7 @@ func NewContext(attestors []Attestor, opts ...AttestationContextOption) (*Attest
 		ctx:        context.Background(),
 		attestors:  attestors,
 		workingDir: wd,
-		hashes:     []crypto.Hash{crypto.SHA256},
+		hashes:     []cryptoutil.DigestValue{{Hash: crypto.SHA256}, {Hash: crypto.SHA256, GitOID: true}, {Hash: crypto.SHA1, GitOID: true}},
 		materials:  make(map[string]cryptoutil.DigestSet),
 		products:   make(map[string]Product),
 	}
@@ -183,10 +183,10 @@ func (ctx *AttestationContext) WorkingDir() string {
 	return ctx.workingDir
 }
 
-func (ctx *AttestationContext) Hashes() []crypto.Hash {
-	out := make([]crypto.Hash, len(ctx.hashes))
-	copy(out, ctx.hashes)
-	return out
+func (ctx *AttestationContext) Hashes() []cryptoutil.DigestValue {
+	hashes := make([]cryptoutil.DigestValue, len(ctx.hashes))
+	copy(hashes, ctx.hashes)
+	return hashes
 }
 
 func (ctx *AttestationContext) Context() context.Context {
