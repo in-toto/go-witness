@@ -80,6 +80,12 @@ func VerifyWithPolicyCARoots(roots []*x509.Certificate) VerifyOption {
 	}
 }
 
+func VerifyWithPolicyCAIntermediates(intermediates []*x509.Certificate) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.policyCAIntermediates = intermediates
+	}
+}
+
 // Verify verifies a set of attestations against a provided policy. The set of attestations that satisfy the policy will be returned
 // if verifiation is successful.
 func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (map[string][]source.VerifiedCollection, error) {
