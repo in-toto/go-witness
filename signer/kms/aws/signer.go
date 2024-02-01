@@ -15,13 +15,16 @@
 package aws
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 	kms "github.com/in-toto/go-witness/signer/kms"
 )
 
@@ -119,7 +122,7 @@ func (a *SignerVerifier) Bytes() ([]byte, error) {
 	return cryptoutil.PublicPemBytes(p)
 }
 
-// VerifySignature verifies the signature for the given message, returning
+// Verify verifies the signature for the given message, returning
 // nil if the verification succeeded, and an error message otherwise.
 func (a *SignerVerifier) Verify(message io.Reader, sig []byte) (err error) {
 	ctx := context.Background()
@@ -132,18 +135,19 @@ func (a *SignerVerifier) Verify(message io.Reader, sig []byte) (err error) {
 	}
 	hf := signerOpts.HashFunc()
 
+	// we want to verify remotely unless we explicitly ask to verify locally
+	if os.Getenv("WITNESS_AWS_VERIFY_LOCALLY") == "1" {
+		log.Debug("Environment variable WITNESS_AWS_VERIFY_LOCALLY set to 1, verifying locally")
+		return a.client.verify(ctx, bytes.NewReader(sig), message)
+	}
+
 	// if we verify remotely, we need to compute the digest first
 	digest, _, err = cryptoutil.ComputeDigest(message, hf, awsSupportedHashFuncs)
 	if err != nil {
 		return err
 	}
 
-	err = a.client.verifyRemotely(ctx, sig, digest)
-	if err != nil {
-		return err
-	}
-
-	return err
+	return a.client.verifyRemotely(ctx, sig, digest)
 }
 
 // SupportedAlgorithms returns the list of algorithms supported by the AWS KMS service

@@ -184,7 +184,7 @@ func ComputeDigest(rawMessage io.Reader, hashFunc crypto.Hash, supportedHashFunc
 		return nil, crypto.Hash(0), fmt.Errorf("unsupported hash algorithm: %q not in %v", hashedWith.String(), supportedHashFuncs)
 	}
 
-	digest, err := hashMessage(rawMessage, hashedWith)
+	digest, err := Digest(rawMessage, hashedWith)
 	return digest, hashedWith, err
 }
 
@@ -198,19 +198,4 @@ func isSupportedAlg(alg crypto.Hash, supportedAlgs []crypto.Hash) bool {
 		}
 	}
 	return false
-}
-
-func hashMessage(rawMessage io.Reader, hashFunc crypto.Hash) ([]byte, error) {
-	if rawMessage == nil {
-		return nil, errors.New("message cannot be nil")
-	}
-	if hashFunc == crypto.Hash(0) {
-		return io.ReadAll(rawMessage)
-	}
-	hasher := hashFunc.New()
-	// avoids reading entire message into memory
-	if _, err := io.Copy(hasher, rawMessage); err != nil {
-		return nil, fmt.Errorf("hashing message: %w", err)
-	}
-	return hasher.Sum(nil), nil
 }
