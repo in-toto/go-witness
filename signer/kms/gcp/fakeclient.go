@@ -15,6 +15,7 @@
 package gcp
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -22,14 +23,10 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
-	"hash/crc32"
 	"io"
-	"regexp"
 	"time"
 
-	gcpkms "cloud.google.com/go/kms/apiv1"
 	"cloud.google.com/go/kms/apiv1/kmspb"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/signer/kms"
@@ -56,44 +53,18 @@ func createTestKey() (cryptoutil.Signer, cryptoutil.Verifier, error) {
 	return signer, verifier, nil
 }
 
-var (
-	errKMSReference = errors.New("kms specification should be in the format gcpkms://projects/[PROJECT_ID]/locations/[LOCATION]/keyRings/[KEY_RING]/cryptoKeys/[KEY]/cryptoKeyVersions/[VERSION]")
-
-	re = regexp.MustCompile(`^gcpkms://projects/([^/]+)/locations/([^/]+)/keyRings/([^/]+)/cryptoKeys/([^/]+)(?:/(?:cryptoKeyVersions|versions)/([^/]+))?$`)
-)
-
-// ReferenceScheme schemes for various KMS services are copied from https://github.com/google/go-cloud/tree/master/secrets
-const ReferenceScheme = "gcpkms://"
-
-// ValidReference returns a non-nil error if the reference string is invalid
-func ValidReference(ref string) error {
-	if !re.MatchString(ref) {
-		return errKMSReference
-	}
-	return nil
-}
-
-func parseReference(resourceID string) (projectID, locationID, keyRing, keyName, version string, err error) {
-	v := re.FindStringSubmatch(resourceID)
-	if len(v) != 6 {
-		err = fmt.Errorf("invalid gcpkms format %q", resourceID)
-		return
-	}
-	projectID, locationID, keyRing, keyName, version = v[1], v[2], v[3], v[4], v[5]
-	return
-}
-
-type gcpClient struct {
+type fakeGCPClient struct {
 	projectID  string
 	locationID string
 	keyRing    string
 	keyName    string
 	version    string
 	kvCache    *ttlcache.Cache[string, cryptoKeyVersion]
-	client     *gcpkms.KeyManagementClient
+	signer     cryptoutil.Signer
 }
 
-func newGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*gcpClient, error) {
+func newFakeGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*fakeGCPClient, error) {
+	fmt.Println(ksp.Reference)
 	if err := ValidReference(ksp.Reference); err != nil {
 		return nil, err
 	}
@@ -102,7 +73,7 @@ func newGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*gcpClient, 
 		ctx = context.Background()
 	}
 
-	g := &gcpClient{
+	g := &fakeGCPClient{
 		kvCache: nil,
 	}
 
@@ -110,12 +81,6 @@ func newGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*gcpClient, 
 	g.projectID, g.locationID, g.keyRing, g.keyName, g.version, err = parseReference(ksp.Reference)
 	if err != nil {
 		return nil, err
-	}
-
-	// NOTE: We need to think about how we want to handle passing in options here
-	g.client, err = gcpkms.NewKeyManagementClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("new gcp kms client: %w", err)
 	}
 
 	g.kvCache = ttlcache.New[string, cryptoKeyVersion](
@@ -127,17 +92,7 @@ func newGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*gcpClient, 
 	return g, nil
 }
 
-type cryptoKeyVersion struct {
-	CryptoKeyVersion *kmspb.CryptoKeyVersion
-	Verifier         cryptoutil.Verifier
-	PublicKey        crypto.PublicKey
-	HashFunc         crypto.Hash
-}
-
-// use a consistent key for cache lookups
-const cacheKey = "crypto_key_version"
-
-func (g *gcpClient) Verifier() (cryptoutil.Verifier, error) {
+func (g *fakeGCPClient) Verifier() (cryptoutil.Verifier, error) {
 	crv, err := g.getCKV()
 	if err != nil {
 		return nil, fmt.Errorf("transient error while getting KMS verifier: %w", err)
@@ -147,59 +102,26 @@ func (g *gcpClient) Verifier() (cryptoutil.Verifier, error) {
 }
 
 // keyVersionName returns the first key version found for a key in KMS
-func (g *gcpClient) keyVersionName(ctx context.Context) (*cryptoKeyVersion, error) {
-	parent := fmt.Sprintf("projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s", g.projectID, g.locationID, g.keyRing, g.keyName)
-
-	parentReq := &kmspb.GetCryptoKeyRequest{
-		Name: parent,
-	}
-	key, err := g.client.GetCryptoKey(ctx, parentReq)
-	if err != nil {
-		return nil, err
-	}
-	if key.Purpose != kmspb.CryptoKey_ASYMMETRIC_SIGN {
-		return nil, errors.New("specified key cannot be used to sign")
-	}
-
-	// if g.version was specified, use it explicitly
-	var kv *kmspb.CryptoKeyVersion
-	if g.version != "" {
-		req := &kmspb.GetCryptoKeyVersionRequest{
-			Name: parent + fmt.Sprintf("/cryptoKeyVersions/%s", g.version),
-		}
-		kv, err = g.client.GetCryptoKeyVersion(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		req := &kmspb.ListCryptoKeyVersionsRequest{
-			Parent:  parent,
-			Filter:  "state=ENABLED",
-			OrderBy: "name desc",
-		}
-		iterator := g.client.ListCryptoKeyVersions(ctx, req)
-
-		// pick the key version that is enabled with the greatest version value
-		kv, err = iterator.Next()
-		if err != nil {
-			return nil, fmt.Errorf("unable to find an enabled key version in GCP KMS: %w", err)
-		}
-	}
-
-	pubKey, err := g.fetchPublicKey(ctx, kv.Name)
+func (g *fakeGCPClient) keyVersionName(ctx context.Context) (*cryptoKeyVersion, error) {
+	pubKey, err := g.fetchPublicKey(ctx, "1")
 	if err != nil {
 		return nil, fmt.Errorf("unable to fetch public key while creating signer: %w", err)
 	}
 
 	// kv is keyVersion to use
 	crv := cryptoKeyVersion{
-		CryptoKeyVersion: kv,
-		PublicKey:        pubKey,
+		CryptoKeyVersion: &kmspb.CryptoKeyVersion{
+			Name:      "1",
+			Algorithm: kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256,
+		},
+		PublicKey: pubKey,
 	}
+
+	g.version = "1"
 
 	// crv.Verifier is set here to enable storing the public key & hash algorithm together,
 	// as well as using the in memory Verifier to perform the verify operations.
-	switch kv.Algorithm {
+	switch crv.CryptoKeyVersion.Algorithm {
 	case kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256:
 		pub, ok := pubKey.(*ecdsa.PublicKey)
 		if !ok {
@@ -252,21 +174,22 @@ func (g *gcpClient) keyVersionName(ctx context.Context) (*cryptoKeyVersion, erro
 	if err != nil {
 		return nil, fmt.Errorf("initializing internal verifier: %w", err)
 	}
+
 	return &crv, nil
 }
 
-func (g *gcpClient) fetchPublicKey(ctx context.Context, name string) (crypto.PublicKey, error) {
-	// Build the request.
-	pkreq := &kmspb.GetPublicKeyRequest{Name: name}
-	// Call the API.
-	pk, err := g.client.GetPublicKey(ctx, pkreq)
+func (g *fakeGCPClient) fetchPublicKey(ctx context.Context, name string) (crypto.PublicKey, error) {
+	priv, pub, err := createRsaKey()
 	if err != nil {
-		return nil, fmt.Errorf("public key: %w", err)
+		return nil, err
 	}
-	return cryptoutil.UnmarshalPEMToPublicKey([]byte(pk.GetPem()))
+	sign := cryptoutil.NewRSASigner(priv, crypto.SHA256)
+	g.signer = sign
+
+	return pub, nil
 }
 
-func (g *gcpClient) getHashFunc() (crypto.Hash, error) {
+func (g *fakeGCPClient) getHashFunc() (crypto.Hash, error) {
 	ckv, err := g.getCKV()
 	if err != nil {
 		return 0, err
@@ -276,7 +199,7 @@ func (g *gcpClient) getHashFunc() (crypto.Hash, error) {
 
 // getCKV gets the latest CryptoKeyVersion from the client's cache, which may trigger an actual
 // call to GCP if the existing entry in the cache has expired.
-func (g *gcpClient) getCKV() (*cryptoKeyVersion, error) {
+func (g *fakeGCPClient) getCKV() (*cryptoKeyVersion, error) {
 	var lerr error
 	loader := ttlcache.LoaderFunc[string, cryptoKeyVersion](
 		func(c *ttlcache.Cache[string, cryptoKeyVersion], key string) *ttlcache.Item[string, cryptoKeyVersion] {
@@ -303,60 +226,23 @@ func (g *gcpClient) getCKV() (*cryptoKeyVersion, error) {
 		v := item.Value()
 		return &v, nil
 	}
+
 	return nil, lerr
 }
 
-func (g *gcpClient) sign(ctx context.Context, digest []byte, alg crypto.Hash, crc uint32) ([]byte, error) {
-	ckv, err := g.getCKV()
+func (g *fakeGCPClient) sign(ctx context.Context, digest []byte, alg crypto.Hash, crc uint32) ([]byte, error) {
+	_, err := g.getCKV()
 	if err != nil {
 		return nil, err
 	}
 
-	gcpSignReq := kmspb.AsymmetricSignRequest{
-		Name:   ckv.CryptoKeyVersion.Name,
-		Digest: &kmspb.Digest{},
-	}
+	reader := bytes.NewReader(digest)
+	sig, err := g.signer.Sign(reader)
 
-	if crc != 0 {
-		gcpSignReq.DigestCrc32C = wrapperspb.Int64(int64(crc))
-	}
-
-	switch alg {
-	case crypto.SHA256:
-		gcpSignReq.Digest.Digest = &kmspb.Digest_Sha256{
-			Sha256: digest,
-		}
-	case crypto.SHA384:
-		gcpSignReq.Digest.Digest = &kmspb.Digest_Sha384{
-			Sha384: digest,
-		}
-	case crypto.SHA512:
-		gcpSignReq.Digest.Digest = &kmspb.Digest_Sha512{
-			Sha512: digest,
-		}
-	default:
-		return nil, errors.New("unsupported hash function")
-	}
-
-	resp, err := g.client.AsymmetricSign(ctx, &gcpSignReq)
-	if err != nil {
-		return nil, fmt.Errorf("calling GCP AsymmetricSign: %w", err)
-	}
-
-	// Optional, but recommended: perform integrity verification on result.
-	// For more details on ensuring E2E in-transit integrity to and from Cloud KMS visit:
-	// https://cloud.google.com/kms/docs/data-integrity-guidelines
-	if crc != 0 && !resp.VerifiedDigestCrc32C {
-		return nil, fmt.Errorf("AsymmetricSign: request corrupted in-transit")
-	}
-	if int64(crc32.Checksum(resp.Signature, crc32.MakeTable(crc32.Castagnoli))) != resp.SignatureCrc32C.Value {
-		return nil, fmt.Errorf("AsymmetricSign: response corrupted in-transit")
-	}
-
-	return resp.Signature, nil
+	return sig, nil
 }
 
-func (g *gcpClient) public(ctx context.Context) (crypto.PublicKey, error) {
+func (g *fakeGCPClient) public(ctx context.Context) (crypto.PublicKey, error) {
 	crv, err := g.getCKV()
 	if err != nil {
 		return nil, fmt.Errorf("transient error getting info from KMS: %w", err)
@@ -365,7 +251,7 @@ func (g *gcpClient) public(ctx context.Context) (crypto.PublicKey, error) {
 }
 
 // Seems like GCP doesn't support any remote verification, so we'll just use the local verifier
-func (g *gcpClient) verify(message io.Reader, sig []byte) error {
+func (g *fakeGCPClient) verify(message io.Reader, sig []byte) error {
 	crv, err := g.getCKV()
 	if err != nil {
 		return fmt.Errorf("transient error getting info from KMS: %w", err)
@@ -383,5 +269,6 @@ func (g *gcpClient) verify(message io.Reader, sig []byte) error {
 		}
 		return fmt.Errorf("failed to verify for fixed version: %w", err)
 	}
+
 	return nil
 }
