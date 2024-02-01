@@ -57,7 +57,7 @@ jobs:
       artifact-upload-path: profile.cov
 
   release:
-    needs: [fmt, sast, unit-tests]
+    needs: [fmt, sast, unit-test]
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
