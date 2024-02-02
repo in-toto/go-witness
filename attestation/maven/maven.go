@@ -24,12 +24,14 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/registry"
 )
 
 const (
-	Name    = "maven"
-	Type    = "https://witness.dev/attestations/maven/v0.1"
-	RunType = attestation.PreMaterialRunType
+	Name           = "maven"
+	Type           = "https://witness.dev/attestations/maven/v0.1"
+	RunType        = attestation.PreMaterialRunType
+	defaultPomPath = "pom.xml"
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -42,7 +44,22 @@ var (
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
-	})
+	},
+		registry.StringConfigOption(
+			"pom-path",
+			fmt.Sprintf("The path to the Project Object Model (POM) XML file used for task being attested (default \"%s\").", defaultPomPath),
+			defaultPomPath,
+			func(a attestation.Attestor, pomPath string) (attestation.Attestor, error) {
+				mavAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a maven attestor", a)
+				}
+
+				WithPom(pomPath)(mavAttestor)
+				return mavAttestor, nil
+			},
+		),
+	)
 }
 
 type Attestor struct {
@@ -73,7 +90,7 @@ func WithPom(path string) Option {
 
 func New(opts ...Option) *Attestor {
 	attestor := &Attestor{
-		pomPath: "pom.xml",
+		pomPath: defaultPomPath,
 	}
 
 	for _, opt := range opts {
@@ -116,7 +133,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subjects := make(map[string]cryptoutil.DigestSet)
-	hashes := []crypto.Hash{crypto.SHA256}
+	hashes := []cryptoutil.DigestValue{{Hash: crypto.SHA256}}
 	projectSubject := fmt.Sprintf("project:%v/%v@%v", a.GroupId, a.ArtifactId, a.Version)
 	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(projectSubject), hashes); err == nil {
 		subjects[projectSubject] = ds
