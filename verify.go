@@ -106,8 +106,13 @@ func VerifyWithPolicyCertConstraints(commonName string, dnsNames []string, email
 // if verifiation is successful.
 func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (map[string][]source.VerifiedCollection, error) {
 	vo := verifyOptions{
-		policyEnvelope:  policyEnvelope,
-		policyVerifiers: policyVerifiers,
+		policyEnvelope:      policyEnvelope,
+		policyVerifiers:     policyVerifiers,
+		policyCommonName:    "*",
+		policyDNSNames:      []string{"*"},
+		policyOrganizations: []string{"*"},
+		policyURIs:          []string{"*"},
+		policyEmails:        []string{"*"},
 	}
 
 	for _, opt := range opts {
@@ -210,6 +215,7 @@ func verifyPolicySignature(ctx context.Context, vo verifyOptions) error {
 					DNSNames:      vo.policyDNSNames,
 				},
 			}
+
 		} else {
 			f = policy.Functionary{
 				Type:        "key",
@@ -220,6 +226,7 @@ func verifyPolicySignature(ctx context.Context, vo verifyOptions) error {
 		err = f.Validate(verifier.Verifier, trustBundle)
 		if err != nil {
 			log.Debugf("Policy Verifier %s failed failed to match supplied constraints: %w, continuing...", kid, err)
+			fmt.Println("FAILED: ", err.Error())
 			continue
 		}
 		passed = true

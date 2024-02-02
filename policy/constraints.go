@@ -19,6 +19,7 @@ import (
 	"net/url"
 
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 )
 
 const (
@@ -38,6 +39,10 @@ type CertConstraint struct {
 func (cc CertConstraint) Check(verifier *cryptoutil.X509Verifier, trustBundles map[string]TrustBundle) error {
 	errs := make([]error, 0)
 	cert := verifier.Certificate()
+
+	if cc.DNSNames[0] == "*" && cc.Emails[0] == "*" && cc.Organizations[0] == "*" && cc.URIs[0] == "*" && cc.Roots[0] == "*" && cc.CommonName == "*" {
+		log.Warn("A certificate is being validated without any constraints set. Any certificate in the trust bundle will pass")
+	}
 
 	if err := checkCertConstraint("common name", []string{cc.CommonName}, []string{cert.Subject.CommonName}); err != nil {
 		errs = append(errs, err)
