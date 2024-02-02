@@ -226,7 +226,6 @@ func verifyPolicySignature(ctx context.Context, vo verifyOptions) error {
 		err = f.Validate(verifier.Verifier, trustBundle)
 		if err != nil {
 			log.Debugf("Policy Verifier %s failed failed to match supplied constraints: %w, continuing...", kid, err)
-			fmt.Println("FAILED: ", err.Error())
 			continue
 		}
 		passed = true
