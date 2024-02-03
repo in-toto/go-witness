@@ -43,13 +43,13 @@ func init() {
 }
 
 type Link struct {
-	pbLink   v0.Link
-	products map[string]attestation.Product
+	PbLink   v0.Link                        `json:"Pblink"`
+	Products map[string]attestation.Product `json:"products"`
 }
 
 func New() *Link {
 	return &Link{
-		pbLink: v0.Link{
+		PbLink: v0.Link{
 			Name: Name,
 		},
 	}
@@ -70,23 +70,23 @@ func (l *Link) RunType() attestation.RunType {
 func (l *Link) Attest(ctx *attestation.AttestationContext) error {
 	for name, digestSet := range ctx.Materials() {
 		digests, _ := digestSet.ToNameMap()
-		l.pbLink.Materials = append(l.pbLink.Materials, &v1.ResourceDescriptor{
+		l.PbLink.Materials = append(l.PbLink.Materials, &v1.ResourceDescriptor{
 			Name:   name,
 			Digest: digests,
 		})
 	}
 
-	l.products = ctx.Products()
+	l.Products = ctx.Products()
 
 	for _, attestor := range ctx.CompletedAttestors() {
 		switch name := attestor.Attestor.Name(); name {
 		case commandrun.Name:
-			l.pbLink.Command = attestor.Attestor.(*commandrun.CommandRun).Cmd
+			l.PbLink.Command = attestor.Attestor.(*commandrun.CommandRun).Cmd
 		case material.Name:
 			mats := attestor.Attestor.(*material.Attestor).Materials()
 			for name, digestSet := range mats {
 				digests, _ := digestSet.ToNameMap()
-				l.pbLink.Materials = append(l.pbLink.Materials, &v1.ResourceDescriptor{
+				l.PbLink.Materials = append(l.PbLink.Materials, &v1.ResourceDescriptor{
 					Name:   name,
 					Digest: digests,
 				})
@@ -99,7 +99,7 @@ func (l *Link) Attest(ctx *attestation.AttestationContext) error {
 			}
 
 			var err error
-			l.pbLink.Environment, err = structpb.NewStruct(pbEnvs)
+			l.PbLink.Environment, err = structpb.NewStruct(pbEnvs)
 			if err != nil {
 				return err
 			}
