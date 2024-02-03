@@ -8,6 +8,7 @@ require (
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/in-toto/archivista v0.2.0
+	github.com/in-toto/attestation v1.0.1
 	github.com/mattn/go-isatty v0.0.20
 	github.com/open-policy-agent/opa v0.49.2
 	github.com/owenrumney/go-sarif v1.1.1
@@ -93,7 +94,7 @@ require (
 	golang.org/x/term v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/genproto v0.0.0-20231012201019-e917dd12ba7a // indirect
-	google.golang.org/protobuf v1.32.0 // indirect
+	google.golang.org/protobuf v1.32.0
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

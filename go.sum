@@ -105,6 +105,8 @@ github.com/honeycombio/beeline-go v1.10.0 h1:cUDe555oqvw8oD76BQJ8alk7FP0JZ/M/zXp
 github.com/honeycombio/libhoney-go v1.16.0 h1:kPpqoz6vbOzgp7jC6SR7SkNj7rua7rgxvznI6M3KdHc=
 github.com/in-toto/archivista v0.2.0 h1:FViuHMVVETborvOqlmSYdROY8RmX3CO0V0MOhU/Rl20=
 github.com/in-toto/archivista v0.2.0/go.mod h1:qt9uN4TkHWUgR5A2wxRqQIBizSl32P2nI2AjESskkr0=
+github.com/in-toto/attestation v1.0.1 h1:DgX1XuBkryTpj1Piq8AiMK3CMfEcec3Qv6+Ku+uI3WY=
+github.com/in-toto/attestation v1.0.1/go.mod h1:hCR5COCuENh5+VfojEkJnt7caOymbEgvyZdKifD6pOw=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 h1:BQSFePA1RWJOlocH6Fxy8MmwDt+yVQYULKfN0RoTN8A=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99/go.mod h1:1lJo3i6rXxKeerYnT8Nvf0QmHCRC1n8sfWVwXF2Frvo=
 github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
