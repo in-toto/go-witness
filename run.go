@@ -129,6 +129,7 @@ func run(stepName string, signer cryptoutil.Signer, exportAtt []string, opts []R
 	if err != nil {
 		return result, fmt.Errorf("failed to sign collection: %w", err)
 	}
+	result = append(result, collectionResult)
 
 	return result, nil
 }
