@@ -19,12 +19,14 @@ import (
 	"fmt"
 
 	v0 "github.com/in-toto/attestation/go/predicates/link/v0"
+	v1 "github.com/in-toto/attestation/go/v1"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/commandrun"
 	"github.com/in-toto/go-witness/attestation/environment"
 	"github.com/in-toto/go-witness/attestation/material"
 	"github.com/in-toto/go-witness/attestation/product"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/registry"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -32,6 +34,8 @@ const (
 	Name    = "link"
 	Type    = "https://in-toto.io/attestation/link/v0.3"
 	RunType = attestation.PostProductRunType
+
+	defaultExport = false
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -42,14 +46,36 @@ var (
 )
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
-		return New()
-	})
+	attestation.RegisterAttestation(Name, Type, RunType,
+		func() attestation.Attestor { return New() },
+		registry.BoolConfigOption(
+			"export",
+			"Export the link attestation to its own file",
+			defaultExport,
+			func(a attestation.Attestor, export bool) (attestation.Attestor, error) {
+				linkAttestor, ok := a.(*Link)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a link attestor", a)
+				}
+				WithExport(export)(linkAttestor)
+				return linkAttestor, nil
+			},
+		),
+	)
+}
+
+type Option func(*Link)
+
+func WithExport(export bool) Option {
+	return func(l *Link) {
+		l.export = export
+	}
 }
 
 type Link struct {
 	PbLink   v0.Link
 	products map[string]attestation.Product
+	export   bool
 }
 
 func New() *Link {
@@ -68,6 +94,10 @@ func (l *Link) RunType() attestation.RunType {
 	return RunType
 }
 
+func (l *Link) Export() bool {
+	return l.export
+}
+
 func (l *Link) Attest(ctx *attestation.AttestationContext) error {
 	l.PbLink.Name = "stepNameHere"
 	for _, attestor := range ctx.CompletedAttestors() {
@@ -75,14 +105,14 @@ func (l *Link) Attest(ctx *attestation.AttestationContext) error {
 		case commandrun.Name:
 			l.PbLink.Command = attestor.Attestor.(*commandrun.CommandRun).Cmd
 		case material.Name:
-			// mats := attestor.Attestor.(*material.Attestor).Materials()
-			// for name, digestSet := range mats {
-			// 	digests, _ := digestSet.ToNameMap()
-			// 	l.Materials = append(l.Materials, &v1.ResourceDescriptor{
-			// 		Name:   name,
-			// 		Digest: digests,
-			// 	})
-			// }
+			mats := attestor.Attestor.(*material.Attestor).Materials()
+			for name, digestSet := range mats {
+				digests, _ := digestSet.ToNameMap()
+				l.PbLink.Materials = append(l.PbLink.Materials, &v1.ResourceDescriptor{
+					Name:   name,
+					Digest: digests,
+				})
+			}
 		case environment.Name:
 			envs := attestor.Attestor.(*environment.Attestor).Variables
 			pbEnvs := make(map[string]interface{}, len(envs))

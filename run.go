@@ -64,19 +64,21 @@ type RunResult struct {
 	AttestorName   string
 }
 
+// Should this be deprecated?
+// Deprecated: Use RunWithExports instead
 func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResult, error) {
-	results, err := run(stepName, signer, []string{}, opts)
+	results, err := run(stepName, signer, opts)
 	if len(results) > 1 {
 		return RunResult{}, errors.New("expected a single result, got multiple")
 	}
 	return results[0], err
 }
 
-func ExportedRun(stepName string, signer cryptoutil.Signer, opts ...RunOption) ([]RunResult, error) {
-	return run(stepName, signer, []string{"link"}, opts)
+func RunWithExports(stepName string, signer cryptoutil.Signer, opts ...RunOption) ([]RunResult, error) {
+	return run(stepName, signer, opts)
 }
 
-func run(stepName string, signer cryptoutil.Signer, exportAtt []string, opts []RunOption) ([]RunResult, error) {
+func run(stepName string, signer cryptoutil.Signer, opts []RunOption) ([]RunResult, error) {
 	ro := runOptions{
 		stepName:  stepName,
 		signer:    signer,
@@ -106,14 +108,18 @@ func run(stepName string, signer cryptoutil.Signer, exportAtt []string, opts []R
 		if r.Error != nil {
 			errs = append(errs, r.Error)
 		} else if r.Attestor.Name() == link.Name {
+			// TODO: Find a better way to set stepName
 			r.Attestor.(*link.Link).PbLink.Name = ro.stepName
 
-			if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
-				linkEnvelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
-				if err != nil {
-					return result, fmt.Errorf("failed to sign envelope: %w", err)
+			// TODO: Add Exporter interface to attestors
+			if r.Attestor.(*link.Link).Export() {
+				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
+					linkEnvelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
+					if err != nil {
+						return result, fmt.Errorf("failed to sign envelope: %w", err)
+					}
+					result = append(result, RunResult{SignedEnvelope: linkEnvelope, AttestorName: r.Attestor.Name()})
 				}
-				result = append(result, RunResult{SignedEnvelope: linkEnvelope, AttestorName: r.Attestor.Name()})
 			}
 		}
 	}
