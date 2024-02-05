@@ -133,7 +133,7 @@ func (l *Link) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func (l *Link) MarshalJSON() ([]byte, error) {
-	return json.Marshal(l.PbLink)
+	return json.Marshal(&l.PbLink)
 }
 
 func (l *Link) UnmarshalJSON(data []byte) error {
