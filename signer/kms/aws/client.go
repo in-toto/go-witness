@@ -17,8 +17,6 @@ package aws
 import (
 	"context"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -316,26 +314,5 @@ func (c *cmk) HashFunc() crypto.Hash {
 }
 
 func (c *cmk) Verifier() (cryptoutil.Verifier, error) {
-	switch c.KeyMetadata.SigningAlgorithms[0] {
-	case types.SigningAlgorithmSpecRsassaPssSha256, types.SigningAlgorithmSpecRsassaPssSha384, types.SigningAlgorithmSpecRsassaPssSha512:
-		pub, ok := c.PublicKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		return cryptoutil.NewRSAVerifier(pub, c.HashFunc()), nil
-	case types.SigningAlgorithmSpecRsassaPkcs1V15Sha256, types.SigningAlgorithmSpecRsassaPkcs1V15Sha384, types.SigningAlgorithmSpecRsassaPkcs1V15Sha512:
-		pub, ok := c.PublicKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		return cryptoutil.NewRSAVerifier(pub, c.HashFunc()), nil
-	case types.SigningAlgorithmSpecEcdsaSha256, types.SigningAlgorithmSpecEcdsaSha384, types.SigningAlgorithmSpecEcdsaSha512:
-		pub, ok := c.PublicKey.(*ecdsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not ecdsa")
-		}
-		return cryptoutil.NewECDSAVerifier(pub, c.HashFunc()), nil
-	default:
-		return nil, fmt.Errorf("signing algorithm unsupported")
-	}
+	return c.Verifier()
 }

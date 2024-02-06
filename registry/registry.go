@@ -83,16 +83,6 @@ func (r Registry[T]) AllEntries() []Entry[T] {
 	return results
 }
 
-// AllEntries returns every Entry in the Registry that can be used as a Verifier
-func (r Registry[T]) AllVerifierEntries() []Entry[T] {
-	results := make([]Entry[T], 0, len(r.entriesByName))
-	for _, registration := range r.entriesByName {
-		results = append(results, registration)
-	}
-
-	return results
-}
-
 // NewEntity creates a new entity with the the default options set
 func (r Registry[T]) NewEntity(name string, optSetters ...func(T) (T, error)) (T, error) {
 	var result T

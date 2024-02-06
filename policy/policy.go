@@ -253,35 +253,13 @@ func (step Step) checkFunctionaries(verifiedStatements []source.VerifiedCollecti
 		}
 
 		for _, verifier := range verifiedStatement.Verifiers {
-			verifierID, err := verifier.KeyID()
-			if err != nil {
-				log.Debugf("(policy) skipping verifier: could not get key id: %w", err)
-				continue
-			}
-
 			for _, functionary := range step.Functionaries {
-				if functionary.PublicKeyID != "" && functionary.PublicKeyID == verifierID {
+				if err := functionary.Validate(verifier, trustBundles); err != nil {
+					log.Debugf("(policy) skipping verifier: %w", err)
+					continue
+				} else {
 					collections = append(collections, verifiedStatement)
-					break
 				}
-
-				x509Verifier, ok := verifier.(*cryptoutil.X509Verifier)
-				if !ok {
-					log.Debugf("(policy) skipping verifier: verifier with ID %v is not a public key verifier or a x509 verifier", verifierID)
-					continue
-				}
-
-				if len(functionary.CertConstraint.Roots) == 0 {
-					log.Debugf("(policy) skipping verifier: verifier with ID %v is an x509 verifier, but step %v does not have any truested roots", verifierID, step)
-					continue
-				}
-
-				if err := functionary.CertConstraint.Check(x509Verifier, trustBundles); err != nil {
-					log.Debugf("(policy) skipping verifier: verifier with ID %v doesn't meet certificate constraint: %w", verifierID, err)
-					continue
-				}
-
-				collections = append(collections, verifiedStatement)
 			}
 		}
 	}
