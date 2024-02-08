@@ -69,10 +69,6 @@ func newFakeGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*fakeGCP
 		return nil, err
 	}
 
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	g := &fakeGCPClient{
 		kvCache: nil,
 	}
@@ -189,14 +185,6 @@ func (g *fakeGCPClient) fetchPublicKey(ctx context.Context, name string) (crypto
 	return pub, nil
 }
 
-func (g *fakeGCPClient) getHashFunc() (crypto.Hash, error) {
-	ckv, err := g.getCKV()
-	if err != nil {
-		return 0, err
-	}
-	return ckv.HashFunc, nil
-}
-
 // getCKV gets the latest CryptoKeyVersion from the client's cache, which may trigger an actual
 // call to GCP if the existing entry in the cache has expired.
 func (g *fakeGCPClient) getCKV() (*cryptoKeyVersion, error) {
@@ -237,17 +225,8 @@ func (g *fakeGCPClient) sign(ctx context.Context, digest []byte, alg crypto.Hash
 	}
 
 	reader := bytes.NewReader(digest)
-	sig, err := g.signer.Sign(reader)
 
-	return sig, nil
-}
-
-func (g *fakeGCPClient) public(ctx context.Context) (crypto.PublicKey, error) {
-	crv, err := g.getCKV()
-	if err != nil {
-		return nil, fmt.Errorf("transient error getting info from KMS: %w", err)
-	}
-	return crv.PublicKey, nil
+	return g.signer.Sign(reader)
 }
 
 // Seems like GCP doesn't support any remote verification, so we'll just use the local verifier

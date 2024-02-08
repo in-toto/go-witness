@@ -17,8 +17,6 @@ package aws
 import (
 	"context"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -118,7 +116,6 @@ type awsClient struct {
 	keyID    string
 	alias    string
 	keyCache *ttlcache.Cache[string, cmk]
-	options  *awsClientOptions
 }
 
 type awsClientOptions struct {
@@ -141,9 +138,11 @@ func (a *awsClientOptions) Init() []registry.Configurer {
 
 				var clientOpts *awsClientOptions
 				for _, opt := range ksp.Options {
-					if clientOpts, ok = opt.(*awsClientOptions); !ok {
+					co, optsOk := opt.(*awsClientOptions)
+					if !optsOk {
 						continue
 					}
+					clientOpts = co
 				}
 
 				if clientOpts == nil {
@@ -272,7 +271,6 @@ func (a *awsClient) getCMK(ctx context.Context) (*cmk, error) {
 	return nil, lerr
 }
 
-// At the moment this function lies unused, but it is here for future if necessary
 func (a *awsClient) verify(ctx context.Context, sig, message io.Reader) error {
 	cmk, err := a.getCMK(ctx)
 	if err != nil {
@@ -376,26 +374,5 @@ func (c *cmk) HashFunc() crypto.Hash {
 }
 
 func (c *cmk) Verifier() (cryptoutil.Verifier, error) {
-	switch c.KeyMetadata.SigningAlgorithms[0] {
-	case types.SigningAlgorithmSpecRsassaPssSha256, types.SigningAlgorithmSpecRsassaPssSha384, types.SigningAlgorithmSpecRsassaPssSha512:
-		pub, ok := c.PublicKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		return cryptoutil.NewRSAVerifier(pub, c.HashFunc()), nil
-	case types.SigningAlgorithmSpecRsassaPkcs1V15Sha256, types.SigningAlgorithmSpecRsassaPkcs1V15Sha384, types.SigningAlgorithmSpecRsassaPkcs1V15Sha512:
-		pub, ok := c.PublicKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		return cryptoutil.NewRSAVerifier(pub, c.HashFunc()), nil
-	case types.SigningAlgorithmSpecEcdsaSha256, types.SigningAlgorithmSpecEcdsaSha384, types.SigningAlgorithmSpecEcdsaSha512:
-		pub, ok := c.PublicKey.(*ecdsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not ecdsa")
-		}
-		return cryptoutil.NewECDSAVerifier(pub, c.HashFunc()), nil
-	default:
-		return nil, fmt.Errorf("signing algorithm unsupported")
-	}
+	return cryptoutil.NewVerifier(c.PublicKey, cryptoutil.VerifyWithHash(c.HashFunc()))
 }

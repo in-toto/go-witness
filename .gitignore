@@ -13,3 +13,4 @@ log
 sarif-report.json
 test/log
 .idea/
+profile.cov

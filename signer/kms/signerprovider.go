@@ -44,7 +44,7 @@ func init() {
 		registry.StringConfigOption(
 			"hashType",
 			"The hash type to use for signing",
-			"",
+			"sha256",
 			func(sp signer.SignerProvider, hash string) (signer.SignerProvider, error) {
 				ksp, ok := sp.(*KMSSignerProvider)
 				if !ok {
@@ -89,7 +89,7 @@ func init() {
 		registry.StringConfigOption(
 			"hashType",
 			"The hash type used for verifying",
-			"",
+			"sha256",
 			func(sp signer.VerifierProvider, hash string) (signer.VerifierProvider, error) {
 				ksp, ok := sp.(*KMSSignerProvider)
 				if !ok {
@@ -218,8 +218,6 @@ func (ksp *KMSSignerProvider) Verifier(ctx context.Context) (cryptoutil.Verifier
 var providersMap = map[string]ProviderInit{}
 
 var providerOptionsMap = map[string]KMSClientOptions{}
-
-var providersFlags = map[string][]Option{}
 
 // SupportedProviders returns list of initialized providers
 func SupportedProviders() []string {
