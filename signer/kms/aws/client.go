@@ -116,7 +116,6 @@ type awsClient struct {
 	keyID    string
 	alias    string
 	keyCache *ttlcache.Cache[string, cmk]
-	options  *awsClientOptions
 }
 
 type awsClientOptions struct {
@@ -139,9 +138,11 @@ func (a *awsClientOptions) Init() []registry.Configurer {
 
 				var clientOpts *awsClientOptions
 				for _, opt := range ksp.Options {
-					if clientOpts, ok = opt.(*awsClientOptions); !ok {
+					co, optsOk := opt.(*awsClientOptions)
+					if !optsOk {
 						continue
 					}
+					clientOpts = co
 				}
 
 				if clientOpts == nil {
@@ -270,7 +271,6 @@ func (a *awsClient) getCMK(ctx context.Context) (*cmk, error) {
 	return nil, lerr
 }
 
-// At the moment this function lies unused, but it is here for future if necessary
 func (a *awsClient) verify(ctx context.Context, sig, message io.Reader) error {
 	cmk, err := a.getCMK(ctx)
 	if err != nil {
@@ -374,5 +374,5 @@ func (c *cmk) HashFunc() crypto.Hash {
 }
 
 func (c *cmk) Verifier() (cryptoutil.Verifier, error) {
-	return c.Verifier()
+	return cryptoutil.NewVerifier(c.PublicKey, cryptoutil.VerifyWithHash(c.HashFunc()))
 }
