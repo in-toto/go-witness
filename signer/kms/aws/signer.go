@@ -147,7 +147,13 @@ func (a *SignerVerifier) Verify(message io.Reader, sig []byte) (err error) {
 		return err
 	}
 
-	return a.client.verifyRemotely(ctx, sig, digest)
+	// not sure if this is a good idea
+	c, ok := a.client.(*awsClient)
+	if !ok {
+		return fmt.Errorf("unable to cast client to awsClient")
+	}
+
+	return c.verifyRemotely(ctx, sig, digest)
 }
 
 // SupportedAlgorithms returns the list of algorithms supported by the AWS KMS service

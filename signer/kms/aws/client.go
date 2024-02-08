@@ -25,8 +25,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -34,23 +34,24 @@ import (
 	akms "github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/registry"
+	"github.com/in-toto/go-witness/signer"
 	"github.com/in-toto/go-witness/signer/kms"
 	ttlcache "github.com/jellydator/ttlcache/v3"
 )
 
 type client interface {
-	sign(ctx context.Context, digest []byte, _ crypto.Hash) ([]byte, error)
-	verifyRemotely(ctx context.Context, sig, digest []byte) error
-	verify(ctx context.Context, sig, message io.Reader) error
-	fetchCMK(ctx context.Context) (*cmk, error)
 	getHashFunc(ctx context.Context) (crypto.Hash, error)
+	sign(ctx context.Context, digest []byte, _ crypto.Hash) ([]byte, error)
+	verify(ctx context.Context, sig, message io.Reader) error
 	setupClient(ctx context.Context, ksp *kms.KMSSignerProvider) (err error)
 	fetchKeyMetadata(ctx context.Context) (*types.KeyMetadata, error)
 	fetchPublicKey(ctx context.Context) (crypto.PublicKey, error)
 }
 
 func init() {
-	kms.AddProvider(ReferenceScheme, func(ctx context.Context, ksp *kms.KMSSignerProvider) (cryptoutil.Signer, error) {
+	kms.AddProvider(ReferenceScheme, &awsClientOptions{}, func(ctx context.Context, ksp *kms.KMSSignerProvider) (cryptoutil.Signer, error) {
 		return LoadSignerVerifier(ctx, ksp)
 	})
 }
@@ -117,6 +118,54 @@ type awsClient struct {
 	keyID    string
 	alias    string
 	keyCache *ttlcache.Cache[string, cmk]
+	options  *awsClientOptions
+}
+
+type awsClientOptions struct {
+	insecureSkipVerify bool
+}
+
+type Option func(*awsClientOptions)
+
+func (a *awsClientOptions) Init() []registry.Configurer {
+	return []registry.Configurer{
+		registry.BoolConfigOption(
+			"insecure-skip-verify",
+			"Skip verification of the server's certificate chain and host name",
+			false,
+			func(sp signer.SignerProvider, insecure bool) (signer.SignerProvider, error) {
+				ksp, ok := sp.(*kms.KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+				}
+
+				var clientOpts *awsClientOptions
+				for _, opt := range ksp.Options {
+					if clientOpts, ok = opt.(*awsClientOptions); !ok {
+						continue
+					}
+				}
+
+				if clientOpts == nil {
+					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
+				}
+
+				WithInsecureSkipVerify(insecure)(clientOpts)
+				return ksp, nil
+			},
+		),
+	}
+}
+
+func (*awsClientOptions) ProviderName() string {
+	name := fmt.Sprintf("kms-%s", strings.TrimSuffix(ReferenceScheme, "kms://"))
+	return name
+}
+
+func WithInsecureSkipVerify(insecure bool) Option {
+	return func(opts *awsClientOptions) {
+		opts.insecureSkipVerify = insecure
+	}
 }
 
 func newAWSClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*awsClient, error) {
@@ -142,6 +191,16 @@ func newAWSClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*awsClient, 
 }
 
 func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider) (err error) {
+	clientOpts := &awsClientOptions{}
+	var ok bool
+
+	for _, opt := range ksp.Options {
+		clientOpts, ok = opt.(*awsClientOptions)
+		if !ok {
+			break
+		}
+	}
+
 	opts := []func(*config.LoadOptions) error{}
 	if a.endpoint != "" {
 		opts = append(opts, config.WithEndpointResolverWithOptions(
@@ -152,7 +211,8 @@ func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider)
 			}),
 		))
 	}
-	if os.Getenv("AWS_TLS_INSECURE_SKIP_VERIFY") == "1" {
+	if clientOpts.insecureSkipVerify {
+		log.Warn("InsecureSkipVerify is enabled for AWS KMS attestor")
 		opts = append(opts, config.WithHTTPClient(&http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // nolint: gosec

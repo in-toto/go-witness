@@ -121,6 +121,12 @@ type KMSSignerProvider struct {
 	Reference  string
 	KeyVersion string
 	HashFunc   crypto.Hash
+	Options    []KMSClientOptions
+}
+
+type KMSClientOptions interface {
+	Init() []registry.Configurer
+	ProviderName() string
 }
 
 type Option func(*KMSSignerProvider)
@@ -161,6 +167,14 @@ func New(opts ...Option) *KMSSignerProvider {
 		opt(&ksp)
 	}
 
+	for _, opt := range providerOptionsMap {
+		if opt == nil {
+			continue
+		}
+
+		ksp.Options = append(ksp.Options, opt)
+	}
+
 	return &ksp
 }
 
@@ -171,8 +185,9 @@ func New(opts ...Option) *KMSSignerProvider {
 type ProviderInit func(context.Context, *KMSSignerProvider) (cryptoutil.Signer, error)
 
 // AddProvider adds the provider implementation into the local cache
-func AddProvider(keyResourceID string, init ProviderInit) {
+func AddProvider(keyResourceID string, opts KMSClientOptions, init ProviderInit) {
 	providersMap[keyResourceID] = init
+	providerOptionsMap[keyResourceID] = opts
 }
 
 func (ksp *KMSSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, error) {
@@ -202,6 +217,10 @@ func (ksp *KMSSignerProvider) Verifier(ctx context.Context) (cryptoutil.Verifier
 
 var providersMap = map[string]ProviderInit{}
 
+var providerOptionsMap = map[string]KMSClientOptions{}
+
+var providersFlags = map[string][]Option{}
+
 // SupportedProviders returns list of initialized providers
 func SupportedProviders() []string {
 	keys := make([]string, 0, len(providersMap))
@@ -209,6 +228,10 @@ func SupportedProviders() []string {
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+func ProviderOptions() map[string]KMSClientOptions {
+	return providerOptionsMap
 }
 
 // ProviderNotFoundError indicates that no matching KMS provider was found
