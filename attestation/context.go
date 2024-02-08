@@ -137,7 +137,7 @@ func (ctx *AttestationContext) RunAttestors() error {
 
 	order := runTypeOrder()
 	for _, k := range order {
-		log.Debugf("starting %s attestors...", k.String())
+		log.Debugf("Starting %s attestors...", k.String())
 		for _, att := range attestors[k] {
 			log.Infof("Starting %v attestor...", att.Name())
 			ctx.runAttestor(att)

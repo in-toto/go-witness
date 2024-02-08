@@ -36,7 +36,8 @@ import (
 )
 
 func init() {
-	kms.AddProvider(ReferenceScheme, func(ctx context.Context, ksp *kms.KMSSignerProvider) (cryptoutil.Signer, error) {
+	// TODO: Need to setup opts
+	kms.AddProvider(ReferenceScheme, nil, func(ctx context.Context, ksp *kms.KMSSignerProvider) (cryptoutil.Signer, error) {
 		return LoadSignerVerifier(ctx, ksp)
 	})
 }
