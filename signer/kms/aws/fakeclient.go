@@ -96,14 +96,6 @@ func (a *fakeAWSClient) fetchCMK(ctx context.Context) (*cmk, error) {
 	return cmk, nil
 }
 
-func (a *fakeAWSClient) getHashFunc(ctx context.Context) (crypto.Hash, error) {
-	cmk, err := a.getCMK(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return cmk.HashFunc(), nil
-}
-
 func (a *fakeAWSClient) getCMK(ctx context.Context) (*cmk, error) {
 	var lerr error
 	loader := ttlcache.LoaderFunc[string, cmk](
