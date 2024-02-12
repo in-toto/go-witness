@@ -321,20 +321,17 @@ func newAWSClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*awsClient, 
 }
 
 func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider) (err error) {
-	var co *awsClientOptions
 	var ok bool
 	for _, opt := range ksp.Options {
-		co, ok = opt.(*awsClientOptions)
+		a.options, ok = opt.(*awsClientOptions)
 		if !ok {
 			continue
 		}
 	}
 
-	if co == nil {
+	if a.options == nil {
 		return fmt.Errorf("unable to find aws client options in aws kms signer provider")
 	}
-
-	a.options = co
 
 	opts := []func(*config.LoadOptions) error{}
 	if a.endpoint != "" {

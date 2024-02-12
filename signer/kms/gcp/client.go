@@ -178,21 +178,20 @@ func newGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*gcpClient, 
 		return nil, err
 	}
 
-	var co *gcpClientOptions
 	var ok bool
 	for _, opt := range ksp.Options {
-		co, ok = opt.(*gcpClientOptions)
+		g.options, ok = opt.(*gcpClientOptions)
 		if !ok {
 			continue
 		}
 	}
-	if co == nil {
+	if g.options == nil {
 		return nil, fmt.Errorf("unable to find gcp client options in gcp kms signer provider")
 	}
 
 	var opts []option.ClientOption
-	if co.credentialsFile != "" {
-		opts = append(opts, option.WithCredentialsFile(co.credentialsFile))
+	if g.options.credentialsFile != "" {
+		opts = append(opts, option.WithCredentialsFile(g.options.credentialsFile))
 	}
 
 	g.client, err = gcpkms.NewKeyManagementClient(ctx, opts...)
