@@ -24,20 +24,23 @@ import (
 	"hash/crc32"
 	"io"
 	"regexp"
+	"strings"
 	"time"
 
 	gcpkms "cloud.google.com/go/kms/apiv1"
 	"cloud.google.com/go/kms/apiv1/kmspb"
+	"google.golang.org/api/option"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/registry"
+	"github.com/in-toto/go-witness/signer"
 	"github.com/in-toto/go-witness/signer/kms"
 	"github.com/jellydator/ttlcache/v3"
 )
 
 func init() {
-	// TODO: Need to setup opts
-	kms.AddProvider(ReferenceScheme, nil, func(ctx context.Context, ksp *kms.KMSSignerProvider) (cryptoutil.Signer, error) {
+	kms.AddProvider(ReferenceScheme, &gcpClientOptions{}, func(ctx context.Context, ksp *kms.KMSSignerProvider) (cryptoutil.Signer, error) {
 		return LoadSignerVerifier(ctx, ksp)
 	})
 }
@@ -104,6 +107,56 @@ type gcpClient struct {
 	version    string
 	kvCache    *ttlcache.Cache[string, cryptoKeyVersion]
 	client     *gcpkms.KeyManagementClient
+	options    *gcpClientOptions
+}
+
+type gcpClientOptions struct {
+	credentialsFile string
+}
+
+type Option func(*gcpClientOptions)
+
+func (a *gcpClientOptions) Init() []registry.Configurer {
+	return []registry.Configurer{
+		registry.StringConfigOption(
+			"credentials-file",
+			"The credentials file to use with the GCP KMS signer provider",
+			"",
+			func(sp signer.SignerProvider, cred string) (signer.SignerProvider, error) {
+				ksp, ok := sp.(*kms.KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+				}
+
+				var clientOpts *gcpClientOptions
+				for _, opt := range ksp.Options {
+					co, optsOk := opt.(*gcpClientOptions)
+					if !optsOk {
+						continue
+					}
+					clientOpts = co
+				}
+
+				if clientOpts == nil {
+					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
+				}
+
+				WithCredentialsFile(cred)(clientOpts)
+				return ksp, nil
+			},
+		),
+	}
+}
+
+func (*gcpClientOptions) ProviderName() string {
+	name := fmt.Sprintf("kms-%s", strings.TrimSuffix(ReferenceScheme, "kms://"))
+	return name
+}
+
+func WithCredentialsFile(cred string) Option {
+	return func(opts *gcpClientOptions) {
+		opts.credentialsFile = cred
+	}
 }
 
 func newGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*gcpClient, error) {
@@ -125,8 +178,24 @@ func newGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*gcpClient, 
 		return nil, err
 	}
 
-	// NOTE: We need to think about how we want to handle passing in options here
-	g.client, err = gcpkms.NewKeyManagementClient(ctx)
+	var co *gcpClientOptions
+	var ok bool
+	for _, opt := range ksp.Options {
+		co, ok = opt.(*gcpClientOptions)
+		if !ok {
+			continue
+		}
+	}
+	if co == nil {
+		return nil, fmt.Errorf("unable to find gcp client options in gcp kms signer provider")
+	}
+
+	var opts []option.ClientOption
+	if co.credentialsFile != "" {
+		opts = append(opts, option.WithCredentialsFile(co.credentialsFile))
+	}
+
+	g.client, err = gcpkms.NewKeyManagementClient(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("new gcp kms client: %w", err)
 	}

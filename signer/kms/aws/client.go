@@ -116,16 +116,48 @@ type awsClient struct {
 	keyID    string
 	alias    string
 	keyCache *ttlcache.Cache[string, cmk]
+	options  *awsClientOptions
 }
 
 type awsClientOptions struct {
 	insecureSkipVerify bool
+	credentialsFile    string
+	configFile         string
+	profile            string
+	verifyRemotely     bool
 }
 
 type Option func(*awsClientOptions)
 
 func (a *awsClientOptions) Init() []registry.Configurer {
 	return []registry.Configurer{
+		registry.BoolConfigOption(
+			"remote-verify",
+			"verify signature using AWS KMS remote verification. If false, the public key will be pulled from AWS KMS and verification will take place locally",
+			true,
+			func(sp signer.SignerProvider, insecure bool) (signer.SignerProvider, error) {
+				ksp, ok := sp.(*kms.KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+				}
+
+				var clientOpts *awsClientOptions
+				for _, opt := range ksp.Options {
+					co, optsOk := opt.(*awsClientOptions)
+					if !optsOk {
+						continue
+					}
+					clientOpts = co
+				}
+
+				if clientOpts == nil {
+					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
+				}
+
+				WithInsecureSkipVerify(insecure)(clientOpts)
+				return ksp, nil
+			},
+		),
 		registry.BoolConfigOption(
 			"insecure-skip-verify",
 			"Skip verification of the server's certificate chain and host name",
@@ -153,6 +185,87 @@ func (a *awsClientOptions) Init() []registry.Configurer {
 				return ksp, nil
 			},
 		),
+		registry.StringConfigOption(
+			"credentials-file",
+			"The shared credentials file to use with the AWS KMS signer provider",
+			"",
+			func(sp signer.SignerProvider, cred string) (signer.SignerProvider, error) {
+				ksp, ok := sp.(*kms.KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+				}
+
+				var clientOpts *awsClientOptions
+				for _, opt := range ksp.Options {
+					co, optsOk := opt.(*awsClientOptions)
+					if !optsOk {
+						continue
+					}
+					clientOpts = co
+				}
+
+				if clientOpts == nil {
+					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
+				}
+
+				WithCredentialsFile(cred)(clientOpts)
+				return ksp, nil
+			},
+		),
+		registry.StringConfigOption(
+			"config-file",
+			"The shared configuration file to use with the AWS KMS signer provider",
+			"",
+			func(sp signer.SignerProvider, config string) (signer.SignerProvider, error) {
+				ksp, ok := sp.(*kms.KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+				}
+
+				var clientOpts *awsClientOptions
+				for _, opt := range ksp.Options {
+					co, optsOk := opt.(*awsClientOptions)
+					if !optsOk {
+						continue
+					}
+					clientOpts = co
+				}
+
+				if clientOpts == nil {
+					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
+				}
+
+				WithConfigFile(config)(clientOpts)
+				return ksp, nil
+			},
+		),
+		registry.StringConfigOption(
+			"profile",
+			"The shared configuration profile to use with the AWS KMS signer provider",
+			"",
+			func(sp signer.SignerProvider, profile string) (signer.SignerProvider, error) {
+				ksp, ok := sp.(*kms.KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+				}
+
+				var clientOpts *awsClientOptions
+				for _, opt := range ksp.Options {
+					co, optsOk := opt.(*awsClientOptions)
+					if !optsOk {
+						continue
+					}
+					clientOpts = co
+				}
+
+				if clientOpts == nil {
+					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
+				}
+
+				WithConfigFile(profile)(clientOpts)
+				return ksp, nil
+			},
+		),
 	}
 }
 
@@ -164,6 +277,24 @@ func (*awsClientOptions) ProviderName() string {
 func WithInsecureSkipVerify(insecure bool) Option {
 	return func(opts *awsClientOptions) {
 		opts.insecureSkipVerify = insecure
+	}
+}
+
+func WithCredentialsFile(cred string) Option {
+	return func(opts *awsClientOptions) {
+		opts.credentialsFile = cred
+	}
+}
+
+func WithConfigFile(config string) Option {
+	return func(opts *awsClientOptions) {
+		opts.credentialsFile = config
+	}
+}
+
+func WithProfile(profile string) Option {
+	return func(opts *awsClientOptions) {
+		opts.profile = profile
 	}
 }
 
@@ -190,15 +321,20 @@ func newAWSClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*awsClient, 
 }
 
 func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider) (err error) {
-	clientOpts := &awsClientOptions{}
+	var co *awsClientOptions
 	var ok bool
-
 	for _, opt := range ksp.Options {
-		clientOpts, ok = opt.(*awsClientOptions)
+		co, ok = opt.(*awsClientOptions)
 		if !ok {
-			break
+			continue
 		}
 	}
+
+	if co == nil {
+		return fmt.Errorf("unable to find aws client options in aws kms signer provider")
+	}
+
+	a.options = co
 
 	opts := []func(*config.LoadOptions) error{}
 	if a.endpoint != "" {
@@ -210,13 +346,26 @@ func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider)
 			}),
 		))
 	}
-	if clientOpts.insecureSkipVerify {
+
+	if a.options.insecureSkipVerify {
 		log.Warn("InsecureSkipVerify is enabled for AWS KMS attestor")
 		opts = append(opts, config.WithHTTPClient(&http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // nolint: gosec
 			},
 		}))
+	}
+
+	if a.options.credentialsFile != "" {
+		opts = append(opts, config.WithSharedCredentialsFiles([]string{a.options.credentialsFile}))
+	}
+
+	if a.options.configFile != "" {
+		opts = append(opts, config.WithSharedConfigFiles([]string{a.options.configFile}))
+	}
+
+	if a.options.profile != "" {
+		opts = append(opts, config.WithSharedConfigProfile(a.options.profile))
 	}
 
 	cfg, err := config.LoadDefaultConfig(ctx, opts...)
@@ -272,6 +421,17 @@ func (a *awsClient) getCMK(ctx context.Context) (*cmk, error) {
 }
 
 func (a *awsClient) verify(ctx context.Context, sig, message io.Reader) error {
+	s, err := io.ReadAll(sig)
+	if err != nil {
+		return err
+	}
+
+	if a.options.verifyRemotely {
+		return a.verifyRemotely(ctx, s, message)
+	}
+
+	log.Debug("Verifying signature with AWS KMS locally")
+
 	cmk, err := a.getCMK(ctx)
 	if err != nil {
 		return err
@@ -282,16 +442,17 @@ func (a *awsClient) verify(ctx context.Context, sig, message io.Reader) error {
 		return err
 	}
 
-	s, err := io.ReadAll(sig)
+	return verifier.Verify(message, s)
+}
+
+func (a *awsClient) verifyRemotely(ctx context.Context, sig []byte, message io.Reader) error {
+	cmk, err := a.getCMK(ctx)
 	if err != nil {
 		return err
 	}
 
-	return verifier.Verify(message, s)
-}
-
-func (a *awsClient) verifyRemotely(ctx context.Context, sig, digest []byte) error {
-	cmk, err := a.getCMK(ctx)
+	// if we verify remotely, we need to compute the digest first
+	digest, _, err := cryptoutil.ComputeDigest(message, cmk.HashFunc(), awsSupportedHashFuncs)
 	if err != nil {
 		return err
 	}

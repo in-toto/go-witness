@@ -20,11 +20,9 @@ import (
 	"crypto"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/in-toto/go-witness/cryptoutil"
-	"github.com/in-toto/go-witness/log"
 	kms "github.com/in-toto/go-witness/signer/kms"
 )
 
@@ -126,34 +124,8 @@ func (a *SignerVerifier) Bytes() ([]byte, error) {
 // nil if the verification succeeded, and an error message otherwise.
 func (a *SignerVerifier) Verify(message io.Reader, sig []byte) (err error) {
 	ctx := context.Background()
-	var digest []byte
 
-	var signerOpts crypto.SignerOpts
-	signerOpts, err = a.client.getHashFunc(ctx)
-	if err != nil {
-		return fmt.Errorf("getting hash func: %w", err)
-	}
-	hf := signerOpts.HashFunc()
-
-	// we want to verify remotely unless we explicitly ask to verify locally
-	if os.Getenv("WITNESS_AWS_VERIFY_LOCALLY") == "1" {
-		log.Debug("Environment variable WITNESS_AWS_VERIFY_LOCALLY set to 1, verifying locally")
-		return a.client.verify(ctx, bytes.NewReader(sig), message)
-	}
-
-	// if we verify remotely, we need to compute the digest first
-	digest, _, err = cryptoutil.ComputeDigest(message, hf, awsSupportedHashFuncs)
-	if err != nil {
-		return err
-	}
-
-	// not sure if this is a good idea
-	c, ok := a.client.(*awsClient)
-	if !ok {
-		return fmt.Errorf("unable to cast client to awsClient")
-	}
-
-	return c.verifyRemotely(ctx, sig, digest)
+	return a.client.verify(ctx, bytes.NewReader(sig), message)
 }
 
 // SupportedAlgorithms returns the list of algorithms supported by the AWS KMS service
