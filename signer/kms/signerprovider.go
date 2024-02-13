@@ -121,7 +121,7 @@ type KMSSignerProvider struct {
 	Reference  string
 	KeyVersion string
 	HashFunc   crypto.Hash
-	Options    []KMSClientOptions
+	Options    map[string]KMSClientOptions
 }
 
 type KMSClientOptions interface {
@@ -167,12 +167,13 @@ func New(opts ...Option) *KMSSignerProvider {
 		opt(&ksp)
 	}
 
+	ksp.Options = make(map[string]KMSClientOptions)
 	for _, opt := range providerOptionsMap {
 		if opt == nil {
 			continue
 		}
 
-		ksp.Options = append(ksp.Options, opt)
+		ksp.Options[opt.ProviderName()] = opt
 	}
 
 	return &ksp

@@ -37,6 +37,7 @@ import (
 	"github.com/in-toto/go-witness/signer"
 	"github.com/in-toto/go-witness/signer/kms"
 	ttlcache "github.com/jellydator/ttlcache/v3"
+	"github.com/mitchellh/go-homedir"
 )
 
 type client interface {
@@ -73,14 +74,15 @@ var (
 	// Alias name with endpoint: awskms://localhost:4566/alias/ExampleAlias
 	// Alias ARN: awskms:///arn:aws:kms:us-east-2:111122223333:alias/ExampleAlias
 	// Alias ARN with endpoint: awskms://localhost:4566/arn:aws:kms:us-east-2:111122223333:alias/ExampleAlias
-	uuidRE      = `m?r?k?-?[A-Fa-f0-9]{8}-?[A-Fa-f0-9]{4}-?[A-Fa-f0-9]{4}-?[A-Fa-f0-9]{4}-?[A-Fa-f0-9]{12}`
-	arnRE       = `arn:(?:aws|aws-us-gov|aws-cn):kms:[a-z0-9-]+:\d{12}:`
-	hostRE      = `([^/]*)/`
-	keyIDRE     = regexp.MustCompile(`^awskms://` + hostRE + `(` + uuidRE + `)$`)
-	keyARNRE    = regexp.MustCompile(`^awskms://` + hostRE + `(` + arnRE + `key/` + uuidRE + `)$`)
-	aliasNameRE = regexp.MustCompile(`^awskms://` + hostRE + `((alias/.*))$`)
-	aliasARNRE  = regexp.MustCompile(`^awskms://` + hostRE + `(` + arnRE + `(alias/.*))$`)
-	allREs      = []*regexp.Regexp{keyIDRE, keyARNRE, aliasNameRE, aliasARNRE}
+	uuidRE       = `m?r?k?-?[A-Fa-f0-9]{8}-?[A-Fa-f0-9]{4}-?[A-Fa-f0-9]{4}-?[A-Fa-f0-9]{4}-?[A-Fa-f0-9]{12}`
+	arnRE        = `arn:(?:aws|aws-us-gov|aws-cn):kms:[a-z0-9-]+:\d{12}:`
+	hostRE       = `([^/]*)/`
+	keyIDRE      = regexp.MustCompile(`^awskms://` + hostRE + `(` + uuidRE + `)$`)
+	keyARNRE     = regexp.MustCompile(`^awskms://` + hostRE + `(` + arnRE + `key/` + uuidRE + `)$`)
+	aliasNameRE  = regexp.MustCompile(`^awskms://` + hostRE + `((alias/.*))$`)
+	aliasARNRE   = regexp.MustCompile(`^awskms://` + hostRE + `(` + arnRE + `(alias/.*))$`)
+	allREs       = []*regexp.Regexp{keyIDRE, keyARNRE, aliasNameRE, aliasARNRE}
+	providerName = fmt.Sprintf("kms-%s", strings.TrimSuffix(ReferenceScheme, "kms://"))
 )
 
 // ValidReference returns a non-nil error if the reference string is invalid
@@ -135,26 +137,18 @@ func (a *awsClientOptions) Init() []registry.Configurer {
 			"remote-verify",
 			"verify signature using AWS KMS remote verification. If false, the public key will be pulled from AWS KMS and verification will take place locally",
 			true,
-			func(sp signer.SignerProvider, insecure bool) (signer.SignerProvider, error) {
+			func(sp signer.SignerProvider, verify bool) (signer.SignerProvider, error) {
 				ksp, ok := sp.(*kms.KMSSignerProvider)
 				if !ok {
 					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
 				}
 
-				var clientOpts *awsClientOptions
-				for _, opt := range ksp.Options {
-					co, optsOk := opt.(*awsClientOptions)
-					if !optsOk {
-						continue
-					}
-					clientOpts = co
+				co, ok := ksp.Options[providerName].(*awsClientOptions)
+				if !ok {
+					return sp, fmt.Errorf("failed to get aws client options from aws kms signer provider")
 				}
 
-				if clientOpts == nil {
-					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
-				}
-
-				WithInsecureSkipVerify(insecure)(clientOpts)
+				WithRemoteVerify(verify)(co)
 				return ksp, nil
 			},
 		),
@@ -168,20 +162,12 @@ func (a *awsClientOptions) Init() []registry.Configurer {
 					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
 				}
 
-				var clientOpts *awsClientOptions
-				for _, opt := range ksp.Options {
-					co, optsOk := opt.(*awsClientOptions)
-					if !optsOk {
-						continue
-					}
-					clientOpts = co
+				co, ok := ksp.Options[providerName].(*awsClientOptions)
+				if !ok {
+					return sp, fmt.Errorf("failed to get aws client options from aws kms signer provider")
 				}
 
-				if clientOpts == nil {
-					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
-				}
-
-				WithInsecureSkipVerify(insecure)(clientOpts)
+				WithInsecureSkipVerify(insecure)(co)
 				return ksp, nil
 			},
 		),
@@ -195,20 +181,12 @@ func (a *awsClientOptions) Init() []registry.Configurer {
 					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
 				}
 
-				var clientOpts *awsClientOptions
-				for _, opt := range ksp.Options {
-					co, optsOk := opt.(*awsClientOptions)
-					if !optsOk {
-						continue
-					}
-					clientOpts = co
+				co, ok := ksp.Options[providerName].(*awsClientOptions)
+				if !ok {
+					return sp, fmt.Errorf("failed to get aws client options from aws kms signer provider")
 				}
 
-				if clientOpts == nil {
-					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
-				}
-
-				WithCredentialsFile(cred)(clientOpts)
+				WithCredentialsFile(cred)(co)
 				return ksp, nil
 			},
 		),
@@ -218,24 +196,17 @@ func (a *awsClientOptions) Init() []registry.Configurer {
 			"",
 			func(sp signer.SignerProvider, config string) (signer.SignerProvider, error) {
 				ksp, ok := sp.(*kms.KMSSignerProvider)
+
 				if !ok {
 					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
 				}
 
-				var clientOpts *awsClientOptions
-				for _, opt := range ksp.Options {
-					co, optsOk := opt.(*awsClientOptions)
-					if !optsOk {
-						continue
-					}
-					clientOpts = co
+				co, ok := ksp.Options[providerName].(*awsClientOptions)
+				if !ok {
+					return sp, fmt.Errorf("failed to get aws client options from aws kms signer provider")
 				}
 
-				if clientOpts == nil {
-					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
-				}
-
-				WithConfigFile(config)(clientOpts)
+				WithConfigFile(config)(co)
 				return ksp, nil
 			},
 		),
@@ -245,24 +216,17 @@ func (a *awsClientOptions) Init() []registry.Configurer {
 			"",
 			func(sp signer.SignerProvider, profile string) (signer.SignerProvider, error) {
 				ksp, ok := sp.(*kms.KMSSignerProvider)
+
 				if !ok {
 					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
 				}
 
-				var clientOpts *awsClientOptions
-				for _, opt := range ksp.Options {
-					co, optsOk := opt.(*awsClientOptions)
-					if !optsOk {
-						continue
-					}
-					clientOpts = co
+				co, ok := ksp.Options[providerName].(*awsClientOptions)
+				if !ok {
+					return sp, fmt.Errorf("failed to get aws client options from aws kms signer provider")
 				}
 
-				if clientOpts == nil {
-					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
-				}
-
-				WithConfigFile(profile)(clientOpts)
+				WithProfile(profile)(co)
 				return ksp, nil
 			},
 		),
@@ -270,13 +234,18 @@ func (a *awsClientOptions) Init() []registry.Configurer {
 }
 
 func (*awsClientOptions) ProviderName() string {
-	name := fmt.Sprintf("kms-%s", strings.TrimSuffix(ReferenceScheme, "kms://"))
-	return name
+	return providerName
 }
 
 func WithInsecureSkipVerify(insecure bool) Option {
 	return func(opts *awsClientOptions) {
 		opts.insecureSkipVerify = insecure
+	}
+}
+
+func WithRemoteVerify(remote bool) Option {
+	return func(opts *awsClientOptions) {
+		opts.verifyRemotely = remote
 	}
 }
 
@@ -288,7 +257,7 @@ func WithCredentialsFile(cred string) Option {
 
 func WithConfigFile(config string) Option {
 	return func(opts *awsClientOptions) {
-		opts.credentialsFile = config
+		opts.configFile = config
 	}
 }
 
@@ -324,8 +293,8 @@ func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider)
 	var ok bool
 	for _, opt := range ksp.Options {
 		a.options, ok = opt.(*awsClientOptions)
-		if !ok {
-			continue
+		if ok {
+			break
 		}
 	}
 
@@ -354,14 +323,27 @@ func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider)
 	}
 
 	if a.options.credentialsFile != "" {
-		opts = append(opts, config.WithSharedCredentialsFiles([]string{a.options.credentialsFile}))
+		f, err := homedir.Expand(a.options.credentialsFile)
+		if err != nil {
+			return fmt.Errorf("expanding credentials file to full path: %w", err)
+		}
+
+		log.Debug("Using file ", f, " as credentials file for AWS KMS provider")
+		opts = append(opts, config.WithSharedCredentialsFiles([]string{f}))
 	}
 
 	if a.options.configFile != "" {
-		opts = append(opts, config.WithSharedConfigFiles([]string{a.options.configFile}))
+		f, err := homedir.Expand(a.options.configFile)
+		if err != nil {
+			return fmt.Errorf("expanding credentials file to full path: %w", err)
+		}
+
+		log.Debug("Using file ", f, " as config file for AWS KMS provider")
+		opts = append(opts, config.WithSharedConfigFiles([]string{f}))
 	}
 
 	if a.options.profile != "" {
+		log.Debug("using profile ", a.options.profile, " for AWS KMS provider")
 		opts = append(opts, config.WithSharedConfigProfile(a.options.profile))
 	}
 

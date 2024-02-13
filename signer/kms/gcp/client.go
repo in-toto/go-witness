@@ -181,10 +181,11 @@ func newGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*gcpClient, 
 	var ok bool
 	for _, opt := range ksp.Options {
 		g.options, ok = opt.(*gcpClientOptions)
-		if !ok {
-			continue
+		if ok {
+			break
 		}
 	}
+
 	if g.options == nil {
 		return nil, fmt.Errorf("unable to find gcp client options in gcp kms signer provider")
 	}
