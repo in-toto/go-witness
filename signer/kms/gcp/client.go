@@ -17,8 +17,6 @@ package gcp
 import (
 	"context"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/rsa"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -165,7 +163,7 @@ func newGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*gcpClient, 
 	}
 
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = context.TODO()
 	}
 
 	g := &gcpClient{
@@ -279,61 +277,29 @@ func (g *gcpClient) keyVersionName(ctx context.Context) (*cryptoKeyVersion, erro
 		PublicKey:        pubKey,
 	}
 
-	// crv.Verifier is set here to enable storing the public key & hash algorithm together,
-	// as well as using the in memory Verifier to perform the verify operations.
 	switch kv.Algorithm {
-	case kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256:
-		pub, ok := pubKey.(*ecdsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		crv.Verifier = cryptoutil.NewECDSAVerifier(pub, crypto.SHA256)
-		crv.HashFunc = crypto.SHA256
-	case kmspb.CryptoKeyVersion_EC_SIGN_P384_SHA384:
-		pub, ok := pubKey.(*ecdsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		crv.Verifier = cryptoutil.NewECDSAVerifier(pub, crypto.SHA384)
-		crv.HashFunc = crypto.SHA384
 	case kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_2048_SHA256,
 		kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_3072_SHA256,
-		kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA256:
-		pub, ok := pubKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		crv.Verifier = cryptoutil.NewRSAVerifier(pub, crypto.SHA256)
-		crv.HashFunc = crypto.SHA256
-	case kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA512:
-		pub, ok := pubKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		crv.Verifier = cryptoutil.NewRSAVerifier(pub, crypto.SHA384)
-		crv.HashFunc = crypto.SHA384
-	case kmspb.CryptoKeyVersion_RSA_SIGN_PSS_2048_SHA256,
+		kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256,
+		kmspb.CryptoKeyVersion_RSA_SIGN_PSS_2048_SHA256,
 		kmspb.CryptoKeyVersion_RSA_SIGN_PSS_3072_SHA256,
-		kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA256:
-		pub, ok := pubKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		crv.Verifier = cryptoutil.NewRSAVerifier(pub, crypto.SHA256)
+		kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA256,
+		kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA256:
 		crv.HashFunc = crypto.SHA256
-	case kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA512:
-		pub, ok := pubKey.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("public key is not rsa")
-		}
-		crv.Verifier = cryptoutil.NewRSAVerifier(pub, crypto.SHA512)
+	case kmspb.CryptoKeyVersion_EC_SIGN_P384_SHA384:
+		crv.HashFunc = crypto.SHA384
+	case kmspb.CryptoKeyVersion_RSA_SIGN_PKCS1_4096_SHA512,
+		kmspb.CryptoKeyVersion_RSA_SIGN_PSS_4096_SHA512:
 		crv.HashFunc = crypto.SHA512
 	default:
 		return nil, errors.New("unknown algorithm specified by KMS")
 	}
+
+	crv.Verifier, err = cryptoutil.NewVerifier(pubKey, cryptoutil.VerifyWithHash(crv.HashFunc))
 	if err != nil {
 		return nil, fmt.Errorf("initializing internal verifier: %w", err)
 	}
+
 	return &crv, nil
 }
 
@@ -371,7 +337,7 @@ func (g *gcpClient) getCKV() (*cryptoKeyVersion, error) {
 			} else {
 				ttl = time.Second * 300
 			}
-			data, lerr = g.keyVersionName(context.Background())
+			data, lerr = g.keyVersionName(context.TODO())
 			if lerr == nil {
 				return c.Set(key, *data, ttl)
 			}

@@ -85,7 +85,7 @@ func (a *SignerVerifier) KeyID() (string, error) {
 // when the Signer was created.
 func (a *SignerVerifier) Sign(message io.Reader) ([]byte, error) {
 	var err error
-	ctx := context.Background()
+	ctx := context.TODO()
 	var digest []byte
 
 	var signerOpts crypto.SignerOpts
@@ -111,7 +111,7 @@ func (a *SignerVerifier) Verifier() (cryptoutil.Verifier, error) {
 
 // Bytes returns the bytes of the public key that can be used to verify signatures created by the signer.
 func (a *SignerVerifier) Bytes() ([]byte, error) {
-	ctx := context.Background()
+	ctx := context.TODO()
 	p, err := a.client.fetchPublicKey(ctx)
 	if err != nil {
 		return nil, err
@@ -123,7 +123,7 @@ func (a *SignerVerifier) Bytes() ([]byte, error) {
 // Verify verifies the signature for the given message, returning
 // nil if the verification succeeded, and an error message otherwise.
 func (a *SignerVerifier) Verify(message io.Reader, sig []byte) (err error) {
-	ctx := context.Background()
+	ctx := context.TODO()
 
 	return a.client.verify(ctx, bytes.NewReader(sig), message)
 }
