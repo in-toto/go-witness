@@ -123,7 +123,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		return nil, fmt.Errorf("failed to verify policy signature: %w", err)
 	}
 
-	log.Info("Policy signature verification passed")
+	log.Info("policy signature verified")
 
 	pol := policy.Policy{}
 	if err := json.Unmarshal(vo.policyEnvelope.Payload, &pol); err != nil {
@@ -132,7 +132,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 
 	pubKeysById, err := pol.PublicKeyVerifiers()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pulic keys from policy: %w", err)
+		return nil, fmt.Errorf("failed to get public keys from policy: %w", err)
 	}
 
 	pubkeys := make([]cryptoutil.Verifier, 0)
