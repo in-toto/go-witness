@@ -148,16 +148,6 @@ func TryParsePEMBlock(block *pem.Block) (interface{}, error) {
 		return key, err
 	}
 
-	key, err = x509.ParsePKIXPublicKey(block.Bytes)
-	if err == nil {
-		return key, err
-	}
-
-	key, err = x509.ParsePKCS1PublicKey(block.Bytes)
-	if err == nil {
-		return key, err
-	}
-
 	return nil, ErrUnsupportedPEM{block.Type}
 }
 
