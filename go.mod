@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	cloud.google.com/go/kms v1.15.7
-	github.com/aws/aws-sdk-go-v2 v1.18.0
+	github.com/aws/aws-sdk-go-v2 v1.18.1
 	github.com/aws/aws-sdk-go-v2/config v1.18.14
 	github.com/aws/aws-sdk-go-v2/service/kms v1.20.12
 	github.com/digitorus/pkcs7 v0.0.0-20230220124406-51331ccfc40f
