@@ -57,10 +57,10 @@ type PublicKey struct {
 // PublicKeyVerifiers returns verifiers for each of the policy's embedded public keys grouped by the key's ID
 func (p Policy) PublicKeyVerifiers() (map[string]cryptoutil.Verifier, error) {
 	verifiers := make(map[string]cryptoutil.Verifier)
-	var verifier cryptoutil.Verifier
 	var err error
 
 	for _, key := range p.PublicKeys {
+		var verifier cryptoutil.Verifier
 		for _, prefix := range kms.SupportedProviders() {
 			if strings.HasPrefix(key.KeyID, prefix) {
 				verifier, err = kms.New(kms.WithRef(key.KeyID), kms.WithHash("SHA256")).Verifier(context.TODO())
