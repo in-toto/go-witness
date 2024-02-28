@@ -45,23 +45,23 @@ func (cc CertConstraint) Check(verifier *cryptoutil.X509Verifier, trustBundles m
 	errs := make([]error, 0)
 	cert := verifier.Certificate()
 
-	if err := checkCertConstraints("common name", []string{cc.CommonName}, []string{cert.Subject.CommonName}); err != nil {
+	if err := checkCertConstraint("common name", []string{cc.CommonName}, []string{cert.Subject.CommonName}); err != nil {
 		errs = append(errs, err)
 	}
 
-	if err := checkCertConstraints("dns name", cc.DNSNames, cert.DNSNames); err != nil {
+	if err := checkCertConstraint("dns name", cc.DNSNames, cert.DNSNames); err != nil {
 		errs = append(errs, err)
 	}
 
-	if err := checkCertConstraints("email", cc.Emails, cert.EmailAddresses); err != nil {
+	if err := checkCertConstraint("email", cc.Emails, cert.EmailAddresses); err != nil {
 		errs = append(errs, err)
 	}
 
-	if err := checkCertConstraints("organization", cc.Organizations, cert.Subject.Organization); err != nil {
+	if err := checkCertConstraint("organization", cc.Organizations, cert.Subject.Organization); err != nil {
 		errs = append(errs, err)
 	}
 
-	if err := checkCertConstraints("uri", cc.URIs, urisToStrings(cert.URIs)); err != nil {
+	if err := checkCertConstraint("uri", cc.URIs, urisToStrings(cert.URIs)); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -221,7 +221,7 @@ func urisToStrings(uris []*url.URL) []string {
 	return res
 }
 
-func checkCertConstraints(attribute string, constraints, values []string) error {
+func checkCertConstraint(attribute string, constraints, values []string) error {
 	// If our only constraint is the AllowAllConstraint it's a pass
 	if len(constraints) == 1 && constraints[0] == AllowAllConstraint {
 		return nil
@@ -258,8 +258,4 @@ func checkCertConstraints(attribute string, constraints, values []string) error 
 	}
 
 	return nil
-}
-
-func checkCertConstraint(constraint glob.Glob, value string) bool {
-	return constraint.Match(value)
 }

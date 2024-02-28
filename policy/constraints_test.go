@@ -85,7 +85,7 @@ func TestCheckCertConstraint(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		err := checkCertConstraints("constraint", c.Constraints, c.Values)
+		err := checkCertConstraint("constraint", c.Constraints, c.Values)
 		assert.Equal(t, c.Expected, err == nil, fmt.Sprintf("Constraints: %v, Values: %v", c.Constraints, c.Values))
 	}
 }
