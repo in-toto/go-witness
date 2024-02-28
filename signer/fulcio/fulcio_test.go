@@ -39,8 +39,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.step.sm/crypto/jose"
 
+	"github.com/go-jose/go-jose/v3/jwt"
 	"google.golang.org/grpc"
-	"gopkg.in/square/go-jose.v2/jwt"
 )
 
 func setupFulcioTestService(t *testing.T) (*dummyCAClientService, string) {
