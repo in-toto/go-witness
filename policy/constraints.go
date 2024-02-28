@@ -131,17 +131,29 @@ func (cc CertConstraint) parseExtensions(ext []pkix.Extension) (certificate.Exte
 	for _, e := range ext {
 		switch {
 		// BEGIN: Deprecated
+		//lint:ignore SA1019 Still need to support deprecated fields
 		case e.Id.Equal(certificate.OIDIssuer):
+			//lint:ignore SA1019 Still need to support deprecated fields
 			out.Issuer = string(e.Value)
+		//lint:ignore SA1019 Still need to support deprecated fields
 		case e.Id.Equal(certificate.OIDGitHubWorkflowTrigger):
+			//lint:ignore SA1019 Still need to support deprecated fields
 			out.GithubWorkflowTrigger = string(e.Value)
+		//lint:ignore SA1019 Still need to support deprecated fields
 		case e.Id.Equal(certificate.OIDGitHubWorkflowSHA):
+			//lint:ignore SA1019 Still need to support deprecated fields
 			out.GithubWorkflowSHA = string(e.Value)
+		//lint:ignore SA1019 Still need to support deprecated fields
 		case e.Id.Equal(certificate.OIDGitHubWorkflowName):
+			//lint:ignore SA1019 Still need to support deprecated fields
 			out.GithubWorkflowName = string(e.Value)
+		//lint:ignore SA1019 Still need to support deprecated fields
 		case e.Id.Equal(certificate.OIDGitHubWorkflowRepository):
+			//lint:ignore SA1019 Still need to support deprecated fields
 			out.GithubWorkflowRepository = string(e.Value)
+		//lint:ignore SA1019 Still need to support deprecated fields
 		case e.Id.Equal(certificate.OIDGitHubWorkflowRef):
+			//lint:ignore SA1019 Still need to support deprecated fields
 			out.GithubWorkflowRef = string(e.Value)
 		// END: Deprecated
 		case e.Id.Equal(certificate.OIDIssuerV2):
