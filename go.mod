@@ -11,7 +11,7 @@ require (
 	github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
 	github.com/go-git/go-git/v5 v5.11.0
-	github.com/go-jose/go-jose/v3 v3.0.2
+	github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/in-toto/archivista v0.4.0
 	github.com/jellydator/ttlcache/v3 v3.1.1
 	github.com/mattn/go-isatty v0.0.20
