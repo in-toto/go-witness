@@ -4,9 +4,9 @@ go 1.21
 
 require (
 	cloud.google.com/go/kms v1.15.7
-	github.com/aws/aws-sdk-go-v2 v1.25.2
+	github.com/aws/aws-sdk-go-v2 v1.25.3
 	github.com/aws/aws-sdk-go-v2/config v1.27.4
-	github.com/aws/aws-sdk-go-v2/service/kms v1.29.1
+	github.com/aws/aws-sdk-go-v2/service/kms v1.29.2
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
 	github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
@@ -39,8 +39,8 @@ require (
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.15.2 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.2 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.2 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.3 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.3 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.11.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.11.2 // indirect
