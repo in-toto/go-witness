@@ -24,7 +24,7 @@ require (
 	go.step.sm/crypto v0.43.1
 	golang.org/x/sys v0.17.0
 	google.golang.org/api v0.167.0
-	google.golang.org/grpc v1.62.0
+	google.golang.org/grpc v1.62.1
 	gopkg.in/square/go-jose.v2 v2.6.0
 	k8s.io/apimachinery v0.29.2
 )
