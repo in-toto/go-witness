@@ -13,5 +13,5 @@ log
 sarif-report.json
 test/log
 .idea/
-.vscode
 profile.cov
+.vscode/

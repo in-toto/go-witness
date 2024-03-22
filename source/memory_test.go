@@ -35,14 +35,14 @@ func TestLoadEnvelope(t *testing.T) {
 
 	// Define the test cases
 	tests := []struct {
-		name                 string
-		reference            string
-		intotoStatment       intoto.Statement
-		mSource              *MemorySource
-		attCol               attestation.Collection
-		wantLoadEnvelopeErr  bool
-		wantPredicateErr     bool
-		wantMemorySourceErr  bool
+		name                  string
+		reference             string
+		intotoStatment        intoto.Statement
+		mSource               *MemorySource
+		attCol                attestation.Collection
+		wantLoadEnvelopeErr   bool
+		wantPredicateErr      bool
+		wantMemorySourceErr   bool
 		wantReferenceExistErr bool
 	}{
 		{
@@ -89,8 +89,8 @@ func TestLoadEnvelope(t *testing.T) {
 				PredicateType: "https://witness.testifysec.com/attestation-collection/v0.1",
 				Predicate:     json.RawMessage(predicate),
 			},
-			mSource:              NewMemorySource(),
-			wantLoadEnvelopeErr:  true,
+			mSource:               NewMemorySource(),
+			wantLoadEnvelopeErr:   true,
 			wantReferenceExistErr: true,
 		},
 	}
@@ -173,11 +173,11 @@ func TestSearch(t *testing.T) {
 	}
 	// Define the test cases
 	tests := []struct {
-		name          string
-		statements    []intoto.Statement
-		searchQuery   args
+		name           string
+		statements     []intoto.Statement
+		searchQuery    args
 		wantReferences map[string]struct{}
-		wantErr       bool
+		wantErr        bool
 	}{
 		{
 			name: "all match given query",
@@ -207,7 +207,7 @@ func TestSearch(t *testing.T) {
 				attestations:   []string{},
 			},
 			wantReferences: map[string]struct{}{"ref0": {}, "ref1": {}, "ref2": {}},
-			wantErr:       false,
+			wantErr:        false,
 		},
 		{
 			name: "some match",
@@ -243,7 +243,7 @@ func TestSearch(t *testing.T) {
 				attestations:   []string{},
 			},
 			wantReferences: map[string]struct{}{"ref0": {}, "ref1": {}, "ref2": {}},
-			wantErr:       false,
+			wantErr:        false,
 		},
 		{
 			name: "no matches",
@@ -273,7 +273,7 @@ func TestSearch(t *testing.T) {
 				attestations:   []string{},
 			},
 			wantReferences: map[string]struct{}{},
-			wantErr:       false,
+			wantErr:        false,
 		},
 	}
 
