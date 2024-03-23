@@ -42,17 +42,17 @@ func TestFromDigestMap(t *testing.T) {
 
 func TestAttestorName(t *testing.T) {
 	a := New()
-	assert.Equal(t, a.Name(), Name)
+	assert.Equal(t, a.Name(), ProductName)
 }
 
 func TestAttestorType(t *testing.T) {
 	a := New()
-	assert.Equal(t, a.Type(), Type)
+	assert.Equal(t, a.Type(), ProductType)
 }
 
 func TestAttestorRunType(t *testing.T) {
 	a := New()
-	assert.Equal(t, a.RunType(), RunType)
+	assert.Equal(t, a.RunType(), ProductRunType)
 }
 
 func TestAttestorAttest(t *testing.T) {

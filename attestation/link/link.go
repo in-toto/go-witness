@@ -125,7 +125,7 @@ func (l *Link) Attest(ctx *attestation.AttestationContext) error {
 			if err != nil {
 				return err
 			}
-		case product.Name:
+		case product.ProductName:
 			l.products = attestor.Attestor.(*product.Attestor).Products()
 		}
 	}

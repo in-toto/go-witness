@@ -71,8 +71,8 @@ func init() {
 type Option func(*Provenance)
 
 func WithExport(export bool) Option {
-	return func(l *Provenance) {
-		l.export = export
+	return func(p *Provenance) {
+		p.export = export
 	}
 }
 
@@ -86,31 +86,31 @@ func New() *Provenance {
 	return &Provenance{}
 }
 
-func (l *Provenance) Name() string {
+func (p *Provenance) Name() string {
 	return Name
 }
 
-func (l *Provenance) Type() string {
+func (p *Provenance) Type() string {
 	return Type
 }
 
-func (l *Provenance) RunType() attestation.RunType {
+func (p *Provenance) RunType() attestation.RunType {
 	return RunType
 }
 
-func (l *Provenance) Export() bool {
-	return l.export
+func (p *Provenance) Export() bool {
+	return p.export
 }
 
-func (l *Provenance) Attest(ctx *attestation.AttestationContext) error {
+func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 	builder := prov.Builder{}
 	metadata := prov.BuildMetadata{}
-	l.PbProvenance.BuildDefinition = &prov.BuildDefinition{}
-	l.PbProvenance.RunDetails = &prov.RunDetails{Builder: &builder, Metadata: &metadata}
+	p.PbProvenance.BuildDefinition = &prov.BuildDefinition{}
+	p.PbProvenance.RunDetails = &prov.RunDetails{Builder: &builder, Metadata: &metadata}
 
-	l.PbProvenance.BuildDefinition.BuildType = "https://witness.dev/slsa-build@v0.1"
-	l.PbProvenance.RunDetails.Builder.Id = "https://witness.dev/witness-github-action@v0.1"
-	l.PbProvenance.RunDetails.Metadata.InvocationId = "gha-workflow-ref"
+	p.PbProvenance.BuildDefinition.BuildType = "https://witness.dev/slsa-build@v0.1"
+	p.PbProvenance.RunDetails.Builder.Id = "https://witness.dev/witness-github-action@v0.1"
+	p.PbProvenance.RunDetails.Metadata.InvocationId = "gha-workflow-ref"
 
 	internalParamaters := make(map[string]interface{})
 
@@ -122,8 +122,8 @@ func (l *Provenance) Attest(ctx *attestation.AttestationContext) error {
 			digests, _ := digestSet.ToNameMap()
 
 			for _, remote := range remotes {
-				l.PbProvenance.BuildDefinition.ResolvedDependencies = append(
-					l.PbProvenance.BuildDefinition.ResolvedDependencies,
+				p.PbProvenance.BuildDefinition.ResolvedDependencies = append(
+					p.PbProvenance.BuildDefinition.ResolvedDependencies,
 					&v1.ResourceDescriptor{
 						Name:   remote,
 						Digest: digests,
@@ -134,20 +134,20 @@ func (l *Provenance) Attest(ctx *attestation.AttestationContext) error {
 			var err error
 			ep := make(map[string]interface{})
 			ep["command"] = strings.Join(attestor.Attestor.(*commandrun.CommandRun).Cmd, " ")
-			l.PbProvenance.BuildDefinition.ExternalParameters, err = structpb.NewStruct(ep)
+			p.PbProvenance.BuildDefinition.ExternalParameters, err = structpb.NewStruct(ep)
 			if err != nil {
 				return err
 			}
 			// We have start and finish time at the collection level, how do we access it here?
-			l.PbProvenance.RunDetails.Metadata.StartedOn = timestamppb.New(time.Now())
-			l.PbProvenance.RunDetails.Metadata.FinishedOn = timestamppb.New(time.Now())
+			p.PbProvenance.RunDetails.Metadata.StartedOn = timestamppb.New(time.Now())
+			p.PbProvenance.RunDetails.Metadata.FinishedOn = timestamppb.New(time.Now())
 
 		case material.Name:
 			mats := attestor.Attestor.(*material.Attestor).Materials()
 			for name, digestSet := range mats {
 				digests, _ := digestSet.ToNameMap()
-				l.PbProvenance.BuildDefinition.ResolvedDependencies = append(
-					l.PbProvenance.BuildDefinition.ResolvedDependencies,
+				p.PbProvenance.BuildDefinition.ResolvedDependencies = append(
+					p.PbProvenance.BuildDefinition.ResolvedDependencies,
 					&v1.ResourceDescriptor{
 						Name:   name,
 						Digest: digests,
@@ -163,13 +163,13 @@ func (l *Provenance) Attest(ctx *attestation.AttestationContext) error {
 
 			internalParamaters["env"] = pbEnvs
 
-		case product.Name:
-			l.products = attestor.Attestor.(*product.Attestor).Products()
+		case product.ProductName:
+			p.products = attestor.Attestor.(*product.Attestor).Products()
 		}
 	}
 
 	var err error
-	l.PbProvenance.BuildDefinition.InternalParameters, err = structpb.NewStruct(internalParamaters)
+	p.PbProvenance.BuildDefinition.InternalParameters, err = structpb.NewStruct(internalParamaters)
 	if err != nil {
 		return err
 	}
@@ -177,21 +177,21 @@ func (l *Provenance) Attest(ctx *attestation.AttestationContext) error {
 	return nil
 }
 
-func (l *Provenance) MarshalJSON() ([]byte, error) {
-	return json.Marshal(&l.PbProvenance)
+func (p *Provenance) MarshalJSON() ([]byte, error) {
+	return json.Marshal(&p.PbProvenance)
 }
 
-func (l *Provenance) UnmarshalJSON(data []byte) error {
-	if err := json.Unmarshal(data, &l.PbProvenance); err != nil {
+func (p *Provenance) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &p.PbProvenance); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (l *Provenance) Subjects() map[string]cryptoutil.DigestSet {
+func (p *Provenance) Subjects() map[string]cryptoutil.DigestSet {
 	subjects := make(map[string]cryptoutil.DigestSet)
-	for productName, product := range l.products {
+	for productName, product := range p.products {
 		subjects[fmt.Sprintf("file:%v", productName)] = product.Digest
 	}
 
