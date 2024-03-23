@@ -24,6 +24,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/environment"
 	"github.com/in-toto/go-witness/attestation/git"
 	"github.com/in-toto/go-witness/attestation/link"
+	"github.com/in-toto/go-witness/attestation/slsa"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
@@ -113,6 +114,17 @@ func run(stepName string, signer cryptoutil.Signer, opts []RunOption) ([]RunResu
 
 			// TODO: Add Exporter interface to attestors
 			if r.Attestor.(*link.Link).Export() {
+				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
+					linkEnvelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
+					if err != nil {
+						return result, fmt.Errorf("failed to sign envelope: %w", err)
+					}
+					result = append(result, RunResult{SignedEnvelope: linkEnvelope, AttestorName: r.Attestor.Name()})
+				}
+			}
+		} else if r.Attestor.Name() == slsa.Name {
+			// TODO: Add Exporter interface to attestors
+			if r.Attestor.(*slsa.Provenance).Export() {
 				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
 					linkEnvelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
 					if err != nil {

@@ -75,6 +75,7 @@ type Attestor struct {
 	ParentHashes   []string             `json:"parenthashes,omitempty"`
 	TreeHash       string               `json:"treehash,omitempty"`
 	Refs           []string             `json:"refs,omitempty"`
+	Remotes        []string             `json:"remotes,omitempty"`
 	Tags           []Tag                `json:"tags,omitempty"`
 }
 
@@ -123,6 +124,15 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 			Hash:   crypto.SHA1,
 			GitOID: false,
 		}: commit.Hash.String(),
+	}
+
+	remotes, err := repo.Remotes()
+	if err != nil {
+		return err
+	}
+
+	for _, remote := range remotes {
+		a.Remotes = append(a.Remotes, remote.Config().URLs...)
 	}
 
 	//get all the refs for the repo
