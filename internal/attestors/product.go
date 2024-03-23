@@ -6,6 +6,10 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 )
 
+var (
+	_ product.ProductAttestor = &TestProductAttestor{}
+)
+
 type TestProductAttestor struct {
 	prodAtt product.ProductAttestor
 }

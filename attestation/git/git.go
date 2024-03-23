@@ -41,6 +41,20 @@ var (
 	_ attestation.BackReffer = &Attestor{}
 )
 
+type GitAttestor interface {
+	// Attestor
+	Name() string
+	Type() string
+	RunType() attestation.RunType
+	Attest(ctx *attestation.AttestationContext) error
+
+	// Subjecter
+	Subjects() map[string]cryptoutil.DigestSet
+
+	// Backreffer
+	BackRefs() map[string]cryptoutil.DigestSet
+}
+
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
