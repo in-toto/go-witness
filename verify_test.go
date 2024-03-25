@@ -16,7 +16,6 @@ package witness
 
 import (
 	"bytes"
-	"context"
 	"crypto/x509"
 	"fmt"
 	"testing"
@@ -151,7 +150,7 @@ func TestVerifyPolicySignature(t *testing.T) {
 			tt.certConstraints(&vo)
 		}
 
-		err = verifyPolicySignature(context.TODO(), vo)
+		err = verifyPolicySignature(vo)
 		if err != nil && !tt.wantErr {
 			t.Errorf("testName = %s, error = %v, wantErr %v", tt.name, err, tt.wantErr)
 		} else {

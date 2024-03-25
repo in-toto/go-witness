@@ -35,7 +35,16 @@ const (
 // doesn't implement the expected interfaces.
 var (
 	_ attestation.Attestor = &CommandRun{}
+	_ CommandRunAttestor   = &CommandRun{}
 )
+
+type CommandRunAttestor interface {
+	// Attestor
+	Name() string
+	Type() string
+	RunType() attestation.RunType
+	Attest(ctx *attestation.AttestationContext) error
+}
 
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {

@@ -23,6 +23,8 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/environment"
 	"github.com/in-toto/go-witness/attestation/git"
+	"github.com/in-toto/go-witness/attestation/link"
+	"github.com/in-toto/go-witness/attestation/slsa"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
@@ -60,9 +62,24 @@ func RunWithTimestampers(ts ...timestamp.Timestamper) RunOption {
 type RunResult struct {
 	Collection     attestation.Collection
 	SignedEnvelope dsse.Envelope
+	AttestorName   string
 }
 
+// Should this be deprecated?
+// Deprecated: Use RunWithExports instead
 func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResult, error) {
+	results, err := run(stepName, signer, opts)
+	if len(results) > 1 {
+		return RunResult{}, errors.New("expected a single result, got multiple")
+	}
+	return results[0], err
+}
+
+func RunWithExports(stepName string, signer cryptoutil.Signer, opts ...RunOption) ([]RunResult, error) {
+	return run(stepName, signer, opts)
+}
+
+func run(stepName string, signer cryptoutil.Signer, opts []RunOption) ([]RunResult, error) {
 	ro := runOptions{
 		stepName:  stepName,
 		signer:    signer,
@@ -73,7 +90,7 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 		opt(&ro)
 	}
 
-	result := RunResult{}
+	result := []RunResult{}
 	if err := validateRunOpts(ro); err != nil {
 		return result, err
 	}
@@ -91,6 +108,31 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 	for _, r := range runCtx.CompletedAttestors() {
 		if r.Error != nil {
 			errs = append(errs, r.Error)
+		} else if r.Attestor.Name() == link.Name {
+			// TODO: Find a better way to set stepName
+			r.Attestor.(*link.Link).PbLink.Name = ro.stepName
+
+			// TODO: Add Exporter interface to attestors
+			if r.Attestor.(*link.Link).Export() {
+				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
+					linkEnvelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
+					if err != nil {
+						return result, fmt.Errorf("failed to sign envelope: %w", err)
+					}
+					result = append(result, RunResult{SignedEnvelope: linkEnvelope, AttestorName: r.Attestor.Name()})
+				}
+			}
+		} else if r.Attestor.Name() == slsa.Name {
+			// TODO: Add Exporter interface to attestors
+			if r.Attestor.(*slsa.Provenance).Export() {
+				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
+					linkEnvelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
+					if err != nil {
+						return result, fmt.Errorf("failed to sign envelope: %w", err)
+					}
+					result = append(result, RunResult{SignedEnvelope: linkEnvelope, AttestorName: r.Attestor.Name()})
+				}
+			}
 		}
 	}
 
@@ -99,11 +141,13 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 		return result, errors.Join(errs...)
 	}
 
-	result.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
-	result.SignedEnvelope, err = signCollection(result.Collection, dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
+	var collectionResult RunResult
+	collectionResult.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
+	collectionResult.SignedEnvelope, err = createAndSignEnvelope(collectionResult.Collection, attestation.CollectionType, collectionResult.Collection.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
 	if err != nil {
 		return result, fmt.Errorf("failed to sign collection: %w", err)
 	}
+	result = append(result, collectionResult)
 
 	return result, nil
 }
@@ -120,13 +164,13 @@ func validateRunOpts(ro runOptions) error {
 	return nil
 }
 
-func signCollection(collection attestation.Collection, opts ...dsse.SignOption) (dsse.Envelope, error) {
-	data, err := json.Marshal(&collection)
+func createAndSignEnvelope(predicate interface{}, predType string, subjects map[string]cryptoutil.DigestSet, opts ...dsse.SignOption) (dsse.Envelope, error) {
+	data, err := json.Marshal(&predicate)
 	if err != nil {
 		return dsse.Envelope{}, err
 	}
 
-	stmt, err := intoto.NewStatement(attestation.CollectionType, data, collection.Subjects())
+	stmt, err := intoto.NewStatement(predType, data, subjects)
 	if err != nil {
 		return dsse.Envelope{}, err
 	}
