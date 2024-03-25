@@ -119,7 +119,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		opt(&vo)
 	}
 
-	if err := verifyPolicySignature(ctx, vo); err != nil {
+	if err := verifyPolicySignature(vo); err != nil {
 		return nil, fmt.Errorf("failed to verify policy signature: %w", err)
 	}
 
@@ -179,8 +179,12 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 	return accepted, nil
 }
 
-func verifyPolicySignature(ctx context.Context, vo verifyOptions) error {
-	passedPolicyVerifiers, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...), dsse.VerifyWithTimestampVerifiers(vo.policyTimestampAuthorities...), dsse.VerifyWithRoots(vo.policyCARoots...), dsse.VerifyWithIntermediates(vo.policyCAIntermediates...))
+func verifyPolicySignature(vo verifyOptions) error {
+	passedPolicyVerifiers, err := vo.policyEnvelope.Verify(
+		dsse.VerifyWithVerifiers(vo.policyVerifiers...),
+		dsse.VerifyWithTimestampVerifiers(vo.policyTimestampAuthorities...),
+		dsse.VerifyWithRoots(vo.policyCARoots...),
+		dsse.VerifyWithIntermediates(vo.policyCAIntermediates...))
 	if err != nil {
 		return fmt.Errorf("could not verify policy: %w", err)
 	}

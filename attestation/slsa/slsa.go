@@ -112,7 +112,7 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 	p.PbProvenance.RunDetails.Builder.Id = "https://witness.dev/witness-github-action@v0.1"
 	p.PbProvenance.RunDetails.Metadata.InvocationId = "gha-workflow-ref"
 
-	internalParamaters := make(map[string]interface{})
+	internalParameters := make(map[string]interface{})
 
 	for _, attestor := range ctx.CompletedAttestors() {
 		switch name := attestor.Attestor.Name(); name {
@@ -161,7 +161,7 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 				pbEnvs[name] = value
 			}
 
-			internalParamaters["env"] = pbEnvs
+			internalParameters["env"] = pbEnvs
 
 		case product.ProductName:
 			p.products = attestor.Attestor.(*product.Attestor).Products()
@@ -169,7 +169,7 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	var err error
-	p.PbProvenance.BuildDefinition.InternalParameters, err = structpb.NewStruct(internalParamaters)
+	p.PbProvenance.BuildDefinition.InternalParameters, err = structpb.NewStruct(internalParameters)
 	if err != nil {
 		return err
 	}

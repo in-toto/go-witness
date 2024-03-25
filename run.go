@@ -164,8 +164,8 @@ func validateRunOpts(ro runOptions) error {
 	return nil
 }
 
-func createAndSignEnvelope(collection interface{}, predType string, subjects map[string]cryptoutil.DigestSet, opts ...dsse.SignOption) (dsse.Envelope, error) {
-	data, err := json.Marshal(&collection)
+func createAndSignEnvelope(predicate interface{}, predType string, subjects map[string]cryptoutil.DigestSet, opts ...dsse.SignOption) (dsse.Envelope, error) {
+	data, err := json.Marshal(&predicate)
 	if err != nil {
 		return dsse.Envelope{}, err
 	}
