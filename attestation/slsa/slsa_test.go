@@ -130,7 +130,9 @@ func TestSubjects(t *testing.T) {
 
 func setupProvenance(t *testing.T) *Provenance {
 	provenance := New()
-	provenance.UnmarshalJSON([]byte(testProvenanceJSON))
+	if err := provenance.UnmarshalJSON([]byte(testProvenanceJSON)); err != nil {
+		t.Errorf("unexpected error: %s", err)
+	}
 
 	provenance.products = make(map[string]attestation.Product)
 	digestsByName := make(map[string]string)

@@ -96,14 +96,6 @@ func TestAttest(t *testing.T) {
 	}
 }
 
-func setupContext(t *testing.T) *attestation.AttestationContext {
-	ctx := attestation.AttestationContext{}
-	ctx.CompletedAttestors()
-
-	return &ctx
-
-}
-
 func TestSubjects(t *testing.T) {
 	link := setupLink(t)
 
@@ -130,7 +122,9 @@ func TestSubjects(t *testing.T) {
 
 func setupLink(t *testing.T) *Link {
 	link := New()
-	link.UnmarshalJSON([]byte(testLinkJSON))
+	if err := link.UnmarshalJSON([]byte(testLinkJSON)); err != nil {
+		t.Errorf("unexpected error: %s", err)
+	}
 
 	link.products = make(map[string]attestation.Product)
 	digestsByName := make(map[string]string)
