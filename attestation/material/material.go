@@ -20,6 +20,7 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/file"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/invopop/jsonschema"
 )
 
 const (
@@ -66,6 +67,10 @@ func New(opts ...Option) *Attestor {
 	}
 
 	return attestor
+}
+
+func (a *Attestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&a)
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {

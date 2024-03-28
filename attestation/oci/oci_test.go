@@ -22,6 +22,7 @@ import (
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,6 +40,10 @@ func (testProducter) Type() string {
 
 func (testProducter) RunType() attestation.RunType {
 	return attestation.PreMaterialRunType
+}
+
+func (testProducter) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&testProducter{})
 }
 
 func (testProducter) Attest(ctx *attestation.AttestationContext) error {
@@ -62,7 +67,6 @@ func TestNew(t *testing.T) {
 	if a.RunType() != RunType {
 		t.Errorf("expected RunType to be %s, got %s", RunType, a.RunType())
 	}
-
 }
 
 func SetupTest(t *testing.T, b64tarFile string) *os.File {
@@ -82,8 +86,8 @@ func SetupTest(t *testing.T, b64tarFile string) *os.File {
 	}
 
 	return file
-
 }
+
 func TestAttestor_Attest(t *testing.T) {
 	a := New()
 
@@ -122,9 +126,11 @@ func TestAttestor_Attest(t *testing.T) {
 	require.NoError(t, err)
 }
 
-const imageID = "c294e5406766e579a59a04260b9dc22917fd21929114beeef2eda63536d35c82"
-const diffID = "84ff92691f909a05b224e1c56abb4864f01b4f8e3c854e4bb4c7baf1d3f6d652"
-const manifestDigest = "5445fcd1d6274180325653c40ad113c2b4bda0682f3650ce50284f74f9305c4c"
+const (
+	imageID        = "c294e5406766e579a59a04260b9dc22917fd21929114beeef2eda63536d35c82"
+	diffID         = "84ff92691f909a05b224e1c56abb4864f01b4f8e3c854e4bb4c7baf1d3f6d652"
+	manifestDigest = "5445fcd1d6274180325653c40ad113c2b4bda0682f3650ce50284f74f9305c4c"
+)
 
 const testTar = `
 ODI5Y2NhODhlZTYzNTAzMzBlMmVlYTAwOWRkNmVjNjcxMjA3OGU5Y2U0ZGFhY2FmNjhhM2VkMDI5NjUz

@@ -25,6 +25,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/invopop/jsonschema"
 )
 
 const (
@@ -96,11 +97,14 @@ func (a *Attestor) RunType() attestation.RunType {
 	return RunType
 }
 
+func (a *Attestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&a)
+}
+
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	repo, err := git.PlainOpenWithOptions(ctx.WorkingDir(), &git.PlainOpenOptions{
 		DetectDotGit: true,
 	})
-
 	if err != nil {
 		return err
 	}
@@ -125,20 +129,20 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		}: commit.Hash.String(),
 	}
 
-	//get all the refs for the repo
+	// get all the refs for the repo
 	refs, err := repo.References()
 	if err != nil {
 		return err
 	}
 
-	//iterate over the refs and add them to the attestor
+	// iterate over the refs and add them to the attestor
 	err = refs.ForEach(func(ref *plumbing.Reference) error {
-		//only add the ref if it points to the head
+		// only add the ref if it points to the head
 		if ref.Hash() != head.Hash() {
 			return nil
 		}
 
-		//add the ref name to the attestor
+		// add the ref name to the attestor
 		a.Refs = append(a.Refs, ref.Name().String())
 
 		return nil
@@ -168,8 +172,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	var tagList []Tag
 
 	err = tags.ForEach(func(t *object.Tag) error {
-
-		//check if the tag points to the head
+		// check if the tag points to the head
 		if t.Target.String() != head.Hash().String() {
 			return nil
 		}
@@ -184,7 +187,6 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		})
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("iterate tags error: %s", err)
 	}
@@ -230,7 +232,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		}: a.CommitHash,
 	}
 
-	//add author email
+	// add author email
 	subjectName = fmt.Sprintf("authoremail:%v", a.AuthorEmail)
 	ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.AuthorEmail), hashes)
 	if err != nil {
@@ -239,7 +241,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 
 	subjects[subjectName] = ds
 
-	//add committer email
+	// add committer email
 	subjectName = fmt.Sprintf("committeremail:%v", a.CommitterEmail)
 	ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(a.CommitterEmail), hashes)
 	if err != nil {
@@ -248,7 +250,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 
 	subjects[subjectName] = ds
 
-	//add parent hashes
+	// add parent hashes
 	for _, parentHash := range a.ParentHashes {
 		subjectName = fmt.Sprintf("parenthash:%v", parentHash)
 		ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(parentHash), hashes)

@@ -26,6 +26,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/jwt"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/invopop/jsonschema"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -96,6 +97,10 @@ func (a *Attestor) Type() string {
 
 func (a *Attestor) RunType() attestation.RunType {
 	return RunType
+}
+
+func (a *Attestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&a)
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
@@ -171,7 +176,6 @@ func (a *Attestor) getInstanceData() {
 
 	a.ProjectID = projID
 	a.ProjectNumber = projNum
-
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
