@@ -29,6 +29,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/jwt"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/invopop/jsonschema"
 )
 
 const (
@@ -106,6 +107,10 @@ func (a *Attestor) Type() string {
 // RunType returns the run type of the attestor.
 func (a *Attestor) RunType() attestation.RunType {
 	return RunType
+}
+
+func (a *Attestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&a)
 }
 
 // Attest performs the attestation for the github environment.

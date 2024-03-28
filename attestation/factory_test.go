@@ -17,6 +17,7 @@ package attestation
 import (
 	"testing"
 
+	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +28,8 @@ func TestRegistry(t *testing.T) {
 			name:          "prerun",
 			predicateType: "https://witness.dev/test/prerun",
 			runType:       PreMaterialRunType,
-		}, {
+		},
+		{
 			name:          "execute",
 			predicateType: "https://witness.dev/test/execute",
 			runType:       ExecuteRunType,
@@ -68,6 +70,10 @@ func (a *dummyAttestor) Type() string {
 
 func (a *dummyAttestor) RunType() RunType {
 	return a.runType
+}
+
+func (a *dummyAttestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&a)
 }
 
 func (a *dummyAttestor) Attest(*AttestationContext) error {
