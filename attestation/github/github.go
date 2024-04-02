@@ -57,6 +57,7 @@ type GitHubAttestor interface {
 	Type() string
 	RunType() attestation.RunType
 	Attest(ctx *attestation.AttestationContext) error
+	Data() *Attestor
 
 	// Subjecter
 	Subjects() map[string]cryptoutil.DigestSet
@@ -155,6 +156,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.RunnerOS = os.Getenv("RUNNER_OS")
 	a.PipelineUrl = fmt.Sprintf("%s/actions/runs/%s", a.ProjectUrl, a.PipelineID)
 	return nil
+}
+
+func (a *Attestor) Data() *Attestor {
+	return a
 }
 
 // Subjects returns a map of subjects and their corresponding digest sets.

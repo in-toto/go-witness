@@ -28,8 +28,8 @@ type TestProductAttestor struct {
 	prodAtt product.ProductAttestor
 }
 
-func (t *TestProductAttestor) New() *TestProductAttestor {
-	att := &product.Attestor{}
+func NewTestProductAttestor() *TestProductAttestor {
+	att := product.New()
 	return &TestProductAttestor{prodAtt: att}
 }
 

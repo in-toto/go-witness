@@ -86,19 +86,19 @@ func TestMarshalJSON(t *testing.T) {
 }
 
 func TestAttest(t *testing.T) {
-	g := &attestors.TestGitAttestor{}
-	gh := &attestors.TestGitHubAttestor{}
-	m := &attestors.TestMaterialAttestor{}
-	c := &attestors.TestCommandRunAttestor{}
-	p := &attestors.TestProductAttestor{}
-	s := &Provenance{}
+	g := attestors.NewTestGitAttestor()
+	gh := attestors.NewTestGitHubAttestor()
+	m := attestors.NewTestMaterialAttestor()
+	c := attestors.NewTestCommandRunAttestor()
+	p := attestors.NewTestProductAttestor()
+	s := New()
 
 	ctx, err := attestation.NewContext([]attestation.Attestor{g, gh, m, c, p, s})
 	if err != nil {
 		t.Errorf("error creating attestation context: %s", err)
 	}
 
-	err = s.Attest(ctx)
+	err = ctx.RunAttestors()
 	if err != nil {
 		t.Errorf("error attesting: %s", err.Error())
 	}

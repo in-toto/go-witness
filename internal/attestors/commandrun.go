@@ -25,12 +25,12 @@ var (
 )
 
 type TestCommandRunAttestor struct {
-	comAtt commandrun.CommandRunAttestor
+	comAtt commandrun.CommandRun
 }
 
-func (t *TestCommandRunAttestor) New() *TestCommandRunAttestor {
-	att := &commandrun.CommandRun{}
-	return &TestCommandRunAttestor{comAtt: att}
+func NewTestCommandRunAttestor() *TestCommandRunAttestor {
+	att := commandrun.New()
+	return &TestCommandRunAttestor{comAtt: *att}
 }
 
 func (t *TestCommandRunAttestor) Name() string {
@@ -47,6 +47,10 @@ func (t *TestCommandRunAttestor) RunType() attestation.RunType {
 
 func (t *TestCommandRunAttestor) Attest(ctx *attestation.AttestationContext) error {
 	return nil
+}
+
+func (t *TestCommandRunAttestor) Data() *commandrun.CommandRun {
+	return &t.comAtt
 }
 
 func (t *TestCommandRunAttestor) CommandRuns() map[string]cryptoutil.DigestSet {

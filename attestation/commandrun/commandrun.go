@@ -44,6 +44,7 @@ type CommandRunAttestor interface {
 	Type() string
 	RunType() attestation.RunType
 	Attest(ctx *attestation.AttestationContext) error
+	Data() *CommandRun
 }
 
 func init() {
@@ -136,6 +137,10 @@ func (rc *CommandRun) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	return nil
+}
+
+func (rc *CommandRun) Data() *CommandRun {
+	return rc
 }
 
 func (rc *CommandRun) Name() string {

@@ -47,6 +47,7 @@ type GitAttestor interface {
 	Type() string
 	RunType() attestation.RunType
 	Attest(ctx *attestation.AttestationContext) error
+	Data() *Attestor
 
 	// Subjecter
 	Subjects() map[string]cryptoutil.DigestSet

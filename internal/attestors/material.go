@@ -28,8 +28,8 @@ type TestMaterialAttestor struct {
 	matAtt material.MaterialAttestor
 }
 
-func (t *TestMaterialAttestor) New() *TestMaterialAttestor {
-	att := &material.Attestor{}
+func NewTestMaterialAttestor() *TestMaterialAttestor {
+	att := material.New()
 	return &TestMaterialAttestor{matAtt: att}
 }
 

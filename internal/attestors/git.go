@@ -25,12 +25,12 @@ var (
 )
 
 type TestGitAttestor struct {
-	gitAtt git.GitAttestor
+	gitAtt git.Attestor
 }
 
-func (t *TestGitAttestor) New() *TestGitAttestor {
-	att := &git.Attestor{}
-	return &TestGitAttestor{gitAtt: att}
+func NewTestGitAttestor() *TestGitAttestor {
+	att := git.New()
+	return &TestGitAttestor{gitAtt: *att}
 }
 
 func (t *TestGitAttestor) Name() string {
@@ -47,6 +47,10 @@ func (t *TestGitAttestor) RunType() attestation.RunType {
 
 func (t *TestGitAttestor) Attest(ctx *attestation.AttestationContext) error {
 	return nil
+}
+
+func (t *TestGitAttestor) Data() *git.Attestor {
+	return &t.gitAtt
 }
 
 func (t *TestGitAttestor) Subjects() map[string]cryptoutil.DigestSet {

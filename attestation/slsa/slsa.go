@@ -26,20 +26,27 @@ import (
 	"github.com/in-toto/go-witness/attestation/commandrun"
 	"github.com/in-toto/go-witness/attestation/environment"
 	"github.com/in-toto/go-witness/attestation/git"
+	"github.com/in-toto/go-witness/attestation/github"
+	"github.com/in-toto/go-witness/attestation/gitlab"
 	"github.com/in-toto/go-witness/attestation/material"
+	"github.com/in-toto/go-witness/attestation/oci"
 	"github.com/in-toto/go-witness/attestation/product"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/registry"
+	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
-	Name    = "slsa"
-	Type    = "https://slsa.dev/provenance/v1.0"
-	RunType = attestation.PostProductRunType
-
-	defaultExport = false
+	Name             = "slsa"
+	Type             = "https://slsa.dev/provenance/v1.0"
+	RunType          = attestation.PostProductRunType
+	defaultExport    = false
+	BuildType        = "https://witness.dev/slsa-build@v0.1"
+	DefaultBuilderId = "https://witness.dev/witness-default-builder@v0.1"
+	GHABuilderId     = "https://witness.dev/witness-github-action-builder@v0.1"
+	GLCBuilderId     = "https://witness.dev/witness-gitlab-component-builder@v0.1"
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -108,17 +115,26 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 	p.PbProvenance.BuildDefinition = &prov.BuildDefinition{}
 	p.PbProvenance.RunDetails = &prov.RunDetails{Builder: &builder, Metadata: &metadata}
 
-	p.PbProvenance.BuildDefinition.BuildType = "https://witness.dev/slsa-build@v0.1"
-	p.PbProvenance.RunDetails.Builder.Id = "https://witness.dev/witness-github-action@v0.1"
-	p.PbProvenance.RunDetails.Metadata.InvocationId = "gha-workflow-ref"
+	p.PbProvenance.BuildDefinition.BuildType = BuildType
+	p.PbProvenance.RunDetails.Builder.Id = DefaultBuilderId
 
 	internalParameters := make(map[string]interface{})
 
 	for _, attestor := range ctx.CompletedAttestors() {
 		switch name := attestor.Attestor.Name(); name {
+		// Pre-material Attestors
+		case environment.Name:
+			envs := attestor.Attestor.(*environment.Attestor).Variables
+			pbEnvs := make(map[string]interface{}, len(envs))
+			for name, value := range envs {
+				pbEnvs[name] = value
+			}
+
+			internalParameters["env"] = pbEnvs
+
 		case git.Name:
-			digestSet := attestor.Attestor.(*git.Attestor).CommitDigest
-			remotes := attestor.Attestor.(*git.Attestor).Remotes
+			digestSet := attestor.Attestor.(git.GitAttestor).Data().CommitDigest
+			remotes := attestor.Attestor.(git.GitAttestor).Data().Remotes
 			digests, _ := digestSet.ToNameMap()
 
 			for _, remote := range remotes {
@@ -130,20 +146,37 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 					})
 			}
 
-		case commandrun.Name:
-			var err error
-			ep := make(map[string]interface{})
-			ep["command"] = strings.Join(attestor.Attestor.(*commandrun.CommandRun).Cmd, " ")
-			p.PbProvenance.BuildDefinition.ExternalParameters, err = structpb.NewStruct(ep)
-			if err != nil {
-				return err
-			}
-			// We have start and finish time at the collection level, how do we access it here?
-			p.PbProvenance.RunDetails.Metadata.StartedOn = timestamppb.New(time.Now())
-			p.PbProvenance.RunDetails.Metadata.FinishedOn = timestamppb.New(time.Now())
+		case github.Name:
+			gh := attestor.Attestor.(github.GitHubAttestor)
+			p.PbProvenance.RunDetails.Builder.Id = GHABuilderId
+			p.PbProvenance.RunDetails.Metadata.InvocationId = gh.Data().PipelineUrl
+			digest := make(map[string]string)
+			digest["sha1"] = gh.Data().JWT.Claims["sha"].(string)
 
+			p.PbProvenance.BuildDefinition.ResolvedDependencies = append(
+				p.PbProvenance.BuildDefinition.ResolvedDependencies,
+				&v1.ResourceDescriptor{
+					Name:   gh.Data().ProjectUrl,
+					Digest: digest,
+				})
+
+		case gitlab.Name:
+			gl := attestor.Attestor.(*gitlab.Attestor)
+			p.PbProvenance.RunDetails.Builder.Id = GLCBuilderId
+			p.PbProvenance.RunDetails.Metadata.InvocationId = gl.PipelineUrl
+			digest := make(map[string]string)
+			digest["sha1"] = gl.JWT.Claims["sha"].(string)
+
+			p.PbProvenance.BuildDefinition.ResolvedDependencies = append(
+				p.PbProvenance.BuildDefinition.ResolvedDependencies,
+				&v1.ResourceDescriptor{
+					Name:   gl.ProjectUrl,
+					Digest: digest,
+				})
+
+		// Material Attestors
 		case material.Name:
-			mats := attestor.Attestor.(*material.Attestor).Materials()
+			mats := attestor.Attestor.(material.MaterialAttestor).Materials()
 			for name, digestSet := range mats {
 				digests, _ := digestSet.ToNameMap()
 				p.PbProvenance.BuildDefinition.ResolvedDependencies = append(
@@ -154,17 +187,26 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 					})
 			}
 
-		case environment.Name:
-			envs := attestor.Attestor.(*environment.Attestor).Variables
-			pbEnvs := make(map[string]interface{}, len(envs))
-			for name, value := range envs {
-				pbEnvs[name] = value
+		// CommandRun Attestors
+		case commandrun.Name:
+			var err error
+			ep := make(map[string]interface{})
+			ep["command"] = strings.Join(attestor.Attestor.(commandrun.CommandRunAttestor).Data().Cmd, " ")
+			p.PbProvenance.BuildDefinition.ExternalParameters, err = structpb.NewStruct(ep)
+			if err != nil {
+				return err
 			}
+			// We have start and finish time at the collection level, how do we access it here?
+			p.PbProvenance.RunDetails.Metadata.StartedOn = timestamppb.New(time.Now())
+			p.PbProvenance.RunDetails.Metadata.FinishedOn = timestamppb.New(time.Now())
 
-			internalParameters["env"] = pbEnvs
-
+		// Product Attestors
 		case product.ProductName:
-			p.products = attestor.Attestor.(*product.Attestor).Products()
+			maps.Copy(p.products, attestor.Attestor.(product.ProductAttestor).Products())
+
+		// Post Attestors
+		case oci.Name:
+			maps.Copy(p.products, attestor.Attestor.(product.ProductAttestor).Products())
 		}
 	}
 
