@@ -24,7 +24,7 @@ import (
 
 func TestEnvironment(t *testing.T) {
 	attestor := New()
-	ctx, err := attestation.NewContext([]attestation.Attestor{attestor})
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
 	require.NoError(t, err)
 
 	t.Setenv("AWS_ACCESS_KEY_ID", "super secret")

@@ -23,8 +23,6 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/environment"
 	"github.com/in-toto/go-witness/attestation/git"
-	"github.com/in-toto/go-witness/attestation/link"
-	"github.com/in-toto/go-witness/attestation/slsa"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
@@ -95,7 +93,7 @@ func run(stepName string, signer cryptoutil.Signer, opts []RunOption) ([]RunResu
 		return result, err
 	}
 
-	runCtx, err := attestation.NewContext(ro.attestors, ro.attestationOpts...)
+	runCtx, err := attestation.NewContext(stepName, ro.attestors, ro.attestationOpts...)
 	if err != nil {
 		return result, fmt.Errorf("failed to create attestation context: %w", err)
 	}
@@ -108,29 +106,15 @@ func run(stepName string, signer cryptoutil.Signer, opts []RunOption) ([]RunResu
 	for _, r := range runCtx.CompletedAttestors() {
 		if r.Error != nil {
 			errs = append(errs, r.Error)
-		} else if r.Attestor.Name() == link.Name {
-			// TODO: Find a better way to set stepName
-			r.Attestor.(*link.Link).PbLink.Name = ro.stepName
-
+		} else {
 			// TODO: Add Exporter interface to attestors
-			if r.Attestor.(*link.Link).Export() {
+			if _, ok := r.Attestor.(attestation.Exporter); ok {
 				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
-					linkEnvelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
+					envelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
 					if err != nil {
 						return result, fmt.Errorf("failed to sign envelope: %w", err)
 					}
-					result = append(result, RunResult{SignedEnvelope: linkEnvelope, AttestorName: r.Attestor.Name()})
-				}
-			}
-		} else if r.Attestor.Name() == slsa.Name {
-			// TODO: Add Exporter interface to attestors
-			if r.Attestor.(*slsa.Provenance).Export() {
-				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
-					linkEnvelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
-					if err != nil {
-						return result, fmt.Errorf("failed to sign envelope: %w", err)
-					}
-					result = append(result, RunResult{SignedEnvelope: linkEnvelope, AttestorName: r.Attestor.Name()})
+					result = append(result, RunResult{SignedEnvelope: envelope, AttestorName: r.Attestor.Name()})
 				}
 			}
 		}

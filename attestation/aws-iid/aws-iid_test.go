@@ -112,11 +112,10 @@ func TestAttestor_Attest(t *testing.T) {
 		conf:    conf,
 	}
 
-	ctx, err := attestation.NewContext([]attestation.Attestor{a})
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{a})
 	require.NoError(t, err)
 	err = a.Attest(ctx)
 	require.NoError(t, err)
-
 }
 
 func TestAttestor_getIID(t *testing.T) {
@@ -154,7 +153,7 @@ func TestAttestor_Subjects(t *testing.T) {
 		conf:    conf,
 	}
 
-	ctx, err := attestation.NewContext([]attestation.Attestor{a})
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{a})
 	require.NoError(t, err)
 	err = a.Attest(ctx)
 	require.NoError(t, err)

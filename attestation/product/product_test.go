@@ -65,7 +65,7 @@ func TestAttestorAttest(t *testing.T) {
 	testDigestSet := make(map[string]cryptoutil.DigestSet)
 	testDigestSet["test"] = testDigest
 	a.baseArtifacts = testDigestSet
-	ctx, err := attestation.NewContext([]attestation.Attestor{a})
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{a})
 	require.NoError(t, err)
 	require.NoError(t, a.Attest(ctx))
 }
@@ -174,7 +174,7 @@ func TestIncludeExcludeGlobs(t *testing.T) {
 	}
 
 	t.Run("default include all", func(t *testing.T) {
-		ctx, err := attestation.NewContext([]attestation.Attestor{}, attestation.WithWorkingDir(workingDir))
+		ctx, err := attestation.NewContext("test", []attestation.Attestor{}, attestation.WithWorkingDir(workingDir))
 		require.NoError(t, err)
 		a := New()
 		require.NoError(t, a.Attest(ctx))
@@ -183,7 +183,7 @@ func TestIncludeExcludeGlobs(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ctx, err := attestation.NewContext([]attestation.Attestor{}, attestation.WithWorkingDir(workingDir))
+			ctx, err := attestation.NewContext("test", []attestation.Attestor{}, attestation.WithWorkingDir(workingDir))
 			require.NoError(t, err)
 			a := New()
 			WithIncludeGlob(test.includeGlob)(a)

@@ -108,7 +108,7 @@ func TestAttestor_Attest(t *testing.T) {
 		Digest:   tarDigest,
 	}
 
-	ctx, err := attestation.NewContext([]attestation.Attestor{testProducter{testProductSet}, a})
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{testProducter{testProductSet}, a})
 	if err != nil {
 		t.Fatal(err)
 	}

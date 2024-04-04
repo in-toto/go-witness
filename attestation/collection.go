@@ -65,6 +65,8 @@ func (c *CollectionAttestation) UnmarshalJSON(data []byte) error {
 	proposed := struct {
 		Type        string          `json:"type"`
 		Attestation json.RawMessage `json:"attestation"`
+		StartTime   time.Time       `json:"starttime"`
+		EndTime     time.Time       `json:"endtime"`
 	}{}
 
 	if err := json.Unmarshal(data, &proposed); err != nil {
@@ -83,6 +85,8 @@ func (c *CollectionAttestation) UnmarshalJSON(data []byte) error {
 
 	c.Type = proposed.Type
 	c.Attestation = newAttest
+	c.StartTime = proposed.StartTime
+	c.EndTime = proposed.EndTime
 	return nil
 }
 

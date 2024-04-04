@@ -67,7 +67,7 @@ func TestMaven(t *testing.T) {
 		}
 
 		t.Run(test.name, func(t *testing.T) {
-			ctx, err := attestation.NewContext([]attestation.Attestor{}, attestation.WithWorkingDir(workingDir))
+			ctx, err := attestation.NewContext("test", []attestation.Attestor{}, attestation.WithWorkingDir(workingDir))
 			require.NoError(t, err)
 			a := New(WithPom(p))
 			require.NoError(t, a.Attest(ctx))

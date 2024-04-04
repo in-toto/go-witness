@@ -92,6 +92,7 @@ type AttestationContext struct {
 	completedAttestors []CompletedAttestor
 	products           map[string]Product
 	materials          map[string]cryptoutil.DigestSet
+	stepName           string
 }
 
 type Product struct {
@@ -99,7 +100,7 @@ type Product struct {
 	Digest   cryptoutil.DigestSet `json:"digest"`
 }
 
-func NewContext(attestors []Attestor, opts ...AttestationContextOption) (*AttestationContext, error) {
+func NewContext(stepName string, attestors []Attestor, opts ...AttestationContextOption) (*AttestationContext, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -112,6 +113,7 @@ func NewContext(attestors []Attestor, opts ...AttestationContextOption) (*Attest
 		hashes:     []cryptoutil.DigestValue{{Hash: crypto.SHA256}, {Hash: crypto.SHA256, GitOID: true}, {Hash: crypto.SHA1, GitOID: true}},
 		materials:  make(map[string]cryptoutil.DigestSet),
 		products:   make(map[string]Product),
+		stepName:   stepName,
 	}
 
 	for _, opt := range opts {
@@ -207,6 +209,10 @@ func (ctx *AttestationContext) Products() map[string]Product {
 		out[k] = v
 	}
 	return out
+}
+
+func (ctx *AttestationContext) StepName() string {
+	return ctx.stepName
 }
 
 func (ctx *AttestationContext) addMaterials(materialer Materialer) {
