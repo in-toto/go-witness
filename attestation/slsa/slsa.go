@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	prov "github.com/in-toto/attestation/go/predicates/provenance/v1"
 	v1 "github.com/in-toto/attestation/go/v1"
@@ -32,6 +31,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/oci"
 	"github.com/in-toto/go-witness/attestation/product"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -196,13 +196,16 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 			if err != nil {
 				return err
 			}
-			// We have start and finish time at the collection level, how do we access it here?
-			p.PbProvenance.RunDetails.Metadata.StartedOn = timestamppb.New(time.Now())
-			p.PbProvenance.RunDetails.Metadata.FinishedOn = timestamppb.New(time.Now())
+
+			log.Info("start time is", ctx.StartTime())
+			log.Info("end time is", ctx.EndTime())
+			p.PbProvenance.RunDetails.Metadata.StartedOn = timestamppb.New(ctx.StartTime())
+			p.PbProvenance.RunDetails.Metadata.FinishedOn = timestamppb.New(ctx.EndTime())
 
 		// Product Attestors
 		case product.ProductName:
-			maps.Copy(p.products, attestor.Attestor.(product.ProductAttestor).Products())
+			p.products = make(map[string]attestation.Product)
+			maps.Copy(p.products, ctx.Products())
 
 		// Post Attestors
 		case oci.Name:

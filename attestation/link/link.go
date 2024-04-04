@@ -99,7 +99,7 @@ func (l *Link) Export() bool {
 }
 
 func (l *Link) Attest(ctx *attestation.AttestationContext) error {
-	l.PbLink.Name = "stepNameHere"
+	l.PbLink.Name = ctx.StepName()
 	for _, attestor := range ctx.CompletedAttestors() {
 		switch name := attestor.Attestor.Name(); name {
 		case commandrun.Name:

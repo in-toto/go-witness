@@ -95,7 +95,7 @@ func run(stepName string, signer cryptoutil.Signer, opts []RunOption) ([]RunResu
 		return result, err
 	}
 
-	runCtx, err := attestation.NewContext(ro.attestors, ro.attestationOpts...)
+	runCtx, err := attestation.NewContext(stepName, ro.attestors, ro.attestationOpts...)
 	if err != nil {
 		return result, fmt.Errorf("failed to create attestation context: %w", err)
 	}
