@@ -41,6 +41,21 @@ var (
 	_ attestation.BackReffer = &Attestor{}
 )
 
+type GitAttestor interface {
+	// Attestor
+	Name() string
+	Type() string
+	RunType() attestation.RunType
+	Attest(ctx *attestation.AttestationContext) error
+	Data() *Attestor
+
+	// Subjecter
+	Subjects() map[string]cryptoutil.DigestSet
+
+	// Backreffer
+	BackRefs() map[string]cryptoutil.DigestSet
+}
+
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
@@ -75,6 +90,7 @@ type Attestor struct {
 	ParentHashes   []string             `json:"parenthashes,omitempty"`
 	TreeHash       string               `json:"treehash,omitempty"`
 	Refs           []string             `json:"refs,omitempty"`
+	Remotes        []string             `json:"remotes,omitempty"`
 	Tags           []Tag                `json:"tags,omitempty"`
 }
 
@@ -123,6 +139,15 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 			Hash:   crypto.SHA1,
 			GitOID: false,
 		}: commit.Hash.String(),
+	}
+
+	remotes, err := repo.Remotes()
+	if err != nil {
+		return err
+	}
+
+	for _, remote := range remotes {
+		a.Remotes = append(a.Remotes, remote.Config().URLs...)
 	}
 
 	//get all the refs for the repo
