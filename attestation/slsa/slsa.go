@@ -31,7 +31,6 @@ import (
 	"github.com/in-toto/go-witness/attestation/oci"
 	"github.com/in-toto/go-witness/attestation/product"
 	"github.com/in-toto/go-witness/cryptoutil"
-	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -106,7 +105,7 @@ func (p *Provenance) RunType() attestation.RunType {
 }
 
 func (p *Provenance) Export() bool {
-	return p.export
+	return true
 }
 
 func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
@@ -197,15 +196,16 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 				return err
 			}
 
-			log.Info("start time is", ctx.StartTime())
-			log.Info("end time is", ctx.EndTime())
 			p.PbProvenance.RunDetails.Metadata.StartedOn = timestamppb.New(ctx.StartTime())
 			p.PbProvenance.RunDetails.Metadata.FinishedOn = timestamppb.New(ctx.EndTime())
 
 		// Product Attestors
 		case product.ProductName:
-			p.products = make(map[string]attestation.Product)
-			maps.Copy(p.products, ctx.Products())
+			if p.products == nil {
+				p.products = ctx.Products()
+			} else {
+				maps.Copy(p.products, ctx.Products())
+			}
 
 		// Post Attestors
 		case oci.Name:

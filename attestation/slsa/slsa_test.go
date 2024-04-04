@@ -93,7 +93,7 @@ func TestAttest(t *testing.T) {
 	p := attestors.NewTestProductAttestor()
 	s := New()
 
-	ctx, err := attestation.NewContext([]attestation.Attestor{g, gh, m, c, p, s})
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{g, gh, m, c, p, s})
 	if err != nil {
 		t.Errorf("error creating attestation context: %s", err)
 	}

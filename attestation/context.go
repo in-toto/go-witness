@@ -93,8 +93,10 @@ type AttestationContext struct {
 	products           map[string]Product
 	materials          map[string]cryptoutil.DigestSet
 	stepName           string
-	startTime          time.Time
-	endTime            time.Time
+	// startTime is the time that the attestation process started
+	startTime time.Time
+	// endTime is the time that the attestation process ended (except PostProductRunType, as this runs after the fact)
+	endTime time.Time
 }
 
 type Product struct {
