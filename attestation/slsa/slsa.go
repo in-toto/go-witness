@@ -196,8 +196,8 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 				return err
 			}
 
-			p.PbProvenance.RunDetails.Metadata.StartedOn = timestamppb.New(ctx.StartTime())
-			p.PbProvenance.RunDetails.Metadata.FinishedOn = timestamppb.New(ctx.EndTime())
+			p.PbProvenance.RunDetails.Metadata.StartedOn = timestamppb.New(attestor.StartTime)
+			p.PbProvenance.RunDetails.Metadata.FinishedOn = timestamppb.New(attestor.EndTime)
 
 		// Product Attestors
 		case product.ProductName:

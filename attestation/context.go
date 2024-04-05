@@ -93,10 +93,6 @@ type AttestationContext struct {
 	products           map[string]Product
 	materials          map[string]cryptoutil.DigestSet
 	stepName           string
-	// startTime is the time that the attestation process started
-	startTime time.Time
-	// endTime is the time that the attestation process ended (except PostProductRunType, as this runs after the fact)
-	endTime time.Time
 }
 
 type Product struct {
@@ -142,12 +138,7 @@ func (ctx *AttestationContext) RunAttestors() error {
 	}
 
 	order := runTypeOrder()
-	ctx.startTime = time.Now()
 	for _, k := range order {
-		// We want to set the endTime before the PostProduct attestors run, as some (e.g., SLSA) needs to know the endTime.
-		if k == PostProductRunType {
-			ctx.endTime = time.Now()
-		}
 		log.Debugf("Starting %s attestors...", k.String())
 		for _, att := range attestors[k] {
 			log.Infof("Starting %v attestor...", att.Name())
@@ -222,14 +213,6 @@ func (ctx *AttestationContext) Products() map[string]Product {
 
 func (ctx *AttestationContext) StepName() string {
 	return ctx.stepName
-}
-
-func (ctx *AttestationContext) StartTime() time.Time {
-	return ctx.startTime
-}
-
-func (ctx *AttestationContext) EndTime() time.Time {
-	return ctx.endTime
 }
 
 func (ctx *AttestationContext) addMaterials(materialer Materialer) {
