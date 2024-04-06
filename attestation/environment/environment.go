@@ -33,6 +33,7 @@ const (
 // doesn't implement the expected interfaces.
 var (
 	_ attestation.Attestor = &Attestor{}
+	_ EnvironmentAttestor  = &Attestor{}
 )
 
 type EnvironmentAttestor interface {
@@ -108,6 +109,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	})
 
 	return nil
+}
+
+func (a *Attestor) Data() *Attestor {
+	return a
 }
 
 // splitVariable splits a string representing an environment variable in the format of

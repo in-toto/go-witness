@@ -63,7 +63,6 @@ type RunResult struct {
 	AttestorName   string
 }
 
-// Should this be deprecated?
 // Deprecated: Use RunWithExports instead
 func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResult, error) {
 	results, err := run(stepName, signer, opts)
@@ -107,7 +106,6 @@ func run(stepName string, signer cryptoutil.Signer, opts []RunOption) ([]RunResu
 		if r.Error != nil {
 			errs = append(errs, r.Error)
 		} else {
-			// TODO: Add Exporter interface to attestors
 			if _, ok := r.Attestor.(attestation.Exporter); ok {
 				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
 					envelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))

@@ -73,10 +73,10 @@ func init() {
 	})
 }
 
-// ErrNotGitlab is an error type that indicates the environment is not a github ci job.
+// ErrNotGitHub is an error type that indicates the environment is not a github ci job.
 type ErrNotGitHub struct{}
 
-// Error returns the error message for ErrNotGitlab.
+// Error returns the error message for ErrNotGitHub.
 func (e ErrNotGitHub) Error() string {
 	return "not in a github ci job"
 }
