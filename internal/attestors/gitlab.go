@@ -17,6 +17,7 @@ package attestors
 import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/gitlab"
+	"github.com/in-toto/go-witness/attestation/jwt"
 	"github.com/in-toto/go-witness/cryptoutil"
 )
 
@@ -25,11 +26,12 @@ var (
 )
 
 type TestGitLabAttestor struct {
-	gitlabAtt gitlab.GitLabAttestor
+	gitlabAtt gitlab.Attestor
 }
 
-func (t *TestGitLabAttestor) New() *TestGitLabAttestor {
-	att := &gitlab.Attestor{}
+func NewTestGitLabAttestor() *TestGitLabAttestor {
+	att := gitlab.Attestor{}
+	att.JWT = jwt.New()
 	return &TestGitLabAttestor{gitlabAtt: att}
 }
 
@@ -47,6 +49,10 @@ func (t *TestGitLabAttestor) RunType() attestation.RunType {
 
 func (t *TestGitLabAttestor) Attest(ctx *attestation.AttestationContext) error {
 	return nil
+}
+
+func (t *TestGitLabAttestor) Data() *gitlab.Attestor {
+	return &t.gitlabAtt
 }
 
 func (t *TestGitLabAttestor) Subjects() map[string]cryptoutil.DigestSet {

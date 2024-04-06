@@ -35,6 +35,15 @@ var (
 	_ attestation.Attestor = &Attestor{}
 )
 
+type EnvironmentAttestor interface {
+	// Attestor
+	Name() string
+	Type() string
+	RunType() attestation.RunType
+	Attest(ctx *attestation.AttestationContext) error
+	Data() *Attestor
+}
+
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
