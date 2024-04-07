@@ -25,12 +25,14 @@ var (
 )
 
 type TestMaterialAttestor struct {
-	matAtt material.MaterialAttestor
+	matAtt    *material.Attestor
+	materials map[string]cryptoutil.DigestSet
 }
 
 func NewTestMaterialAttestor() *TestMaterialAttestor {
 	att := material.New()
-	return &TestMaterialAttestor{matAtt: att}
+	mat := make(map[string]cryptoutil.DigestSet)
+	return &TestMaterialAttestor{matAtt: att, materials: mat}
 }
 
 func (t *TestMaterialAttestor) Name() string {
@@ -50,5 +52,9 @@ func (t *TestMaterialAttestor) Attest(ctx *attestation.AttestationContext) error
 }
 
 func (t *TestMaterialAttestor) Materials() map[string]cryptoutil.DigestSet {
-	return nil
+	return t.materials
+}
+
+func (t *TestMaterialAttestor) SetMaterials(mats map[string]cryptoutil.DigestSet) {
+	t.materials = mats
 }
