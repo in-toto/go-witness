@@ -31,6 +31,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/oci"
 	"github.com/in-toto/go-witness/attestation/product"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -208,6 +209,11 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 				maps.Copy(p.subjects, attestor.Attestor.(attestation.Subjecter).Subjects())
 			}
 		}
+	}
+
+	// NOTE: We want to warn users that they can use the github and gitlab attestors to enrich their provenance
+	if p.PbProvenance.RunDetails.Builder.Id == DefaultBuilderId {
+		log.Warn("No build system attestor invoked. Consider using github or gitlab attestors (if appropriate) to enrich your SLSA provenance")
 	}
 
 	var err error
