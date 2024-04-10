@@ -33,7 +33,17 @@ const (
 // doesn't implement the expected interfaces.
 var (
 	_ attestation.Attestor = &Attestor{}
+	_ EnvironmentAttestor  = &Attestor{}
 )
+
+type EnvironmentAttestor interface {
+	// Attestor
+	Name() string
+	Type() string
+	RunType() attestation.RunType
+	Attest(ctx *attestation.AttestationContext) error
+	Data() *Attestor
+}
 
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
@@ -99,6 +109,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	})
 
 	return nil
+}
+
+func (a *Attestor) Data() *Attestor {
+	return a
 }
 
 // splitVariable splits a string representing an environment variable in the format of

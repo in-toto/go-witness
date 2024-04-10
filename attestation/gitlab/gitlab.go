@@ -47,6 +47,7 @@ type GitLabAttestor interface {
 	Type() string
 	RunType() attestation.RunType
 	Attest(ctx *attestation.AttestationContext) error
+	Data() *Attestor
 
 	// Subjecter
 	Subjects() map[string]cryptoutil.DigestSet
@@ -129,6 +130,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.CIHost = os.Getenv("CI_SERVER_HOST")
 
 	return nil
+}
+
+func (a *Attestor) Data() *Attestor {
+	return a
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {

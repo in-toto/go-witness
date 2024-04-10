@@ -39,6 +39,7 @@ var (
 	_ attestation.Attestor   = &Attestor{}
 	_ attestation.Subjecter  = &Attestor{}
 	_ attestation.BackReffer = &Attestor{}
+	_ GitAttestor            = &Attestor{}
 )
 
 type GitAttestor interface {
@@ -241,6 +242,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	return nil
+}
+
+func (a *Attestor) Data() *Attestor {
+	return a
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {

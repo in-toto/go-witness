@@ -32,7 +32,6 @@ type TestGitHubAttestor struct {
 func NewTestGitHubAttestor() *TestGitHubAttestor {
 	att := github.New()
 	att.JWT = jwt.New()
-	att.JWT.Claims["sha"] = "sha123abc"
 	return &TestGitHubAttestor{githubAtt: *att}
 }
 

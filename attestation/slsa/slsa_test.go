@@ -15,11 +15,15 @@
 package slsa
 
 import (
+	"bytes"
+	"crypto"
+	"encoding/json"
 	"testing"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/internal/attestors"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestName(t *testing.T) {
@@ -61,7 +65,7 @@ func TestExport(t *testing.T) {
 
 func TestUnmarshalJSON(t *testing.T) {
 	provenance := New()
-	if err := provenance.UnmarshalJSON([]byte(testProvenanceJSON)); err != nil {
+	if err := provenance.UnmarshalJSON([]byte(testGHProvJSON)); err != nil {
 		t.Errorf("unexpected error: %s", err)
 	}
 }
@@ -75,7 +79,7 @@ func TestUnmarshalBadJSON(t *testing.T) {
 
 func TestMarshalJSON(t *testing.T) {
 	provenance := New()
-	if err := provenance.UnmarshalJSON([]byte(testProvenanceJSON)); err != nil {
+	if err := provenance.UnmarshalJSON([]byte(testGHProvJSON)); err != nil {
 		t.Errorf("unexpected error: %s", err)
 	}
 
@@ -86,21 +90,89 @@ func TestMarshalJSON(t *testing.T) {
 }
 
 func TestAttest(t *testing.T) {
-	g := attestors.NewTestGitAttestor()
-	gh := attestors.NewTestGitHubAttestor()
-	m := attestors.NewTestMaterialAttestor()
-	c := attestors.NewTestCommandRunAttestor()
-	p := attestors.NewTestProductAttestor()
-	s := New()
-
-	ctx, err := attestation.NewContext("test", []attestation.Attestor{g, gh, m, c, p, s})
-	if err != nil {
-		t.Errorf("error creating attestation context: %s", err)
+	// Setup Env
+	e := attestors.NewTestEnvironmentAttestor()
+	e.Data().Variables = map[string]string{
+		"SHELL":        "/bin/zsh",
+		"TERM":         "xterm-256color",
+		"TERM_PROGRAM": "iTerm.app",
 	}
 
-	err = ctx.RunAttestors()
-	if err != nil {
-		t.Errorf("error attesting: %s", err.Error())
+	// Setup Git
+	g := attestors.NewTestGitAttestor()
+	g.Data().CommitDigest = cryptoutil.DigestSet{
+		{Hash: crypto.SHA1, GitOID: false}: "abc123",
+	}
+	g.Data().Remotes = []string{"git@github.com:in-toto/witness.git"}
+
+	// Setup GitHub
+	gh := attestors.NewTestGitHubAttestor()
+	gh.Data().JWT.Claims["sha"] = "abc123"
+	gh.Data().PipelineUrl = "https://github.com/testifysec/swf/actions/runs/7879307166"
+
+	// Setup GitLab
+	gl := attestors.NewTestGitLabAttestor()
+	gl.Data().JWT.Claims["sha"] = "abc123"
+	gl.Data().PipelineUrl = "https://github.com/testifysec/swf/actions/runs/7879307166"
+
+	// Setup Materials
+	m := attestors.NewTestMaterialAttestor()
+
+	// Setup CommandRun
+	c := attestors.NewTestCommandRunAttestor()
+	c.Data().Cmd = []string{"touch", "test.txt"}
+
+	// Setup Products
+	p := attestors.NewTestProductAttestor()
+
+	// Setup OCI
+	o := attestors.NewTestOCIAttestor()
+
+	var tests = []struct {
+		name         string
+		attestors    []attestation.Attestor
+		expectedJson string
+	}{
+		{"github", []attestation.Attestor{e, g, gh, m, c, p, o}, testGHProvJSON},
+		{"gitlab", []attestation.Attestor{e, g, gl, m, c, p, o}, testGLProvJSON},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Logf("Running test %s", test.name)
+			s := New()
+
+			ctx, err := attestation.NewContext("test", append(test.attestors, s))
+			if err != nil {
+				t.Errorf("error creating attestation context: %s", err)
+			}
+
+			err = ctx.RunAttestors()
+			if err != nil {
+				t.Errorf("error attesting: %s", err.Error())
+			}
+
+			// TODO: We don't have a way to mock out times on attestor runs
+			// Set attestor times manually to match testProvenanceJSON
+			s.PbProvenance.RunDetails.Metadata.StartedOn = &timestamppb.Timestamp{
+				Seconds: 1711199861,
+				Nanos:   560152000,
+			}
+			s.PbProvenance.RunDetails.Metadata.FinishedOn = &timestamppb.Timestamp{
+				Seconds: 1711199861,
+				Nanos:   560152000,
+			}
+
+			var prov []byte
+			if prov, err = json.MarshalIndent(s, "", "  "); err != nil {
+				t.Errorf("unexpected error: %s", err)
+			}
+
+			testJson := []byte(test.expectedJson)
+			if !bytes.Equal(prov, testJson) {
+				t.Errorf("expected \n%s\n, got \n%s\n", testJson, prov)
+			}
+		})
 	}
 }
 
@@ -130,7 +202,7 @@ func TestSubjects(t *testing.T) {
 
 func setupProvenance(t *testing.T) *Provenance {
 	provenance := New()
-	if err := provenance.UnmarshalJSON([]byte(testProvenanceJSON)); err != nil {
+	if err := provenance.UnmarshalJSON([]byte(testGHProvJSON)); err != nil {
 		t.Errorf("unexpected error: %s", err)
 	}
 
@@ -165,61 +237,82 @@ func TestRegistration(t *testing.T) {
 
 }
 
-const testProvenanceJSON = `
-{
-	"type": "https://slsa.dev/provenance/v1.0",
-	"attestation": {
-	  "build_definition": {
-		"build_type": "https://witness.dev/slsa-build@v0.1",
-		"external_parameters": {
-		  "command": "touch test.txt"
-		},
-		"internal_parameters": {
-		  "env": {
-			"COLORFGBG": "7;0",
-			"COLORTERM": "truecolor",
-			"COMMAND_MODE": "unix2003",
-			"SHELL": "/bin/zsh",
-			"SHLVL": "1",
-			"TERM": "xterm-256color",
-			"TERM_PROGRAM": "iTerm.app",
-			"TERM_PROGRAM_VERSION": "3.4.23",
-			"TERM_SESSION_ID": "w0t1p0:8939AC72-EB13-417F-9500-DD193C48127E",
-			"TMPDIR": "/var/folders/qy/kpkfp9r140s08yk29dccpx540000gn/T/",
-			"XPC_FLAGS": "0x0",
-			"XPC_SERVICE_NAME": "0",
-			"_": "/opt/homebrew/bin/go",
-			"_P9K_SSH_TTY": "/dev/ttys005",
-			"_P9K_TTY": "/dev/ttys005",
-			"__CFBundleIdentifier": "com.googlecode.iterm2",
-			"__CF_USER_TEXT_ENCODING": "0x1F5:0x0:0x0"
-		  }
-		},
-		"resolved_dependencies": [
-		  {
-			"name": "git@github.com:in-toto/witness.git",
-			"digest": {
-			  "sha1": "51d0fa68cb991b7d3979df491e05fbf7765d6d1c"
-			}
-		  }
-		]
-	  },
-	  "run_details": {
-		"builder": {
-		  "id": "https://witness.dev/witness-github-action@v0.1"
-		},
-		"metadata": {
-		  "invocation_id": "gha-workflow-ref",
-		  "started_on": {
-			"seconds": 1711199861,
-			"nanos": 560152000
-		  },
-		  "finished_on": {
-			"seconds": 1711199861,
-			"nanos": 560152000
-		  }
-		}
-	  }
-	}
-}
-`
+const testGHProvJSON = `{
+  "build_definition": {
+    "build_type": "https://witness.dev/slsa-build@v0.1",
+    "external_parameters": {
+      "command": "touch test.txt"
+    },
+    "internal_parameters": {
+      "env": {
+        "SHELL": "/bin/zsh",
+        "TERM": "xterm-256color",
+        "TERM_PROGRAM": "iTerm.app"
+      }
+    },
+    "resolved_dependencies": [
+      {
+        "name": "git@github.com:in-toto/witness.git",
+        "digest": {
+          "sha1": "abc123"
+        }
+      }
+    ]
+  },
+  "run_details": {
+    "builder": {
+      "id": "https://witness.dev/witness-github-action-builder@v0.1"
+    },
+    "metadata": {
+      "invocation_id": "https://github.com/testifysec/swf/actions/runs/7879307166",
+      "started_on": {
+        "seconds": 1711199861,
+        "nanos": 560152000
+      },
+      "finished_on": {
+        "seconds": 1711199861,
+        "nanos": 560152000
+      }
+    }
+  }
+}`
+
+const testGLProvJSON = `{
+  "build_definition": {
+    "build_type": "https://witness.dev/slsa-build@v0.1",
+    "external_parameters": {
+      "command": "touch test.txt"
+    },
+    "internal_parameters": {
+      "env": {
+        "SHELL": "/bin/zsh",
+        "TERM": "xterm-256color",
+        "TERM_PROGRAM": "iTerm.app"
+      }
+    },
+    "resolved_dependencies": [
+      {
+        "name": "git@github.com:in-toto/witness.git",
+        "digest": {
+          "sha1": "abc123"
+        }
+      }
+    ]
+  },
+  "run_details": {
+    "builder": {
+      "id": "https://witness.dev/witness-gitlab-component-builder@v0.1"
+    },
+    "metadata": {
+      "invocation_id": "https://github.com/testifysec/swf/actions/runs/7879307166",
+      "started_on": {
+        "seconds": 1711199861,
+        "nanos": 560152000
+      },
+      "finished_on": {
+        "seconds": 1711199861,
+        "nanos": 560152000
+      }
+    }
+  }
+}`

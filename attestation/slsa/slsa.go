@@ -85,6 +85,7 @@ func WithExport(export bool) Option {
 type Provenance struct {
 	PbProvenance prov.Provenance
 	products     map[string]attestation.Product
+	subjects     map[string]cryptoutil.DigestSet
 	export       bool
 }
 
@@ -123,7 +124,7 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 		switch name := attestor.Attestor.Name(); name {
 		// Pre-material Attestors
 		case environment.Name:
-			envs := attestor.Attestor.(*environment.Attestor).Variables
+			envs := attestor.Attestor.(environment.EnvironmentAttestor).Data().Variables
 			pbEnvs := make(map[string]interface{}, len(envs))
 			for name, value := range envs {
 				pbEnvs[name] = value
@@ -152,26 +153,12 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 			digest := make(map[string]string)
 			digest["sha1"] = gh.Data().JWT.Claims["sha"].(string)
 
-			p.PbProvenance.BuildDefinition.ResolvedDependencies = append(
-				p.PbProvenance.BuildDefinition.ResolvedDependencies,
-				&v1.ResourceDescriptor{
-					Name:   gh.Data().ProjectUrl,
-					Digest: digest,
-				})
-
 		case gitlab.Name:
-			gl := attestor.Attestor.(*gitlab.Attestor)
+			gl := attestor.Attestor.(gitlab.GitLabAttestor)
 			p.PbProvenance.RunDetails.Builder.Id = GLCBuilderId
-			p.PbProvenance.RunDetails.Metadata.InvocationId = gl.PipelineUrl
+			p.PbProvenance.RunDetails.Metadata.InvocationId = gl.Data().PipelineUrl
 			digest := make(map[string]string)
-			digest["sha1"] = gl.JWT.Claims["sha"].(string)
-
-			p.PbProvenance.BuildDefinition.ResolvedDependencies = append(
-				p.PbProvenance.BuildDefinition.ResolvedDependencies,
-				&v1.ResourceDescriptor{
-					Name:   gl.ProjectUrl,
-					Digest: digest,
-				})
+			digest["sha1"] = gl.Data().JWT.Claims["sha"].(string)
 
 		// Material Attestors
 		case material.Name:
@@ -207,9 +194,19 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 				maps.Copy(p.products, ctx.Products())
 			}
 
+			if p.subjects == nil {
+				p.subjects = attestor.Attestor.(attestation.Subjecter).Subjects()
+			} else {
+				maps.Copy(p.subjects, attestor.Attestor.(attestation.Subjecter).Subjects())
+			}
+
 		// Post Attestors
 		case oci.Name:
-			maps.Copy(p.products, attestor.Attestor.(product.ProductAttestor).Products())
+			if p.subjects == nil {
+				p.subjects = attestor.Attestor.(attestation.Subjecter).Subjects()
+			} else {
+				maps.Copy(p.subjects, attestor.Attestor.(attestation.Subjecter).Subjects())
+			}
 		}
 	}
 

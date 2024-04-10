@@ -89,9 +89,9 @@ func (l *Link) Attest(ctx *attestation.AttestationContext) error {
 	for _, attestor := range ctx.CompletedAttestors() {
 		switch name := attestor.Attestor.Name(); name {
 		case commandrun.Name:
-			l.PbLink.Command = attestor.Attestor.(*commandrun.CommandRun).Cmd
+			l.PbLink.Command = attestor.Attestor.(commandrun.CommandRunAttestor).Data().Cmd
 		case material.Name:
-			mats := attestor.Attestor.(*material.Attestor).Materials()
+			mats := attestor.Attestor.(material.MaterialAttestor).Materials()
 			for name, digestSet := range mats {
 				digests, _ := digestSet.ToNameMap()
 				l.PbLink.Materials = append(l.PbLink.Materials, &v1.ResourceDescriptor{
@@ -100,7 +100,7 @@ func (l *Link) Attest(ctx *attestation.AttestationContext) error {
 				})
 			}
 		case environment.Name:
-			envs := attestor.Attestor.(*environment.Attestor).Variables
+			envs := attestor.Attestor.(environment.EnvironmentAttestor).Data().Variables
 			pbEnvs := make(map[string]interface{}, len(envs))
 			for name, value := range envs {
 				pbEnvs[name] = value
@@ -112,7 +112,7 @@ func (l *Link) Attest(ctx *attestation.AttestationContext) error {
 				return err
 			}
 		case product.ProductName:
-			l.products = attestor.Attestor.(*product.Attestor).Products()
+			l.products = attestor.Attestor.(product.ProductAttestor).Products()
 		}
 	}
 	return nil
