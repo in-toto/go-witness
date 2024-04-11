@@ -1,4 +1,4 @@
-// Copyright 2021 The Witness Contributors
+// Copyright 2021-2024 The Witness Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -101,6 +101,7 @@ deny[msg] {
 				Key:   pubKeyPem2,
 			},
 		},
+		Name: "test-v1",
 		Steps: map[string]Step{
 			"step1": {
 				Name: "step1",

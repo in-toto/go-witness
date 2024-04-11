@@ -1,4 +1,4 @@
-// Copyright 2021 The Witness Contributors
+// Copyright 2021-2024 The Witness Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ const PolicyPredicate = "https://witness.testifysec.com/policy/v0.1"
 // +kubebuilder:object:generate=true
 type Policy struct {
 	Expires              metav1.Time          `json:"expires"`
+	Name                 string               `json:"name,omitempty"`
 	Roots                map[string]Root      `json:"roots,omitempty"`
 	TimestampAuthorities map[string]Root      `json:"timestampauthorities,omitempty"`
 	PublicKeys           map[string]PublicKey `json:"publickeys,omitempty"`
