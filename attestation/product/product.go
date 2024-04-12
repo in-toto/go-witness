@@ -31,9 +31,9 @@ import (
 )
 
 const (
-	ProductName    = "product"
-	ProductType    = "https://witness.dev/attestations/product/v0.1"
-	ProductRunType = attestation.ProductRunType
+	Name    = "product"
+	Type    = "https://witness.dev/attestations/product/v0.2"
+	RunType = attestation.ProductRunType
 
 	defaultIncludeGlob = "*"
 	defaultExcludeGlob = ""
@@ -117,7 +117,21 @@ type Attestor struct {
 	compiledExcludeGlob glob.Glob
 }
 
+<<<<<<< HEAD
 func fromDigestMap(workingDir string, digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
+=======
+type attestorJson struct {
+	Products map[string]attestation.Product `json:"products"`
+	Configuration attestorConfiguration `json:"configuration"`
+}
+
+type attestorConfiguration struct {
+	IncludeGlob         string `json:"includeGlob"`
+	ExcludeGlob         string `json:"excludeGlob"`
+}
+
+func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
+>>>>>>> 3ae6278 (fix: Adjust attestation output to include attestor configuration.)
 	products := make(map[string]attestation.Product)
 	for fileName, digestSet := range digestMap {
 		filePath := filepath.Join(workingDir, fileName)
@@ -209,16 +223,28 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func (a *Attestor) MarshalJSON() ([]byte, error) {
-	return json.Marshal(a.products)
+	output := attestorJson{
+		Products: a.products,
+		Configuration: attestorConfiguration{
+			IncludeGlob: a.includeGlob,
+			ExcludeGlob: a.excludeGlob,
+		},
+	}
+
+	return json.Marshal(output)
 }
 
 func (a *Attestor) UnmarshalJSON(data []byte) error {
-	prods := make(map[string]attestation.Product)
-	if err := json.Unmarshal(data, &prods); err != nil {
+	attestation := attestorJson{
+		Products: make(map[string]attestation.Product),
+	}
+	if err := json.Unmarshal(data, &attestation); err != nil {
 		return err
 	}
 
-	a.products = prods
+	a.products = attestation.Products
+	a.includeGlob = attestation.Configuration.IncludeGlob
+	a.excludeGlob = attestation.Configuration.ExcludeGlob
 	return nil
 }
 
