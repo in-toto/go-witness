@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 
 	"github.com/gobwas/glob"
+	"github.com/gobwas/glob/match"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 )
@@ -94,11 +95,16 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 // if it is not equal to the existing artifact, return true, otherwise return false
 func shouldRecord(path string, artifact cryptoutil.DigestSet, baseArtifacts map[string]cryptoutil.DigestSet, includeGlob glob.Glob, excludeGlob glob.Glob) bool {
 
+	superInclude := false
+	if _, ok := includeGlob.(match.Super); ok {
+		superInclude = true
+	}
+
 	includePath := true
 	if excludeGlob != nil && excludeGlob.Match(path) {
 		includePath = false
 	}
-	if includeGlob != nil && includeGlob.Match(path) {
+	if !(superInclude && !includePath) && includeGlob != nil && includeGlob.Match(path) {
 		includePath = true
 	}
 
