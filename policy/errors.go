@@ -89,7 +89,7 @@ type ErrPolicyDenied struct {
 }
 
 func (e ErrPolicyDenied) Error() string {
-	return fmt.Sprintf("policy was denied due to:\n%v", strings.Join(e.Reasons, "\n  -"))
+	return fmt.Sprintf("policy was denied due to: %v", strings.Join(e.Reasons, ", "))
 }
 
 type ErrConstraintCheckFailed struct {

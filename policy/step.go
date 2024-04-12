@@ -20,6 +20,7 @@ import (
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/source"
 )
 
@@ -55,8 +56,34 @@ type RegoPolicy struct {
 // Rejected contains the rejected collections and the error that caused them to be rejected.
 type StepResult struct {
 	Step     string
-	Passed   []source.VerifiedCollection
+	Passed   []source.CollectionVerificationResult
 	Rejected []RejectedCollection
+}
+
+func (r StepResult) Analyze() bool {
+	var pass bool
+	if len(r.Passed) > 0 && len(r.Rejected) == 0 {
+		pass = true
+	}
+
+	for _, coll := range r.Passed {
+		// we don't fail on warnings so we process these under debug logs
+		if len(coll.Warnings) > 0 {
+			for _, warn := range coll.Warnings {
+				log.Debug("Warning: Step: %s, Collection: %s, Warning: %s", r.Step, coll.Collection.Name, warn)
+			}
+		}
+
+		// Want to ensure that undiscovered errors aren't lurking in the passed collections
+		if len(coll.Errors) > 0 {
+			for _, err := range coll.Errors {
+				pass = false
+				log.Errorf("Unexpected Error in Passed Collection: Step: %s, Collection: %s, Error: %s", r.Step, coll.Collection.Name, err)
+			}
+		}
+	}
+
+	return pass
 }
 
 func (r StepResult) HasErrors() bool {
@@ -77,7 +104,7 @@ func (r StepResult) Error() string {
 }
 
 type RejectedCollection struct {
-	Collection source.VerifiedCollection
+	Collection source.CollectionVerificationResult
 	Reason     error
 }
 
@@ -109,47 +136,50 @@ func (f Functionary) Validate(verifier cryptoutil.Verifier, trustBundles map[str
 
 // validateAttestations will test each collection against to ensure the expected attestations
 // appear in the collection as well as that any rego policies pass for the step.
-func (s Step) validateAttestations(verifiedCollections []source.VerifiedCollection) StepResult {
+func (s Step) validateAttestations(collectionResults []source.CollectionVerificationResult) StepResult {
 	result := StepResult{Step: s.Name}
-	if len(verifiedCollections) <= 0 {
+	if len(collectionResults) <= 0 {
 		return result
 	}
 
-	for _, collection := range verifiedCollections {
+	for _, collection := range collectionResults {
 		found := make(map[string]attestation.Attestor)
+		reasons := make([]string, 0)
+		passed := true
+		if len(collection.Errors) > 0 {
+			passed = false
+			reasons = append(reasons, fmt.Errorf("collection verification failed: %v", collection.Errors).Error())
+		}
+
 		for _, attestation := range collection.Collection.Attestations {
 			found[attestation.Type] = attestation.Attestation
 		}
 
-		passed := true
 		for _, expected := range s.Attestations {
 			attestor, ok := found[expected.Type]
 			if !ok {
-				result.Rejected = append(result.Rejected, RejectedCollection{
-					Collection: collection,
-					Reason: ErrMissingAttestation{
-						Step:        s.Name,
-						Attestation: expected.Type,
-					},
-				})
-
 				passed = false
-				break
+				reasons = append(reasons, ErrMissingAttestation{
+					Step:        s.Name,
+					Attestation: expected.Type,
+				}.Error())
 			}
 
 			if err := EvaluateRegoPolicy(attestor, expected.RegoPolicies); err != nil {
-				result.Rejected = append(result.Rejected, RejectedCollection{
-					Collection: collection,
-					Reason:     err,
-				})
-
 				passed = false
-				break
+				reasons = append(reasons, err.Error())
 			}
 		}
 
 		if passed {
 			result.Passed = append(result.Passed, collection)
+		} else {
+			r := strings.Join(reasons, ",\n - ")
+			reason := fmt.Sprintf("collection validation failed:\n - %s", r)
+			result.Rejected = append(result.Rejected, RejectedCollection{
+				Collection: collection,
+				Reason:     fmt.Errorf("%s", reason),
+			})
 		}
 	}
 

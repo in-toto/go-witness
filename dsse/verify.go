@@ -90,6 +90,7 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 
 	matchingSigFound := false
 	passedVerifiers := make([]PassedVerifier, 0)
+	failedVerifiers := make([]PassedVerifier, 0)
 	for _, sig := range e.Signatures {
 		if sig.Certificate != nil && len(sig.Certificate) > 0 {
 			cert, err := cryptoutil.TryParseCertificate(sig.Certificate)
@@ -113,11 +114,14 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 					matchingSigFound = true
 					passedVerifiers = append(passedVerifiers, PassedVerifier{Verifier: verifier})
 				} else {
+					failedVerifiers = append(failedVerifiers, PassedVerifier{Verifier: verifier})
 					log.Debugf("failed to verify with timestamp verifier: %w", err)
 				}
 			} else {
 				var passedVerifier cryptoutil.Verifier
+				failed := []cryptoutil.Verifier{}
 				passedTimestampVerifiers := []timestamp.TimestampVerifier{}
+				failedTimestampVerifiers := []timestamp.TimestampVerifier{}
 
 				for _, timestampVerifier := range options.timestampVerifiers {
 					for _, sigTimestamp := range sig.Timestamps {
@@ -127,9 +131,12 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 						}
 
 						if verifier, err := verifyX509Time(cert, sigIntermediates, options.roots, pae, sig.Signature, timestamp); err == nil {
+							// NOTE: do we not want to save all the passed verifiers?
 							passedVerifier = verifier
 							passedTimestampVerifiers = append(passedTimestampVerifiers, timestampVerifier)
 						} else {
+							failed = append(failed, verifier)
+							failedTimestampVerifiers = append(failedTimestampVerifiers, timestampVerifier)
 							log.Debugf("failed to verify with timestamp verifier: %w", err)
 						}
 
@@ -142,6 +149,14 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 						Verifier:                 passedVerifier,
 						PassedTimestampVerifiers: passedTimestampVerifiers,
 					})
+				} else {
+					matchingSigFound = false
+					for _, v := range failed {
+						failedVerifiers = append(failedVerifiers, PassedVerifier{
+							Verifier:                 v,
+							PassedTimestampVerifiers: failedTimestampVerifiers,
+						})
+					}
 				}
 			}
 		}
@@ -151,13 +166,15 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 				if err := verifier.Verify(bytes.NewReader(pae), sig.Signature); err == nil {
 					passedVerifiers = append(passedVerifiers, PassedVerifier{Verifier: verifier})
 					matchingSigFound = true
+				} else {
+					failedVerifiers = append(failedVerifiers, PassedVerifier{Verifier: verifier})
 				}
 			}
 		}
 	}
 
 	if !matchingSigFound {
-		return nil, ErrNoMatchingSigs{}
+		return nil, ErrNoMatchingSigs{Verifiers: failedVerifiers}
 	}
 
 	if len(passedVerifiers) < options.threshold {

@@ -151,7 +151,7 @@ deny[msg] {
 		context.Background(),
 		WithSubjectDigests([]string{"dummy"}),
 		WithVerifiedSource(
-			newDummyVerifiedSourcer([]source.VerifiedCollection{
+			newDummyVerifiedSourcer([]source.CollectionVerificationResult{
 				{
 					Verifiers: []cryptoutil.Verifier{verifier},
 					CollectionEnvelope: source.CollectionEnvelope{
@@ -169,7 +169,7 @@ deny[msg] {
 		context.Background(),
 		WithSubjectDigests([]string{"dummy"}),
 		WithVerifiedSource(
-			newDummyVerifiedSourcer([]source.VerifiedCollection{
+			newDummyVerifiedSourcer([]source.CollectionVerificationResult{
 				{
 					Verifiers: []cryptoutil.Verifier{},
 					CollectionEnvelope: source.CollectionEnvelope{
@@ -266,7 +266,7 @@ func TestArtifacts(t *testing.T) {
 	_, err = policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{dummySha}),
-		WithVerifiedSource(newDummyVerifiedSourcer([]source.VerifiedCollection{
+		WithVerifiedSource(newDummyVerifiedSourcer([]source.CollectionVerificationResult{
 			{
 				Verifiers: []cryptoutil.Verifier{verifier},
 				CollectionEnvelope: source.CollectionEnvelope{
@@ -305,7 +305,7 @@ func TestArtifacts(t *testing.T) {
 	_, err = policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{dummySha}),
-		WithVerifiedSource(newDummyVerifiedSourcer([]source.VerifiedCollection{
+		WithVerifiedSource(newDummyVerifiedSourcer([]source.CollectionVerificationResult{
 			{
 				Verifiers: []cryptoutil.Verifier{verifier},
 				CollectionEnvelope: source.CollectionEnvelope{
@@ -377,14 +377,14 @@ func (m DummyProducer) Products() map[string]attestation.Product {
 }
 
 type dummyVerifiedSourcer struct {
-	verifiedCollections []source.VerifiedCollection
+	verifiedCollections []source.CollectionVerificationResult
 }
 
-func newDummyVerifiedSourcer(verifiedCollections []source.VerifiedCollection) *dummyVerifiedSourcer {
+func newDummyVerifiedSourcer(verifiedCollections []source.CollectionVerificationResult) *dummyVerifiedSourcer {
 	return &dummyVerifiedSourcer{verifiedCollections}
 }
 
-func (s *dummyVerifiedSourcer) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]source.VerifiedCollection, error) {
+func (s *dummyVerifiedSourcer) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]source.CollectionVerificationResult, error) {
 	return s.verifiedCollections, nil
 }
 
