@@ -32,7 +32,7 @@ import (
 
 const (
 	Name    = "product"
-	Type    = "https://witness.dev/attestations/product/v0.1"
+	Type    = "https://witness.dev/attestations/product/v0.2"
 	RunType = attestation.ProductRunType
 
 	defaultIncludeGlob = "*"
@@ -101,6 +101,16 @@ type Attestor struct {
 	compiledIncludeGlob glob.Glob
 	excludeGlob         string
 	compiledExcludeGlob glob.Glob
+}
+
+type attestorJson struct {
+	Products map[string]attestation.Product `json:"products"`
+	Configuration attestorConfiguration `json:"configuration"`
+}
+
+type attestorConfiguration struct {
+	IncludeGlob         string `json:"includeGlob"`
+	ExcludeGlob         string `json:"excludeGlob"`
 }
 
 func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
@@ -174,16 +184,28 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func (a *Attestor) MarshalJSON() ([]byte, error) {
-	return json.Marshal(a.products)
+	output := attestorJson{
+		Products: a.products,
+		Configuration: attestorConfiguration{
+			IncludeGlob: a.includeGlob,
+			ExcludeGlob: a.excludeGlob,
+		},
+	}
+
+	return json.Marshal(output)
 }
 
 func (a *Attestor) UnmarshalJSON(data []byte) error {
-	prods := make(map[string]attestation.Product)
-	if err := json.Unmarshal(data, &prods); err != nil {
+	attestation := attestorJson{
+		Products: make(map[string]attestation.Product),
+	}
+	if err := json.Unmarshal(data, &attestation); err != nil {
 		return err
 	}
 
-	a.products = prods
+	a.products = attestation.Products
+	a.includeGlob = attestation.Configuration.IncludeGlob
+	a.excludeGlob = attestation.Configuration.ExcludeGlob
 	return nil
 }
 
