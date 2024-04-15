@@ -32,9 +32,9 @@ import (
 )
 
 const (
-	Name    = "product"
-	Type    = "https://witness.dev/attestations/product/v0.2"
-	RunType = attestation.ProductRunType
+	ProductName    = "product"
+	ProductType    = "https://witness.dev/attestations/product/v0.2"
+	ProductRunType = attestation.ProductRunType
 
 	defaultIncludeGlob = "*"
 	defaultExcludeGlob = ""
@@ -118,21 +118,17 @@ type Attestor struct {
 	compiledExcludeGlob glob.Glob
 }
 
-<<<<<<< HEAD
-func fromDigestMap(workingDir string, digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
-=======
 type attestorJson struct {
-	Products map[string]attestation.Product `json:"products"`
-	Configuration attestorConfiguration `json:"configuration"`
+	Products      map[string]attestation.Product `json:"products"`
+	Configuration attestorConfiguration          `json:"configuration"`
 }
 
 type attestorConfiguration struct {
-	IncludeGlob         string `json:"includeGlob"`
-	ExcludeGlob         string `json:"excludeGlob"`
+	IncludeGlob string `json:"includeGlob"`
+	ExcludeGlob string `json:"excludeGlob"`
 }
 
-func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
->>>>>>> 3ae6278 (fix: Adjust attestation output to include attestor configuration.)
+func fromDigestMap(workingDir string, digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
 	products := make(map[string]attestation.Product)
 	for fileName, digestSet := range digestMap {
 		filePath := filepath.Join(workingDir, fileName)
