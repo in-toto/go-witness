@@ -16,17 +16,26 @@ package material
 
 import (
 	"encoding/json"
+	"fmt"
 
+	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/file"
 	"github.com/in-toto/go-witness/cryptoutil"
+<<<<<<< HEAD
 	"github.com/invopop/jsonschema"
+=======
+	"github.com/in-toto/go-witness/registry"
+>>>>>>> 4797229 (feat: Add material incl/excl glob)
 )
 
 const (
 	Name    = "material"
-	Type    = "https://witness.dev/attestations/material/v0.1"
+	Type    = "https://witness.dev/attestations/material/v0.2"
 	RunType = attestation.MaterialRunType
+
+	defaultIncludeGlob = "*"
+	defaultExcludeGlob = ""
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -49,15 +58,68 @@ type MaterialAttestor interface {
 }
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
-		return New()
-	})
+	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor { return New() },
+		registry.StringConfigOption(
+			"include-glob",
+			"Pattern to use when recording materials. Files that match this pattern will be included as materials in the material attestation.",
+			defaultIncludeGlob,
+			func(a attestation.Attestor, includeGlob string) (attestation.Attestor, error) {
+				prodAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a material attestor", a)
+				}
+
+				WithIncludeGlob(includeGlob)(prodAttestor)
+				return prodAttestor, nil
+			},
+		),
+		registry.StringConfigOption(
+			"exclude-glob",
+			"Pattern to use when recording materials. Files that match this pattern will be excluded as materials on the material attestation.",
+			defaultExcludeGlob,
+			func(a attestation.Attestor, excludeGlob string) (attestation.Attestor, error) {
+				prodAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a product attestor", a)
+				}
+
+				WithExcludeGlob(excludeGlob)(prodAttestor)
+				return prodAttestor, nil
+			},
+		),
+	)
 }
 
 type Option func(*Attestor)
 
+func WithIncludeGlob(glob string) Option {
+	return func(a *Attestor) {
+		a.includeGlob = glob
+	}
+}
+
+func WithExcludeGlob(glob string) Option {
+	return func(a *Attestor) {
+		a.excludeGlob = glob
+	}
+}
+
 type Attestor struct {
-	materials map[string]cryptoutil.DigestSet
+	materials           map[string]cryptoutil.DigestSet
+	includeGlob         string
+	compiledIncludeGlob glob.Glob
+	excludeGlob         string
+	compiledExcludeGlob glob.Glob
+}
+
+type attestorJson struct {
+	Materials     map[string]cryptoutil.DigestSet `json:"materials"`
+	Configuration attestorConfiguration           `json:"configuration"`
+}
+
+type attestorConfiguration struct {
+	IncludeGlob string `json:"includeGlob"`
+	ExcludeGlob string `json:"excludeGlob"`
 }
 
 func (a *Attestor) Name() string {
@@ -90,7 +152,19 @@ func (a *Attestor) Schema() *jsonschema.Schema {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	materials, err := file.RecordArtifacts(ctx.WorkingDir(), nil, ctx.Hashes(), map[string]struct{}{}, false, map[string]bool{}, nil, nil)
+	compiledIncludeGlob, err := glob.Compile(a.includeGlob)
+	if err != nil {
+		return err
+	}
+	a.compiledIncludeGlob = compiledIncludeGlob
+
+	compiledExcludeGlob, err := glob.Compile(a.excludeGlob)
+	if err != nil {
+		return err
+	}
+	a.compiledExcludeGlob = compiledExcludeGlob
+
+	materials, err := file.RecordArtifacts(ctx.WorkingDir(), nil, ctx.Hashes(), map[string]struct{}{}, false, map[string]bool{}, compiledIncludeGlob, compiledExcludeGlob)
 	if err != nil {
 		return err
 	}
@@ -100,16 +174,29 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func (a *Attestor) MarshalJSON() ([]byte, error) {
-	return json.Marshal(a.materials)
+	output := attestorJson{
+		Materials: a.materials,
+		Configuration: attestorConfiguration{
+			IncludeGlob: a.includeGlob,
+			ExcludeGlob: a.excludeGlob,
+		},
+	}
+
+	return json.Marshal(output)
 }
 
 func (a *Attestor) UnmarshalJSON(data []byte) error {
-	mats := make(map[string]cryptoutil.DigestSet)
-	if err := json.Unmarshal(data, &mats); err != nil {
+	attestation := attestorJson{
+		Materials: make(map[string]cryptoutil.DigestSet),
+	}
+
+	if err := json.Unmarshal(data, &attestation); err != nil {
 		return err
 	}
 
-	a.materials = mats
+	a.materials = attestation.Materials
+	a.includeGlob = attestation.Configuration.IncludeGlob
+	a.excludeGlob = attestation.Configuration.ExcludeGlob
 	return nil
 }
 
