@@ -152,6 +152,12 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 			p.PbProvenance.RunDetails.Builder.Id = GHABuilderId
 			p.PbProvenance.RunDetails.Metadata.InvocationId = gh.Data().PipelineUrl
 			digest := make(map[string]string)
+
+			if gh.Data().JWT == nil {
+				log.Warn("No JWT found in GitHub attestor")
+				continue
+			}
+
 			digest["sha1"] = gh.Data().JWT.Claims["sha"].(string)
 
 		case gitlab.Name:
@@ -159,7 +165,18 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 			p.PbProvenance.RunDetails.Builder.Id = GLCBuilderId
 			p.PbProvenance.RunDetails.Metadata.InvocationId = gl.Data().PipelineUrl
 			digest := make(map[string]string)
-			digest["sha1"] = gl.Data().JWT.Claims["sha"].(string)
+
+			if gl.Data().JWT == nil {
+				log.Warn("No JWT found in GitLab attestor")
+				continue
+			}
+
+			sha, found := gl.Data().JWT.Claims["sha"]
+			if found {
+				digest["sha1"] = sha.(string)
+			} else {
+				log.Warn("No SHA found in GitLab JWT")
+			}
 
 		// Material Attestors
 		case material.Name:

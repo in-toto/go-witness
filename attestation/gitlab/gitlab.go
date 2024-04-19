@@ -107,13 +107,15 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	a.CIServerUrl = os.Getenv("CI_SERVER_URL")
-	jwksUrl := fmt.Sprintf("%s/-/jwks", a.CIServerUrl)
-	jwtString := os.Getenv("CI_JOB_JWT")
+	jwksUrl := fmt.Sprintf("%s/oauth/discovery/keys", a.CIServerUrl)
+	jwtString := os.Getenv("ID_TOKEN")
 	if jwtString != "" {
 		a.JWT = jwt.New(jwt.WithToken(jwtString), jwt.WithJWKSUrl(jwksUrl))
 		if err := a.JWT.Attest(ctx); err != nil {
 			return err
 		}
+	} else {
+		log.Warn("(attestation/gitlab) no jwt token found in environment")
 	}
 
 	a.CIConfigPath = os.Getenv("CI_CONFIG_PATH")
