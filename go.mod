@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/kms v1.15.8
 	github.com/aws/aws-sdk-go-v2 v1.26.1
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
-	github.com/aws/aws-sdk-go-v2/service/kms v1.30.0
+	github.com/aws/aws-sdk-go-v2/service/kms v1.31.0
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
 	github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
@@ -21,10 +21,10 @@ require (
 	github.com/sigstore/fulcio v1.4.5
 	github.com/spiffe/go-spiffe/v2 v2.1.7
 	github.com/stretchr/testify v1.9.0
-	go.step.sm/crypto v0.44.2
-	golang.org/x/sys v0.18.0
+	go.step.sm/crypto v0.44.6
+	golang.org/x/sys v0.19.0
 	google.golang.org/api v0.172.0
-	google.golang.org/grpc v1.62.2
+	google.golang.org/grpc v1.63.2
 	gopkg.in/square/go-jose.v2 v2.6.0
 	k8s.io/apimachinery v0.29.3
 )
@@ -136,11 +136,11 @@ require (
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/yashtewari/glob-intersection v0.2.0 // indirect
 	github.com/zeebo/errs v1.3.0 // indirect
-	golang.org/x/crypto v0.21.0 // indirect
-	golang.org/x/net v0.22.0 // indirect
-	golang.org/x/term v0.18.0 // indirect
+	golang.org/x/crypto v0.22.0 // indirect
+	golang.org/x/net v0.24.0 // indirect
+	golang.org/x/term v0.19.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	google.golang.org/genproto v0.0.0-20240221002015-b0ce06bbee7c // indirect
+	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect
 	google.golang.org/protobuf v1.33.0
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
