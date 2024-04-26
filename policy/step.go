@@ -60,6 +60,9 @@ type StepResult struct {
 	Rejected []RejectedCollection
 }
 
+// Analyze inspects the StepResult to determine if the step passed or failed.
+// We do this as rather than failing at the first point of failure in the verification flow,
+// we save the failure reasons so we can present them all at the end of the verification process.
 func (r StepResult) Analyze() bool {
 	var pass bool
 	if len(r.Passed) > 0 && len(r.Rejected) == 0 {
