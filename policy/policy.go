@@ -215,7 +215,6 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string]St
 
 	resultsByStep := make(map[string]StepResult)
 	for depth := 0; depth < vo.searchDepth; depth++ {
-
 		for stepName, step := range p.Steps {
 			// Use search to get all the attestations that match the supplied step name and subjects
 			collections, err := vo.verifiedSource.Search(ctx, stepName, vo.subjectDigests, attestationsByStep[stepName])
@@ -228,7 +227,17 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string]St
 
 			stepResult := step.validateAttestations(collections)
 
-			resultsByStep[stepName] = stepResult
+			// We perform many searches against the same step, so we need to merge the relevant fields
+			if resultsByStep[stepName].Step == "" {
+				resultsByStep[stepName] = stepResult
+			} else {
+				if result, ok := resultsByStep[stepName]; ok {
+					result.Passed = append(result.Passed, stepResult.Passed...)
+					result.Rejected = append(result.Rejected, stepResult.Rejected...)
+					resultsByStep[stepName] = result
+				}
+			}
+
 			for _, coll := range stepResult.Passed {
 				for _, digestSet := range coll.Collection.BackRefs() {
 					for _, digest := range digestSet {
@@ -237,12 +246,11 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string]St
 				}
 			}
 		}
+	}
 
-		resultsByStep, err := p.verifyArtifacts(resultsByStep)
-		if err != nil {
-			return resultsByStep, err
-		}
-
+	resultsByStep, err = p.verifyArtifacts(resultsByStep)
+	if err != nil {
+		return resultsByStep, err
 	}
 
 	return resultsByStep, nil
