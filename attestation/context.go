@@ -21,6 +21,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 )
@@ -82,6 +83,20 @@ func WithWorkingDir(workingDir string) AttestationContextOption {
 	}
 }
 
+func WithDirHashGlob(dirHashGlob []string) AttestationContextOption {
+	return func(ctx *AttestationContext) {
+		if len(dirHashGlob) > 0 {
+			ctx.dirHashGlob = dirHashGlob
+
+			ctx.dirHashGlobCompiled = make([]glob.Glob, len(ctx.dirHashGlob))
+			for i, dirHashGlobItem := range dirHashGlob {
+				dirHashGlobItemCompiled, _ := glob.Compile(dirHashGlobItem)
+				ctx.dirHashGlobCompiled[i] = dirHashGlobItemCompiled
+			}
+		}
+	}
+}
+
 type CompletedAttestor struct {
 	Attestor  Attestor
 	StartTime time.Time
@@ -90,14 +105,16 @@ type CompletedAttestor struct {
 }
 
 type AttestationContext struct {
-	ctx                context.Context
-	attestors          []Attestor
-	workingDir         string
-	hashes             []cryptoutil.DigestValue
-	completedAttestors []CompletedAttestor
-	products           map[string]Product
-	materials          map[string]cryptoutil.DigestSet
-	stepName           string
+	ctx                 context.Context
+	attestors           []Attestor
+	workingDir          string
+	dirHashGlob         []string
+	dirHashGlobCompiled []glob.Glob
+	hashes              []cryptoutil.DigestValue
+	completedAttestors  []CompletedAttestor
+	products            map[string]Product
+	materials           map[string]cryptoutil.DigestSet
+	stepName            string
 }
 
 type Product struct {
@@ -183,6 +200,10 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) {
 	if producer, ok := attestor.(Producer); ok {
 		ctx.addProducts(producer)
 	}
+}
+
+func (ctx *AttestationContext) DirHashGlob() []glob.Glob {
+	return ctx.dirHashGlobCompiled
 }
 
 func (ctx *AttestationContext) CompletedAttestors() []CompletedAttestor {

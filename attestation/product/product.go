@@ -122,11 +122,23 @@ func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attesta
 	products := make(map[string]attestation.Product)
 	for fileName, digestSet := range digestMap {
 		mimeType := "unknown"
+
 		f, err := os.OpenFile(fileName, os.O_RDONLY, 0666)
 		if err == nil {
-			mimeType, err = getFileContentType(f)
+			// This returns an *os.FileInfo type
+			fileInfo, err := f.Stat()
 			if err != nil {
-				mimeType = "unknown"
+				// error handling
+			}
+
+			// IsDir is short for fileInfo.Mode().IsDir()
+			if fileInfo.IsDir() {
+				mimeType = "text/directory"
+			} else {
+				mimeType, err = getFileContentType(f)
+				if err != nil {
+					mimeType = "unknown"
+				}
 			}
 			f.Close()
 		}
@@ -187,7 +199,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.compiledExcludeGlob = compiledExcludeGlob
 
 	a.baseArtifacts = ctx.Materials()
-	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{})
+	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, ctx.DirHashGlob())
 	if err != nil {
 		return err
 	}
@@ -225,7 +237,11 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 			continue
 		}
 
-		subjects[fmt.Sprintf("file:%v", productName)] = product.Digest
+		subjectType := "file"
+		if product.MimeType == "text/directory" {
+			subjectType = "dir"
+		}
+		subjects[fmt.Sprintf("%v:%v", subjectType, productName)] = product.Digest
 	}
 
 	return subjects
