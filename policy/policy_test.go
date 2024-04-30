@@ -165,7 +165,7 @@ deny[msg] {
 	)
 	assert.NoError(t, err)
 
-	_, err = policy.Verify(
+	results, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{"dummy"}),
 		WithVerifiedSource(
@@ -181,8 +181,16 @@ deny[msg] {
 			}),
 		),
 	)
-	assert.Error(t, err)
-	assert.IsType(t, ErrPolicyDenied{}, err)
+	assert.NoError(t, err)
+
+	for _, result := range results {
+		if result.Analyze() == false {
+			return
+		}
+	}
+
+	panic("error")
+	assert.Fail(t, "expected a failure")
 }
 
 func TestArtifacts(t *testing.T) {

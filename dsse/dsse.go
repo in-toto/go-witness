@@ -27,20 +27,24 @@ func (e ErrNoSignatures) Error() string {
 }
 
 type ErrNoMatchingSigs struct {
-	Verifiers []PassedVerifier
+	Verifiers []CheckedVerifier
 }
 
 func (e ErrNoMatchingSigs) Error() string {
-	var kids []string
+	mess := fmt.Sprintf("no valid signatures for the provided verifiers found for keyids:\n")
 	for _, v := range e.Verifiers {
-		kid, err := v.Verifier.KeyID()
-		if err != nil {
-			log.Warn("failed to get key id from verifier: %v", err)
+		if v.Error != nil {
+			kid, err := v.Verifier.KeyID()
+			if err != nil {
+				log.Warn("failed to get key id from verifier: %v", err)
+			}
+
+			s := fmt.Sprintf("  %s: %v\n", kid, v.Error)
+			mess += s
 		}
-		kids = append(kids, kid)
 	}
 
-	return fmt.Sprintf("no valid signatures for the provided verifiers found (keyids: %v)", kids)
+	return mess
 }
 
 type ErrThresholdNotMet struct {

@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"fmt"
 	"time"
 
 	"github.com/in-toto/go-witness/cryptoutil"
@@ -65,12 +66,15 @@ func VerifyWithTimestampVerifiers(verifiers ...timestamp.TimestampVerifier) Veri
 	}
 }
 
-type PassedVerifier struct {
+type CheckedVerifier struct {
 	Verifier                 cryptoutil.Verifier
 	PassedTimestampVerifiers []timestamp.TimestampVerifier
+	Error                    error
 }
 
-func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
+type FailedVerifier struct{}
+
+func (e Envelope) Verify(opts ...VerificationOption) ([]CheckedVerifier, error) {
 	options := &verificationOptions{
 		threshold: 1,
 	}
@@ -88,9 +92,8 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 		return nil, ErrNoSignatures{}
 	}
 
-	matchingSigFound := false
-	passedVerifiers := make([]PassedVerifier, 0)
-	failedVerifiers := make([]PassedVerifier, 0)
+	checkedVerifiers := make([]CheckedVerifier, 0)
+	verified := 0
 	for _, sig := range e.Signatures {
 		if sig.Certificate != nil && len(sig.Certificate) > 0 {
 			cert, err := cryptoutil.TryParseCertificate(sig.Certificate)
@@ -111,10 +114,10 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 			sigIntermediates = append(sigIntermediates, options.intermediates...)
 			if len(options.timestampVerifiers) == 0 {
 				if verifier, err := verifyX509Time(cert, sigIntermediates, options.roots, pae, sig.Signature, time.Now()); err == nil {
-					matchingSigFound = true
-					passedVerifiers = append(passedVerifiers, PassedVerifier{Verifier: verifier})
+					checkedVerifiers = append(checkedVerifiers, CheckedVerifier{Verifier: verifier})
+					verified += 1
 				} else {
-					failedVerifiers = append(failedVerifiers, PassedVerifier{Verifier: verifier})
+					checkedVerifiers = append(checkedVerifiers, CheckedVerifier{Verifier: verifier, Error: err})
 					log.Debugf("failed to verify with timestamp verifier: %w", err)
 				}
 			} else {
@@ -144,17 +147,17 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 				}
 
 				if len(passedTimestampVerifiers) > 0 {
-					matchingSigFound = true
-					passedVerifiers = append(passedVerifiers, PassedVerifier{
+					verified += 1
+					checkedVerifiers = append(checkedVerifiers, CheckedVerifier{
 						Verifier:                 passedVerifier,
 						PassedTimestampVerifiers: passedTimestampVerifiers,
 					})
 				} else {
-					matchingSigFound = false
 					for _, v := range failed {
-						failedVerifiers = append(failedVerifiers, PassedVerifier{
+						checkedVerifiers = append(checkedVerifiers, CheckedVerifier{
 							Verifier:                 v,
 							PassedTimestampVerifiers: failedTimestampVerifiers,
+							Error:                    fmt.Errorf("no valid timestamps found"),
 						})
 					}
 				}
@@ -163,25 +166,29 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 
 		for _, verifier := range options.verifiers {
 			if verifier != nil {
+				kid, err := verifier.KeyID()
+				if err != nil {
+					log.Warn("failed to get key id from verifier: %v", err)
+				}
+				log.Info("verifying with verifier with KeyID ", kid)
+
 				if err := verifier.Verify(bytes.NewReader(pae), sig.Signature); err == nil {
-					passedVerifiers = append(passedVerifiers, PassedVerifier{Verifier: verifier})
-					matchingSigFound = true
+					verified += 1
+					checkedVerifiers = append(checkedVerifiers, CheckedVerifier{Verifier: verifier})
 				} else {
-					failedVerifiers = append(failedVerifiers, PassedVerifier{Verifier: verifier})
+					checkedVerifiers = append(checkedVerifiers, CheckedVerifier{Verifier: verifier, Error: err})
 				}
 			}
 		}
 	}
 
-	if !matchingSigFound {
-		return nil, ErrNoMatchingSigs{Verifiers: failedVerifiers}
+	if verified == 0 {
+		return nil, ErrNoMatchingSigs{Verifiers: checkedVerifiers}
+	} else if verified < options.threshold {
+		return checkedVerifiers, ErrThresholdNotMet{Theshold: options.threshold, Actual: len(checkedVerifiers)}
 	}
 
-	if len(passedVerifiers) < options.threshold {
-		return passedVerifiers, ErrThresholdNotMet{Theshold: options.threshold, Actual: len(passedVerifiers)}
-	}
-
-	return passedVerifiers, nil
+	return checkedVerifiers, nil
 }
 
 func verifyX509Time(cert *x509.Certificate, sigIntermediates, roots []*x509.Certificate, pae, sig []byte, trustedTime time.Time) (cryptoutil.Verifier, error) {

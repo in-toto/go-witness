@@ -189,16 +189,6 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 }
 
 func verifyPolicySignature(ctx context.Context, vo verifyOptions) error {
-	kids := []string{}
-	for _, v := range vo.policyVerifiers {
-		kid, err := v.KeyID()
-		if err != nil {
-			return fmt.Errorf("failed to get key id for policy verifier: %w", err)
-		}
-		kids = append(kids, kid)
-	}
-
-	log.Debugf("verifying policy signature with KeyIDs %s", kids)
 	passedPolicyVerifiers, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...), dsse.VerifyWithTimestampVerifiers(vo.policyTimestampAuthorities...), dsse.VerifyWithRoots(vo.policyCARoots...), dsse.VerifyWithIntermediates(vo.policyCAIntermediates...))
 	if err != nil {
 		return fmt.Errorf("could not verify policy: %w", err)

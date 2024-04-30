@@ -61,8 +61,8 @@ type StepResult struct {
 }
 
 // Analyze inspects the StepResult to determine if the step passed or failed.
-// We do this as rather than failing at the first point of failure in the verification flow,
-// we save the failure reasons so we can present them all at the end of the verification process.
+// We do this rather than failing at the first point of failure in the verification flow
+// in order to save the failure reasons so we can present them all at the end of the verification process.
 func (r StepResult) Analyze() bool {
 	var pass bool
 	if len(r.Passed) > 0 && len(r.Rejected) == 0 {
@@ -151,7 +151,9 @@ func (s Step) validateAttestations(collectionResults []source.CollectionVerifica
 		passed := true
 		if len(collection.Errors) > 0 {
 			passed = false
-			reasons = append(reasons, fmt.Errorf("collection verification failed: %v", collection.Errors).Error())
+			for _, err := range collection.Errors {
+				reasons = append(reasons, fmt.Sprintf("collection verification failed: %s", err.Error()))
+			}
 		}
 
 		for _, attestation := range collection.Collection.Attestations {

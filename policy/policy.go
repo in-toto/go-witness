@@ -259,27 +259,25 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string]St
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for
 // the step the statement corresponds to
 func (step Step) checkFunctionaries(statements []source.CollectionVerificationResult, trustBundles map[string]TrustBundle) []source.CollectionVerificationResult {
-	for _, statement := range statements {
+	for i, statement := range statements {
 		// Check that the statement contains a predicate type that we accept
 		if statement.Statement.PredicateType != attestation.CollectionType {
-			statement.Errors = append(statement.Errors, fmt.Errorf("predicate type %v is not a collection predicate type", statement.Statement.PredicateType))
-			// TODO: Maybe do away with the collection copying
-			continue
+			statements[i].Errors = append(statement.Errors, fmt.Errorf("predicate type %v is not a collection predicate type", statement.Statement.PredicateType))
 		}
 
 		if len(statement.Verifiers) > 0 {
 			for _, verifier := range statement.Verifiers {
 				for _, functionary := range step.Functionaries {
 					if err := functionary.Validate(verifier, trustBundles); err != nil {
-						statement.Warnings = append(statement.Warnings, fmt.Sprintf("failed to validate functionary of KeyID %s in step %s: %s", functionary.PublicKeyID, step.Name, err.Error()))
+						statements[i].Warnings = append(statement.Warnings, fmt.Sprintf("failed to validate functionary of KeyID %s in step %s: %s", functionary.PublicKeyID, step.Name, err.Error()))
 						continue
 					} else {
-						statement.ValidFunctionaries = append(statement.ValidFunctionaries, verifier)
+						statements[i].ValidFunctionaries = append(statement.ValidFunctionaries, verifier)
 					}
 				}
 			}
 		} else {
-			statement.Errors = append(statement.Errors, fmt.Errorf("no verifiers present to validate against collection verifiers"))
+			statements[i].Errors = append(statement.Errors, fmt.Errorf("no verifiers present to validate against collection verifiers"))
 		}
 	}
 
