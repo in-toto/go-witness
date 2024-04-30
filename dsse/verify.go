@@ -170,7 +170,7 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]CheckedVerifier, error) 
 				if err != nil {
 					log.Warn("failed to get key id from verifier: %v", err)
 				}
-				log.Info("verifying with verifier with KeyID ", kid)
+				log.Debug("verifying with verifier with KeyID ", kid)
 
 				if err := verifier.Verify(bytes.NewReader(pae), sig.Signature); err == nil {
 					verified += 1
