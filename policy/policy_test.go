@@ -22,6 +22,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"log"
 	"testing"
 	"time"
 
@@ -189,7 +190,6 @@ deny[msg] {
 		}
 	}
 
-	panic("error")
 	assert.Fail(t, "expected a failure")
 }
 
@@ -310,7 +310,7 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 	intotoStatement2, err = intoto.NewStatement(attestation.CollectionType, step2CollectionJson, map[string]cryptoutil.DigestSet{})
 	require.NoError(t, err)
-	_, err = policy.Verify(
+	results, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{dummySha}),
 		WithVerifiedSource(newDummyVerifiedSourcer([]source.CollectionVerificationResult{
@@ -332,8 +332,18 @@ func TestArtifacts(t *testing.T) {
 			},
 		})),
 	)
-	assert.Error(t, err)
-	assert.IsType(t, ErrPolicyDenied{}, err)
+
+	assert.NoError(t, err)
+
+	for _, result := range results {
+		if result.Analyze() == false {
+			assert.Contains(t, result.Error(), "failed to verify artifacts for step step2")
+			assert.Contains(t, result.Error(), "failed to verify artifacts: [mismatched digests for testfile]")
+			return
+		}
+	}
+
+	assert.Fail(t, "expected a failure")
 }
 
 type DummyMaterialer struct {
@@ -468,5 +478,110 @@ func TestPubKeyVerifiers(t *testing.T) {
 				assert.IsType(t, testCase.expectedErr, err)
 			}
 		})
+	}
+}
+
+func TestCheckFunctionaries(t *testing.T) {
+	signers := []cryptoutil.Signer{}
+	verifiers := []cryptoutil.Verifier{}
+	for i := 0; i < 7; i++ {
+		signer, verifier, _, err := createTestKey()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		signers = append(signers, signer)
+		verifiers = append(verifiers, verifier)
+	}
+
+	keyIDs := make([]string, 0, len(signers))
+	for _, s := range signers {
+		keyID, err := s.KeyID()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		keyIDs = append(keyIDs, keyID)
+	}
+
+	testCases := []struct {
+		name         string
+		step         Step
+		statements   []source.CollectionVerificationResult
+		trustBundles map[string]TrustBundle
+		// expectedResults is a list of results with each entry containing only the fields that we wish to check (errors, warnings, valid functionaries)
+		// this is so we can compare the results without needing to copy the unnecessary fields in the testcase definitions below
+		expectedResults []source.CollectionVerificationResult
+	}{
+		{
+			name: "simple 1 functionary pass",
+			step: Step{
+				Name: "step1",
+				Functionaries: []Functionary{
+					{Type: "PublicKey", PublicKeyID: keyIDs[0]},
+				},
+				Attestations: []Attestation{
+					{Type: "dummy-prods"},
+					{Type: "dummy-mats"},
+				},
+			},
+			statements: []source.CollectionVerificationResult{
+				{
+					Verifiers: []cryptoutil.Verifier{verifiers[0]},
+					CollectionEnvelope: source.CollectionEnvelope{
+						Statement: intoto.Statement{PredicateType: attestation.CollectionType},
+					},
+				},
+			},
+			expectedResults: []source.CollectionVerificationResult{
+				{
+					ValidFunctionaries: []cryptoutil.Verifier{
+						verifiers[0],
+					},
+				},
+			},
+		},
+		{
+			name: "invalid functionary",
+			step: Step{
+				Name: "step1",
+				Functionaries: []Functionary{
+					{Type: "PublicKey", PublicKeyID: keyIDs[0]},
+				},
+				Attestations: []Attestation{
+					{Type: "dummy-prods"},
+					{Type: "dummy-mats"},
+				},
+			},
+			statements: []source.CollectionVerificationResult{
+				{
+					Verifiers: []cryptoutil.Verifier{verifiers[1]},
+					CollectionEnvelope: source.CollectionEnvelope{
+						Statement: intoto.Statement{PredicateType: attestation.CollectionType},
+					},
+				},
+			},
+			expectedResults: []source.CollectionVerificationResult{
+				{},
+			},
+		},
+		{
+			name: "pubkeys with kms",
+		},
+	}
+
+	for _, testCase := range testCases {
+		result := testCase.step.checkFunctionaries(testCase.statements, testCase.trustBundles)
+		resultCheckFields := []source.CollectionVerificationResult{}
+		for _, r := range result {
+			o := source.CollectionVerificationResult{
+				Errors:             r.Errors,
+				Warnings:           r.Warnings,
+				ValidFunctionaries: r.ValidFunctionaries,
+			}
+			resultCheckFields = append(resultCheckFields, o)
+		}
+
+		assert.Equal(t, testCase.expectedResults, resultCheckFields)
 	}
 }

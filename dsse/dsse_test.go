@@ -165,7 +165,7 @@ func TestFailVerify(t *testing.T) {
 	require.NoError(t, err)
 	approvedVerifiers, err := env.Verify(VerifyWithVerifiers(verifier))
 	assert.Empty(t, approvedVerifiers)
-	require.ErrorIs(t, err, ErrNoMatchingSigs{})
+	require.ErrorAs(t, err, &ErrNoMatchingSigs{Verifiers: []CheckedVerifier{{Verifier: verifier, Error: rsa.ErrVerification}}})
 }
 
 func TestMultiSigners(t *testing.T) {

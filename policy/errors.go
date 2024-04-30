@@ -22,6 +22,21 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 )
 
+type ErrVerifyArtifactsFailed struct {
+	Reasons []string
+}
+
+func (e ErrVerifyArtifactsFailed) Error() string {
+	mess := "failed to verify artifacts: \n"
+	for i, r := range e.Reasons {
+		if i == len(e.Reasons)-1 {
+			mess += r + "\n"
+		}
+		mess += r + ", \n"
+	}
+	return fmt.Sprintf("failed to verify artifacts: %v", e.Reasons)
+}
+
 type ErrNoAttestations string
 
 func (e ErrNoAttestations) Error() string {

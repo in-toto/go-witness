@@ -185,7 +185,7 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]CheckedVerifier, error) 
 	if verified == 0 {
 		return nil, ErrNoMatchingSigs{Verifiers: checkedVerifiers}
 	} else if verified < options.threshold {
-		return checkedVerifiers, ErrThresholdNotMet{Theshold: options.threshold, Actual: len(checkedVerifiers)}
+		return checkedVerifiers, ErrThresholdNotMet{Theshold: options.threshold, Actual: verified}
 	}
 
 	return checkedVerifiers, nil

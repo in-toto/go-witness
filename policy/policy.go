@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -259,6 +260,7 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string]St
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for
 // the step the statement corresponds to
 func (step Step) checkFunctionaries(statements []source.CollectionVerificationResult, trustBundles map[string]TrustBundle) []source.CollectionVerificationResult {
+	fmt.Println("PredicateTyppe: ", statements[0].Statement.PredicateType)
 	for i, statement := range statements {
 		// Check that the statement contains a predicate type that we accept
 		if statement.Statement.PredicateType != attestation.CollectionType {
@@ -297,18 +299,24 @@ func (p Policy) verifyArtifacts(resultsByStep map[string]StepResult) (map[string
 			return resultsByStep, nil
 		}
 
+		reasons := []error{}
 		for _, collection := range resultsByStep[step.Name].Passed {
 			if err := verifyCollectionArtifacts(step, collection, resultsByStep); err == nil {
 				accepted = true
 			} else {
-				collection.Warnings = append(collection.Warnings, fmt.Sprintf("failed to verify artifacts for step %s: %v", step.Name, err))
+				reasons = append(reasons, err)
 			}
 		}
 
 		if !accepted {
 			// can't address the map fields directly so have to make a copy and overwrite
 			if result, ok := resultsByStep[step.Name]; ok {
-				result.Rejected = append(result.Rejected, RejectedCollection{Reason: fmt.Errorf("failed to verify artifacts for step %s", step.Name)})
+				reject := RejectedCollection{Reason: fmt.Errorf("failed to verify artifacts for step %s: ", step.Name)}
+				for _, reason := range reasons {
+					reject.Reason = errors.Join(reject.Reason, reason)
+				}
+
+				result.Rejected = append(result.Rejected, reject)
 				resultsByStep[step.Name] = result
 			}
 		}
@@ -320,11 +328,13 @@ func (p Policy) verifyArtifacts(resultsByStep map[string]StepResult) (map[string
 
 func verifyCollectionArtifacts(step Step, collection source.CollectionVerificationResult, collectionsByStep map[string]StepResult) error {
 	mats := collection.Collection.Materials()
+	reasons := []string{}
 	for _, artifactsFrom := range step.ArtifactsFrom {
 		accepted := make([]source.CollectionVerificationResult, 0)
 		for _, testCollection := range collectionsByStep[artifactsFrom].Passed {
 			if err := compareArtifacts(mats, testCollection.Collection.Artifacts()); err != nil {
 				collection.Warnings = append(collection.Warnings, fmt.Sprintf("failed to verify artifacts for step %s: %v", step.Name, err))
+				reasons = append(reasons, err.Error())
 				break
 			}
 
@@ -332,7 +342,7 @@ func verifyCollectionArtifacts(step Step, collection source.CollectionVerificati
 		}
 
 		if len(accepted) <= 0 {
-			return ErrNoAttestations(step.Name)
+			return ErrVerifyArtifactsFailed{Reasons: reasons}
 		}
 	}
 

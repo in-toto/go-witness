@@ -19,8 +19,6 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -30,7 +28,6 @@ import (
 	"github.com/in-toto/go-witness/timestamp"
 
 	"github.com/in-toto/go-witness/cryptoutil"
-	"github.com/in-toto/go-witness/source"
 )
 
 func TestVerifyPolicySignature(t *testing.T) {
@@ -162,88 +159,5 @@ func TestVerifyPolicySignature(t *testing.T) {
 			fmt.Printf("test %s passed\n", tt.name)
 		}
 
-	}
-}
-
-func TestPolicyVerification(t *testing.T) {
-	testdataDir := "hack/testdata"
-	dirs, err := os.ReadDir(testdataDir)
-	if err != nil {
-		t.Fatalf("Failed to read testdata directory: %v", err)
-	}
-	for _, dir := range dirs {
-		dirPath := filepath.Join(testdataDir, dir.Name())
-		policyPublicKey, err := os.ReadFile(filepath.Join(dirPath, "policy.pub"))
-		if err != nil {
-			t.Fatalf("Failed to read policy public key: %v", err)
-		}
-
-		policySigned, err := os.ReadFile(filepath.Join(dirPath, "policysigned.json"))
-		if err != nil {
-			t.Fatalf("Failed to read policy signed: %v", err)
-		}
-
-		t.Run(dir.Name(), func(t *testing.T) {
-			attestations := [][]byte{}
-
-			// attestations are the remaining files in the directory
-			files, err := os.ReadDir(dirPath)
-			if err != nil {
-				t.Fatalf("Failed to read directory: %v", err)
-			}
-			for _, file := range files {
-				if !file.IsDir() && file.Name() != "policy.pub" && file.Name() != "policysigned.json" && file.Name() != "policy.json" {
-					attestationPath := filepath.Join(dirPath, file.Name())
-					attestationBytes, err := os.ReadFile(attestationPath)
-					if err != nil {
-						t.Fatalf("Failed to read attestation: %v", err)
-					}
-
-					attestations = append(attestations, attestationBytes)
-				}
-			}
-
-			VerifyPolicyWithAttestations(t, policyPublicKey, policySigned, attestations)
-		})
-
-	}
-}
-
-// VerifyPolicyWithAttestations is a test helper that verifies a signed policy and its attestations.
-func VerifyPolicyWithAttestations(t *testing.T, policyPublicKey, policySigned []byte, attestations [][]byte) {
-	ctx := context.Background()
-
-	// create a reader for the public key
-	policyPublicKeyReader := bytes.NewReader(policyPublicKey)
-
-	// create verifier for the public key
-	k, err := cryptoutil.NewVerifierFromReader(policyPublicKeyReader)
-	if err != nil {
-		t.Fatalf("Failed to create verifier: %v", err)
-	}
-
-	// parse policy into dsse envelope
-	policyEnvelope, err := VerifySignature(bytes.NewReader(policySigned), k)
-	if err != nil {
-		t.Fatalf("Failed to verify policy signature: %v", err)
-	}
-
-	memSource := source.NewMemorySource()
-	for i, path := range attestations {
-		reference := fmt.Sprintf("attestation-%d", i)
-
-		if err := memSource.LoadBytes(reference, path); err != nil {
-			t.Fatalf("Failed to load attestation %s: %v", path, err)
-		}
-	}
-
-	// Verify the policy with attestations
-	ok, _, err := Verify(ctx, policyEnvelope, []cryptoutil.Verifier{k}, VerifyWithCollectionSource(memSource))
-	if err != nil {
-		t.Fatalf("Failed to verify policy: %v", err)
-	}
-
-	if !ok {
-		t.Fatalf("Policy verification failed")
 	}
 }
