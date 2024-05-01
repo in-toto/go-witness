@@ -226,7 +226,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	if _, ok := policyErr.(policy.ErrPolicyDenied); ok {
 		accepted = false
 	} else if policyErr != nil {
-		return fmt.Errorf("failed to verify policy: %w", err)
+		return fmt.Errorf("failed to verify policy: %w", policyErr)
 	}
 
 	a.VerificationSummary, err = verificationSummaryFromResults(ctx, a.policyEnvelope, policyResult, accepted)
