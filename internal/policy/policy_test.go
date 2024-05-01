@@ -120,7 +120,13 @@ func TestVerifyPolicySignature(t *testing.T) {
 			tv = append(tv, t)
 		}
 
-		vo := NewVerifyPolicySignatureOptions(tt.certConstraints, VerifyWithPolicyVerifiers([]cryptoutil.Verifier{tt.verifier}), VerifyWithPolicyCARoots(tt.Roots), VerifyWithPolicyTimestampAuthorities(tv))
+		o := []Option{}
+		o = append(o, VerifyWithPolicyVerifiers([]cryptoutil.Verifier{tt.verifier}), VerifyWithPolicyCARoots(tt.Roots), VerifyWithPolicyTimestampAuthorities(tv))
+		if tt.certConstraints != nil {
+			o = append(o, tt.certConstraints)
+		}
+
+		vo := NewVerifyPolicySignatureOptions(o...)
 
 		err = VerifyPolicySignature(context.TODO(), env, vo)
 		assert.Equal(t, err != nil, tt.wantErr, "testName = %s, error = %v, wantErr = %v", tt.name, err, tt.wantErr)
