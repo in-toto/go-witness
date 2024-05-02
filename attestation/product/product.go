@@ -121,13 +121,13 @@ type Attestor struct {
 func fromDigestMap(workingDir string, digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
 =======
 type attestorJson struct {
-	Products map[string]attestation.Product `json:"products"`
-	Configuration attestorConfiguration `json:"configuration"`
+	Products      map[string]attestation.Product `json:"products"`
+	Configuration attestorConfiguration          `json:"configuration"`
 }
 
 type attestorConfiguration struct {
-	IncludeGlob         string `json:"includeGlob"`
-	ExcludeGlob         string `json:"excludeGlob"`
+	IncludeGlob string `json:"includeGlob"`
+	ExcludeGlob string `json:"excludeGlob"`
 }
 
 func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
