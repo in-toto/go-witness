@@ -107,11 +107,11 @@ func TestTSP(t *testing.T) {
 	payload := []byte("some data to timestamp")
 	resp, err := ts.Timestamp(context.Background(), bytes.NewReader(payload))
 	require.NoError(t, err)
-	cert, err := cryptoutil.TryParseCertificate([]byte(tsaCA))
+	certs, err := cryptoutil.TryParseCertificates([]byte(tsaCA))
 	require.NoError(t, err)
-	otherCert, err := cryptoutil.TryParseCertificate([]byte(otherCA))
+	otherCerts, err := cryptoutil.TryParseCertificates([]byte(otherCA))
 	require.NoError(t, err)
-	v := NewVerifier(VerifyWithCerts([]*x509.Certificate{cert}))
+	v := NewVerifier(VerifyWithCerts([]*x509.Certificate{certs[0]}))
 
 	t.Run("pass", func(t *testing.T) {
 		signedTime, err := v.Verify(context.Background(), bytes.NewReader(resp), bytes.NewReader(payload))
@@ -126,7 +126,7 @@ func TestTSP(t *testing.T) {
 	})
 
 	t.Run("incorrect cert", func(t *testing.T) {
-		v = NewVerifier(VerifyWithCerts([]*x509.Certificate{otherCert}))
+		v = NewVerifier(VerifyWithCerts([]*x509.Certificate{otherCerts[0]}))
 		signedTime, err := v.Verify(context.Background(), bytes.NewReader(resp), bytes.NewReader(payload))
 		assert.Error(t, err)
 		assert.Zero(t, signedTime)

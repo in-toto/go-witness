@@ -22,6 +22,8 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+
+	"github.com/in-toto/go-witness/log"
 )
 
 type ErrUnsupportedKeyType struct {
@@ -51,15 +53,24 @@ type TrustBundler interface {
 type SignerOption func(*signerOptions)
 
 type signerOptions struct {
-	cert          *x509.Certificate
-	intermediates []*x509.Certificate
-	roots         []*x509.Certificate
-	hash          crypto.Hash
+	cert              *x509.Certificate
+	certPath          string
+	intermediates     []*x509.Certificate
+	intermediatePaths []string
+	roots             []*x509.Certificate
+	rootPaths         []string
+	hash              crypto.Hash
 }
 
 func SignWithCertificate(cert *x509.Certificate) SignerOption {
 	return func(so *signerOptions) {
 		so.cert = cert
+	}
+}
+
+func SignWithCertificatePath(path string) SignerOption {
+	return func(so *signerOptions) {
+		so.certPath = path
 	}
 }
 
@@ -69,9 +80,21 @@ func SignWithIntermediates(intermediates []*x509.Certificate) SignerOption {
 	}
 }
 
+func SignWithIntermediatePaths(paths []string) SignerOption {
+	return func(so *signerOptions) {
+		so.intermediatePaths = paths
+	}
+}
+
 func SignWithRoots(roots []*x509.Certificate) SignerOption {
 	return func(so *signerOptions) {
 		so.roots = roots
+	}
+}
+
+func SignWithRootPaths(paths []string) SignerOption {
+	return func(so *signerOptions) {
+		so.rootPaths = paths
 	}
 }
 
@@ -102,6 +125,69 @@ func NewSigner(priv interface{}, opts ...SignerOption) (Signer, error) {
 		return nil, ErrUnsupportedKeyType{
 			t: fmt.Sprintf("%T", priv),
 		}
+	}
+
+	log.Info("foo")
+
+	if options.certPath != "" && options.cert != nil {
+		return nil, fmt.Errorf("cannot specify both a certificate and a certificate path")
+	} else if options.certPath != "" {
+
+		certs, err := TryParseCertificatesFromFile(options.certPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load certificate: %v", err)
+		}
+		options.cert = certs[0]
+	}
+
+	if options.rootPaths != nil && options.roots != nil {
+		return nil, fmt.Errorf("cannot specify both roots and root paths")
+	} else if options.rootPaths != nil {
+		var certs []*x509.Certificate
+		for _, path := range options.rootPaths {
+			c, err := TryParseCertificatesFromFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load root certificates from file: %v", err)
+			}
+
+			for _, cert := range c {
+				if cert.IsCA {
+					options.roots = append(options.roots, cert)
+				} else {
+					return nil, fmt.Errorf("failed to load root certificates from file: certificate is not a root certificate")
+				}
+
+				certs = append(certs, cert)
+			}
+		}
+
+		options.roots = certs
+	}
+
+	if options.intermediatePaths != nil && options.intermediates != nil {
+		return nil, fmt.Errorf("cannot specify both intermediates and intermediate paths")
+	} else if options.intermediatePaths != nil {
+		var certs []*x509.Certificate
+		for _, path := range options.rootPaths {
+			c, err := TryParseCertificatesFromFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load root certificates from file: %v", err)
+			}
+
+			for _, cert := range c {
+				// any intermediate certificate must have a basic constraints extension and CA field must be set to true
+				if cert.IsCA && cert.BasicConstraintsValid {
+					if cert.MaxPathLenZero {
+						// cert is not an intermediate
+					} else {
+						certs = append(certs, cert)
+					}
+				}
+			}
+
+		}
+
+		options.intermediates = certs
 	}
 
 	if options.cert != nil {

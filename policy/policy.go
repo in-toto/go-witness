@@ -114,18 +114,25 @@ func trustBundlesFromRoots(roots map[string]Root) (map[string]TrustBundle, error
 	for id, root := range roots {
 		bundle := TrustBundle{}
 		var err error
-		bundle.Root, err = cryptoutil.TryParseCertificate(root.Certificate)
+		certs, err := cryptoutil.TryParseCertificates(root.Certificate)
 		if err != nil {
 			return bundles, err
 		}
 
+		if len(certs) != 1 {
+			return bundles, cryptoutil.ErrIncorrectCertsNum{
+				Expected: 1,
+				Actual:   len(certs),
+			}
+		}
+
 		for _, intBytes := range root.Intermediates {
-			cert, err := cryptoutil.TryParseCertificate(intBytes)
+			certs, err := cryptoutil.TryParseCertificates(intBytes)
 			if err != nil {
 				return bundles, err
 			}
 
-			bundle.Intermediates = append(bundle.Intermediates, cert)
+			bundle.Intermediates = append(bundle.Intermediates, certs...)
 		}
 
 		bundles[id] = bundle

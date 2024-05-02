@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 )
 
 // PEMType is a specific type for string constants used during PEM encoding and decoding
@@ -151,29 +152,90 @@ func TryParsePEMBlock(block *pem.Block) (interface{}, error) {
 	return nil, ErrUnsupportedPEM{block.Type}
 }
 
-func TryParseKeyFromReader(r io.Reader) (interface{}, error) {
-	bytes, err := io.ReadAll(r)
+func TryParseKeyFromReader(r io.Reader) ([]interface{}, error) {
+	keyBytes, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
 
-	// we may want to handle files with multiple pem blocks in them, but for now...
-	pemBlock, _ := pem.Decode(bytes)
-	return TryParsePEMBlock(pemBlock)
+	keys := []interface{}{}
+	for len(keyBytes) > 0 {
+		var err error
+		var key interface{}
+
+		key, keyBytes, err = TryDecodePEMBlock(keyBytes)
+		if err != nil {
+			return nil, err
+		}
+		if key != nil {
+			// it's a key, add to slice
+			keys = append(keys, key)
+		}
+	}
+
+	if len(keys) == 0 {
+		return nil, errors.New("no certificates found")
+	}
+
+	return keys, nil
 }
 
-func TryParseCertificate(data []byte) (*x509.Certificate, error) {
-	possibleCert, err := TryParseKeyFromReader(bytes.NewReader(data))
+func TryDecodePEMBlock(blocks []byte) (interface{}, []byte, error) {
+	block, blocks := pem.Decode(blocks)
+	if block == nil {
+		return nil, nil, nil
+	}
+
+	key, err := TryParsePEMBlock(block)
+	return key, blocks, err
+}
+
+type ErrIncorrectCertsNum struct {
+	Expected int
+	Actual   int
+}
+
+func (e ErrIncorrectCertsNum) Error() string {
+	return fmt.Sprintf("expected %d certificates but got %d", e.Expected, e.Actual)
+}
+
+// TryParseCerificatesFromFile takes a file path string and returns all certificates
+// in a slice of x509.Certificate objects (uses TryParseCertificates internally)
+func TryParseCertificatesFromFile(path string) ([]*x509.Certificate, error) {
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return TryParseCertificates(bytes)
+}
+
+// TryParseCertificates takes a PEM-encoded x509 certificates byte array
+// and returns all certificates in a slice of x509.Certificate objects.
+// Expects certificates to be a chain with leaf certificate to be first in the
+// byte array.
+func TryParseCertificates(data []byte) ([]*x509.Certificate, error) {
+	possibleCerts, err := TryParseKeyFromReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
 
-	cert, ok := possibleCert.(*x509.Certificate)
-	if !ok {
-		return nil, fmt.Errorf("data was a valid verifier but not a certificate")
+	var certs []*x509.Certificate
+	for _, pcert := range possibleCerts {
+		cert, ok := pcert.(*x509.Certificate)
+		if !ok {
+			return nil, fmt.Errorf("data was a valid verifier but not a certificate")
+		}
+
+		certs = append(certs, cert)
 	}
 
-	return cert, nil
+	for i := 0; i < len(certs)-1; i++ {
+		if certs[i].CheckSignatureFrom(certs[i+1]) != nil {
+			return nil, errors.New("certificate chain is not valid")
+		}
+	}
+
+	return certs, nil
 }
 
 // ComputeDigest calculates the digest value for the specified message using the supplied hash function

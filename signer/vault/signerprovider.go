@@ -239,24 +239,37 @@ func (vsp *VaultSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 		return nil, fmt.Errorf("failed to issue certificate: %w", err)
 	}
 
-	cert, err := cryptoutil.TryParseCertificate([]byte(resp.Data.Certificate))
+	certs, err := cryptoutil.TryParseCertificates([]byte(resp.Data.Certificate))
 	if err != nil {
 		return nil, fmt.Errorf("could not parse certificate from response: %w", err)
 	}
 
 	intermediates := make([]*x509.Certificate, 0)
 	for _, i := range resp.Data.CaChain {
-		intermediate, err := cryptoutil.TryParseCertificate([]byte(i))
+		intermediates, err := cryptoutil.TryParseCertificates([]byte(i))
 		if err != nil {
 			return nil, fmt.Errorf("could not parse intermediate certificate from response: %w", err)
 		}
 
-		intermediates = append(intermediates, intermediate)
+		// TODO: This needs checked in code review
+		// By the fact that it's called "CaChain", it suggests that it might include RootCAs? In this case
+		// we don't want to fail if the CA is not an intermediate.
+		for _, cert := range intermediates {
+			// any intermediate certificate must have a basic constraints extension and CA field must be set to true
+			if cert.IsCA && cert.BasicConstraintsValid {
+				if cert.MaxPathLenZero {
+					// cert is not an intermediate
+				} else {
+					intermediates = append(intermediates, cert)
+				}
+			}
+		}
+
 	}
 
 	return cryptoutil.NewSignerFromReader(
 		strings.NewReader(resp.Data.PrivateKey),
-		cryptoutil.SignWithCertificate(cert),
+		cryptoutil.SignWithCertificate(certs[0]),
 		cryptoutil.SignWithIntermediates(intermediates),
 	)
 }

@@ -92,24 +92,24 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 	passedVerifiers := make([]PassedVerifier, 0)
 	for _, sig := range e.Signatures {
 		if sig.Certificate != nil && len(sig.Certificate) > 0 {
-			cert, err := cryptoutil.TryParseCertificate(sig.Certificate)
+			certs, err := cryptoutil.TryParseCertificates(sig.Certificate)
 			if err != nil {
 				continue
 			}
 
 			sigIntermediates := make([]*x509.Certificate, 0)
 			for _, int := range sig.Intermediates {
-				intCert, err := cryptoutil.TryParseCertificate(int)
+				intCert, err := cryptoutil.TryParseCertificates(int)
 				if err != nil {
 					continue
 				}
 
-				sigIntermediates = append(sigIntermediates, intCert)
+				sigIntermediates = append(sigIntermediates, intCert...)
 			}
 
 			sigIntermediates = append(sigIntermediates, options.intermediates...)
 			if len(options.timestampVerifiers) == 0 {
-				if verifier, err := verifyX509Time(cert, sigIntermediates, options.roots, pae, sig.Signature, time.Now()); err == nil {
+				if verifier, err := verifyX509Time(certs[0], sigIntermediates, options.roots, pae, sig.Signature, time.Now()); err == nil {
 					matchingSigFound = true
 					passedVerifiers = append(passedVerifiers, PassedVerifier{Verifier: verifier})
 				} else {
@@ -126,7 +126,7 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]PassedVerifier, error) {
 							continue
 						}
 
-						if verifier, err := verifyX509Time(cert, sigIntermediates, options.roots, pae, sig.Signature, timestamp); err == nil {
+						if verifier, err := verifyX509Time(certs[0], sigIntermediates, options.roots, pae, sig.Signature, timestamp); err == nil {
 							passedVerifier = verifier
 							passedTimestampVerifiers = append(passedTimestampVerifiers, timestampVerifier)
 						} else {

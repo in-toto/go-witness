@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
 	"github.com/in-toto/go-witness/signer"
 )
@@ -113,55 +114,40 @@ func (fsp FileSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, er
 		return nil, fmt.Errorf("failed to open key file: %w", err)
 	}
 
+	log.Info("opened filed")
+
 	defer keyFile.Close()
 	key, err := cryptoutil.TryParseKeyFromReader(keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load key: %w", err)
 	}
 
+	log.Info("key parsed")
+
 	signerOpts := []cryptoutil.SignerOption{}
 	if fsp.CertPath != "" {
-		leaf, err := loadCert(fsp.CertPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load certificate: %w", err)
-		}
-
-		signerOpts = append(signerOpts, cryptoutil.SignWithCertificate(leaf))
+		signerOpts = append(signerOpts, cryptoutil.SignWithCertificatePath(fsp.CertPath))
 	}
 
 	if len(fsp.IntermediatePaths) > 0 {
-		intermediates := []*x509.Certificate{}
-		for _, path := range fsp.IntermediatePaths {
-			cert, err := loadCert(path)
-			if err != nil {
-				return nil, fmt.Errorf("failed to load intermediate: %w", err)
-			}
-
-			intermediates = append(intermediates, cert)
-		}
-
-		signerOpts = append(signerOpts, cryptoutil.SignWithIntermediates(intermediates))
+		signerOpts = append(signerOpts, cryptoutil.SignWithIntermediatePaths(fsp.IntermediatePaths))
 	}
+
+	log.Info("added certificate info")
 
 	return cryptoutil.NewSigner(key, signerOpts...)
 }
 
 func loadCert(path string) (*x509.Certificate, error) {
-	certFile, err := os.Open(path)
+	certFile, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load certificate: %w", err)
 	}
 
-	defer certFile.Close()
-	possibleCert, err := cryptoutil.TryParseKeyFromReader(certFile)
+	certs, err := cryptoutil.TryParseCertificates(certFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse certificate")
+		return nil, fmt.Errorf("failed to parse certificatess from file: %w", err)
 	}
 
-	cert, ok := possibleCert.(*x509.Certificate)
-	if !ok {
-		return nil, fmt.Errorf("%v is not a x509 certificate", path)
-	}
-
-	return cert, nil
+	return certs[0], nil
 }
