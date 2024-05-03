@@ -15,6 +15,7 @@
 package product
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -244,19 +245,19 @@ func getFileContentType(file *os.File) (string, error) {
 
 	// If the content type is application/octet-stream, try to detect the content type using a file signature.
 	if contentType == "application/octet-stream" {
-		// Try to match the file signature to a content type.
-		if signature, _ := getFileSignature(buffer); signature != "application/octet-stream" {
-			contentType = signature
-		} else if extension := filepath.Ext(file.Name()); extension != "" {
-			contentType = mime.TypeByExtension(extension)
+		contentType = detectFileSignature(buffer)
+		if contentType == "application/octet-stream" {
+			if extension := filepath.Ext(file.Name()); extension != "" {
+				contentType = mime.TypeByExtension(extension)
+			}
 		}
 	}
 
 	return contentType, nil
 }
 
-// getFileSignature tries to match the file signature to a content type.
-func getFileSignature(buffer []byte) (string, error) {
+// detectFileSignature tries to match the file signature to a content type.
+func detectFileSignature(buffer []byte) string {
 	// Create a new buffer with a length of 512 bytes and copy the data from the input buffer into the new buffer to prevent out of bounds errors.
 	newBuffer := make([]byte, 512)
 	copy(newBuffer, buffer)
@@ -268,10 +269,14 @@ func getFileSignature(buffer []byte) (string, error) {
 		signature = "application/x-tar"
 	case buffer[0] == 0x25 && buffer[1] == 0x50 && buffer[2] == 0x44 && buffer[3] == 0x46 && buffer[4] == 0x2D:
 		signature = "application/pdf"
+	case bytes.HasPrefix(buffer, []byte(`{"spdxVersion":"SPDX-`)):
+		signature = "application/spdx+json"
+	case bytes.HasPrefix(buffer, []byte(`{"$schema":"http://cyclonedx.org/schema/bom-`)):
+		signature = "application/vnd.cyclonedx+json"
 	default:
 		// If the file signature is not recognized, return application/octet-stream by default
 		signature = "application/octet-stream"
 	}
 
-	return signature, nil
+	return signature
 }
