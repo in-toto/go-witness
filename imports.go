@@ -30,6 +30,7 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/oci"
 	_ "github.com/in-toto/go-witness/attestation/product"
 	_ "github.com/in-toto/go-witness/attestation/sarif"
+	_ "github.com/in-toto/go-witness/attestation/sbom"
 
 	// signer providers
 	_ "github.com/in-toto/go-witness/signer/file"
