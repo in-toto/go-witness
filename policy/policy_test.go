@@ -22,6 +22,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -562,15 +563,15 @@ func TestCheckFunctionaries(t *testing.T) {
 				},
 			},
 			expectedResults: []source.CollectionVerificationResult{
-				{},
+				{
+					Warnings: []string{fmt.Sprintf("failed to validate functionary of KeyID %s in step step1: verifier with ID %s is not a public key verifier or a x509 verifier", keyIDs[0], keyIDs[1])},
+				},
 			},
-		},
-		{
-			name: "pubkeys with kms",
 		},
 	}
 
 	for _, testCase := range testCases {
+		fmt.Println("running test case: ", testCase.name)
 		result := testCase.step.checkFunctionaries(testCase.statements, testCase.trustBundles)
 		resultCheckFields := []source.CollectionVerificationResult{}
 		for _, r := range result {

@@ -260,7 +260,6 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string]St
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for
 // the step the statement corresponds to
 func (step Step) checkFunctionaries(statements []source.CollectionVerificationResult, trustBundles map[string]TrustBundle) []source.CollectionVerificationResult {
-	fmt.Println("PredicateTyppe: ", statements[0].Statement.PredicateType)
 	for i, statement := range statements {
 		// Check that the statement contains a predicate type that we accept
 		if statement.Statement.PredicateType != attestation.CollectionType {
