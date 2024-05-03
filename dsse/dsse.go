@@ -31,7 +31,7 @@ type ErrNoMatchingSigs struct {
 }
 
 func (e ErrNoMatchingSigs) Error() string {
-	mess := fmt.Sprintf("no valid signatures for the provided verifiers found for keyids:\n")
+	mess := "no valid signatures for the provided verifiers found for keyids:\n"
 	for _, v := range e.Verifiers {
 		if v.Error != nil {
 			kid, err := v.Verifier.KeyID()
