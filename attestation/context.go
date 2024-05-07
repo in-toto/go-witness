@@ -77,6 +77,12 @@ func WithWorkingDir(workingDir string) AttestationContextOption {
 	}
 }
 
+func WithEnvVars(envVars map[string]string) AttestationContextOption {
+	return func(ctx *AttestationContext) {
+		ctx.envVars = envVars
+	}
+}
+
 type CompletedAttestor struct {
 	Attestor  Attestor
 	StartTime time.Time
@@ -88,6 +94,7 @@ type AttestationContext struct {
 	ctx                context.Context
 	attestors          []Attestor
 	workingDir         string
+	envVars            map[string]string
 	hashes             []cryptoutil.DigestValue
 	completedAttestors []CompletedAttestor
 	products           map[string]Product
@@ -181,6 +188,10 @@ func (ctx *AttestationContext) CompletedAttestors() []CompletedAttestor {
 
 func (ctx *AttestationContext) WorkingDir() string {
 	return ctx.workingDir
+}
+
+func (ctx *AttestationContext) EnvVars() map[string]string {
+	return ctx.envVars
 }
 
 func (ctx *AttestationContext) Hashes() []cryptoutil.DigestValue {

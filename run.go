@@ -100,9 +100,11 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 	}
 
 	result.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
-	result.SignedEnvelope, err = signCollection(result.Collection, dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
-	if err != nil {
-		return result, fmt.Errorf("failed to sign collection: %w", err)
+	if signer != nil {
+		result.SignedEnvelope, err = SignCollection(result.Collection, dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
+		if err != nil {
+			return result, fmt.Errorf("failed to sign collection: %w", err)
+		}
 	}
 
 	return result, nil
@@ -113,14 +115,10 @@ func validateRunOpts(ro runOptions) error {
 		return fmt.Errorf("step name is required")
 	}
 
-	if ro.signer == nil {
-		return fmt.Errorf("signer is required")
-	}
-
 	return nil
 }
 
-func signCollection(collection attestation.Collection, opts ...dsse.SignOption) (dsse.Envelope, error) {
+func SignCollection(collection attestation.Collection, opts ...dsse.SignOption) (dsse.Envelope, error) {
 	data, err := json.Marshal(&collection)
 	if err != nil {
 		return dsse.Envelope{}, err

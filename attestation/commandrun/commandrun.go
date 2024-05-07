@@ -144,6 +144,12 @@ func (rc *CommandRun) RunType() attestation.RunType {
 func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	c := exec.Command(r.Cmd[0], r.Cmd[1:]...)
 	c.Dir = ctx.WorkingDir()
+	if ctx.EnvVars() != nil {
+		for k, v := range ctx.EnvVars() {
+			c.Env = append(c.Env, k+"="+v)
+		}
+	}
+
 	stdoutBuffer := bytes.Buffer{}
 	stderrBuffer := bytes.Buffer{}
 	stdoutWriters := []io.Writer{&stdoutBuffer}
