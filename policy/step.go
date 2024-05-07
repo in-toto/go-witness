@@ -146,8 +146,8 @@ func (s Step) validateAttestations(collectionResults []source.CollectionVerifica
 	}
 
 	for _, collection := range collectionResults {
-		if collection.Collection.Name != s.Name {
-			log.Debug("Skipping collection %s as it is not for step %s", collection.Collection.Name, s.Name)
+		if collection.Collection.Name != s.Name && collection.Collection.Name != "" {
+			log.Debugf("Skipping collection %s as it is not for step %s", collection.Collection.Name, s.Name)
 			continue
 		}
 

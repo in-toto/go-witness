@@ -149,7 +149,7 @@ deny[msg] {
 	intotoStatement, err := intoto.NewStatement(attestation.CollectionType, step1CollectionJson, map[string]cryptoutil.DigestSet{"dummy": {cryptoutil.DigestValue{Hash: crypto.SHA256}: "dummy"}})
 	require.NoError(t, err)
 
-	_, err = policy.Verify(
+	pass, _, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{"dummy"}),
 		WithVerifiedSource(
@@ -166,8 +166,9 @@ deny[msg] {
 		),
 	)
 	assert.NoError(t, err)
+	assert.Equal(t, true, pass)
 
-	results, err := policy.Verify(
+	pass, results, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{"dummy"}),
 		WithVerifiedSource(
@@ -184,6 +185,7 @@ deny[msg] {
 		),
 	)
 	assert.NoError(t, err)
+	assert.Equal(t, false, pass)
 
 	for _, result := range results {
 		if result.Analyze() == false {
@@ -272,7 +274,7 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 	intotoStatement2, err := intoto.NewStatement(attestation.CollectionType, step2CollectionJson, map[string]cryptoutil.DigestSet{})
 	require.NoError(t, err)
-	_, err = policy.Verify(
+	pass, _, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{dummySha}),
 		WithVerifiedSource(newDummyVerifiedSourcer([]source.CollectionVerificationResult{
@@ -295,6 +297,7 @@ func TestArtifacts(t *testing.T) {
 		})),
 	)
 	assert.NoError(t, err)
+	assert.Equal(t, true, pass)
 
 	mats[path][cryptoutil.DigestValue{Hash: crypto.SHA256}] = "badhash"
 
@@ -311,7 +314,7 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 	intotoStatement2, err = intoto.NewStatement(attestation.CollectionType, step2CollectionJson, map[string]cryptoutil.DigestSet{})
 	require.NoError(t, err)
-	results, err := policy.Verify(
+	pass, results, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{dummySha}),
 		WithVerifiedSource(newDummyVerifiedSourcer([]source.CollectionVerificationResult{
@@ -334,6 +337,7 @@ func TestArtifacts(t *testing.T) {
 		})),
 	)
 
+	assert.Equal(t, pass, false)
 	assert.NoError(t, err)
 
 	for _, result := range results {

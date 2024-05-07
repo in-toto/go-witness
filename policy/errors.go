@@ -37,10 +37,12 @@ func (e ErrVerifyArtifactsFailed) Error() string {
 	return fmt.Sprintf("failed to verify artifacts: %v", e.Reasons)
 }
 
-type ErrNoAttestations string
+type ErrNoCollections struct {
+	Step string
+}
 
-func (e ErrNoAttestations) Error() string {
-	return fmt.Sprintf("no attestations found for step %v", string(e))
+func (e ErrNoCollections) Error() string {
+	return fmt.Sprintf("no collections found for step %v", e.Step)
 }
 
 type ErrMissingAttestation struct {

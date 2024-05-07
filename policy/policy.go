@@ -185,7 +185,7 @@ func checkVerifyOpts(vo *verifyOptions) error {
 	return nil
 }
 
-func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string]StepResult, error) {
+func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[string]StepResult, error) {
 	vo := &verifyOptions{
 		searchDepth: 3,
 	}
@@ -195,16 +195,16 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string]St
 	}
 
 	if err := checkVerifyOpts(vo); err != nil {
-		return nil, err
+		return false, nil, err
 	}
 
 	if time.Now().After(p.Expires.Time) {
-		return nil, ErrPolicyExpired(p.Expires.Time)
+		return false, nil, ErrPolicyExpired(p.Expires.Time)
 	}
 
 	trustBundles, err := p.TrustBundles()
 	if err != nil {
-		return nil, err
+		return false, nil, err
 	}
 
 	attestationsByStep := make(map[string][]string)
@@ -220,7 +220,11 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string]St
 			// Use search to get all the attestations that match the supplied step name and subjects
 			collections, err := vo.verifiedSource.Search(ctx, stepName, vo.subjectDigests, attestationsByStep[stepName])
 			if err != nil {
-				return nil, err
+				return false, nil, err
+			}
+
+			if len(collections) == 0 {
+				collections = append(collections, source.CollectionVerificationResult{Errors: []error{ErrNoCollections{Step: stepName}}})
 			}
 
 			// Verify the functionaries
@@ -251,10 +255,18 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (map[string]St
 
 	resultsByStep, err = p.verifyArtifacts(resultsByStep)
 	if err != nil {
-		return resultsByStep, err
+		return false, resultsByStep, err
 	}
 
-	return resultsByStep, nil
+	pass := true
+	for _, result := range resultsByStep {
+		p := result.Analyze()
+		if !p {
+			pass = false
+		}
+	}
+
+	return pass, resultsByStep, nil
 }
 
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for

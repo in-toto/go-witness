@@ -67,9 +67,9 @@ func VerifyWithTimestampVerifiers(verifiers ...timestamp.TimestampVerifier) Veri
 }
 
 type CheckedVerifier struct {
-	Verifier                 cryptoutil.Verifier
-	PassedTimestampVerifiers []timestamp.TimestampVerifier
-	Error                    error
+	Verifier           cryptoutil.Verifier
+	TimestampVerifiers []timestamp.TimestampVerifier
+	Error              error
 }
 
 type FailedVerifier struct{}
@@ -149,15 +149,15 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]CheckedVerifier, error) 
 				if len(passedTimestampVerifiers) > 0 {
 					verified += 1
 					checkedVerifiers = append(checkedVerifiers, CheckedVerifier{
-						Verifier:                 passedVerifier,
-						PassedTimestampVerifiers: passedTimestampVerifiers,
+						Verifier:           passedVerifier,
+						TimestampVerifiers: passedTimestampVerifiers,
 					})
 				} else {
 					for _, v := range failed {
 						checkedVerifiers = append(checkedVerifiers, CheckedVerifier{
-							Verifier:                 v,
-							PassedTimestampVerifiers: failedTimestampVerifiers,
-							Error:                    fmt.Errorf("no valid timestamps found"),
+							Verifier:           v,
+							TimestampVerifiers: failedTimestampVerifiers,
+							Error:              fmt.Errorf("no valid timestamps found"),
 						})
 					}
 				}

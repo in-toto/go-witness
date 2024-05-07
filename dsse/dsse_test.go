@@ -287,6 +287,6 @@ func TestTimestamp(t *testing.T) {
 		}
 	}
 	assert.Len(t, approvedVerifiers, 1)
-	assert.Len(t, approvedVerifiers[0].PassedTimestampVerifiers, len(expectedTimestampers))
-	assert.ElementsMatch(t, approvedVerifiers[0].PassedTimestampVerifiers, expectedTimestampers)
+	assert.Len(t, approvedVerifiers[0].TimestampVerifiers, len(expectedTimestampers))
+	assert.ElementsMatch(t, approvedVerifiers[0].TimestampVerifiers, expectedTimestampers)
 }

@@ -104,7 +104,7 @@ func VerifyWithPolicyCertConstraints(commonName string, dnsNames []string, email
 
 // Verify verifies a set of attestations against a provided policy. The set of attestations that satisfy the policy will be returned
 // if verifiation is successful.
-func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (bool, map[string]policy.StepResult, error) {
+func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (map[string]policy.StepResult, error) {
 	vo := verifyOptions{
 		policyEnvelope:      policyEnvelope,
 		policyVerifiers:     policyVerifiers,
@@ -120,19 +120,19 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 	}
 
 	if err := verifyPolicySignature(ctx, vo); err != nil {
-		return false, nil, fmt.Errorf("failed to verify policy signature: %w", err)
+		return nil, fmt.Errorf("failed to verify policy signature: %w", err)
 	}
 
 	log.Info("policy signature verified")
 
 	pol := policy.Policy{}
 	if err := json.Unmarshal(vo.policyEnvelope.Payload, &pol); err != nil {
-		return false, nil, fmt.Errorf("failed to parse policy: %w", err)
+		return nil, fmt.Errorf("failed to parse policy: %w", err)
 	}
 
 	pubKeysById, err := pol.PublicKeyVerifiers()
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to get public keys from policy: %w", err)
+		return nil, fmt.Errorf("failed to get public keys from policy: %w", err)
 	}
 
 	pubkeys := make([]cryptoutil.Verifier, 0)
@@ -142,7 +142,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 
 	trustBundlesById, err := pol.TrustBundles()
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to load policy trust bundles: %w", err)
+		return nil, fmt.Errorf("failed to load policy trust bundles: %w", err)
 	}
 
 	roots := make([]*x509.Certificate, 0)
@@ -154,7 +154,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 
 	timestampAuthoritiesById, err := pol.TimestampAuthorityTrustBundles()
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to load policy timestamp authorities: %w", err)
+		return nil, fmt.Errorf("failed to load policy timestamp authorities: %w", err)
 	}
 
 	timestampVerifiers := make([]timestamp.TimestampVerifier, 0)
@@ -172,20 +172,16 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		dsse.VerifyWithTimestampVerifiers(timestampVerifiers...),
 	)
 
-	results, err := pol.Verify(ctx, policy.WithSubjectDigests(vo.subjectDigests), policy.WithVerifiedSource(verifiedSource))
+	pass, results, err := pol.Verify(ctx, policy.WithSubjectDigests(vo.subjectDigests), policy.WithVerifiedSource(verifiedSource))
 	if err != nil {
-		return false, nil, fmt.Errorf("error encountered during policy verification: %w", err)
+		return nil, fmt.Errorf("error encountered during policy verification: %w", err)
 	}
 
-	pass := true
-	for _, result := range results {
-		p := result.Analyze()
-		if !p {
-			pass = false
-		}
+	if !pass {
+		return results, fmt.Errorf("policy verification failed")
 	}
 
-	return pass, results, nil
+	return results, nil
 }
 
 func verifyPolicySignature(ctx context.Context, vo verifyOptions) error {
