@@ -253,10 +253,7 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 		}
 	}
 
-	resultsByStep, err = p.verifyArtifacts(resultsByStep)
-	if err != nil {
-		return false, resultsByStep, err
-	}
+	resultsByStep = p.verifyArtifacts(resultsByStep)
 
 	pass := true
 	for _, result := range resultsByStep {
@@ -299,7 +296,7 @@ func (step Step) checkFunctionaries(statements []source.CollectionVerificationRe
 
 // verifyArtifacts will check the artifacts (materials+products) of the step referred to by `ArtifactsFrom` against the
 // materials of the original step.  This ensures file integrity between each step.
-func (p Policy) verifyArtifacts(resultsByStep map[string]StepResult) (map[string]StepResult, error) {
+func (p Policy) verifyArtifacts(resultsByStep map[string]StepResult) map[string]StepResult {
 	for _, step := range p.Steps {
 		accepted := false
 		if len(resultsByStep[step.Name].Passed) == 0 {
@@ -307,7 +304,8 @@ func (p Policy) verifyArtifacts(resultsByStep map[string]StepResult) (map[string
 				result.Rejected = append(result.Rejected, RejectedCollection{Reason: fmt.Errorf("failed to verify artifacts for step %s: no passed collections present", step.Name)})
 				resultsByStep[step.Name] = result
 			}
-			return resultsByStep, nil
+
+			continue
 		}
 
 		reasons := []error{}
@@ -334,7 +332,7 @@ func (p Policy) verifyArtifacts(resultsByStep map[string]StepResult) (map[string
 
 	}
 
-	return resultsByStep, nil
+	return resultsByStep
 }
 
 func verifyCollectionArtifacts(step Step, collection source.CollectionVerificationResult, collectionsByStep map[string]StepResult) error {
