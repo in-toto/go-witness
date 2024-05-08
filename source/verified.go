@@ -16,19 +16,22 @@ package source
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
-	"github.com/in-toto/go-witness/log"
 )
 
-type VerifiedCollection struct {
-	Verifiers []cryptoutil.Verifier
+type CollectionVerificationResult struct {
+	Verifiers          []cryptoutil.Verifier
+	ValidFunctionaries []cryptoutil.Verifier
 	CollectionEnvelope
+	Errors   []error
+	Warnings []string
 }
 
 type VerifiedSourcer interface {
-	Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]VerifiedCollection, error)
+	Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionVerificationResult, error)
 }
 
 type VerifiedSource struct {
@@ -40,17 +43,22 @@ func NewVerifiedSource(source Sourcer, verifyOpts ...dsse.VerificationOption) *V
 	return &VerifiedSource{source, verifyOpts}
 }
 
-func (s *VerifiedSource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]VerifiedCollection, error) {
+func (s *VerifiedSource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionVerificationResult, error) {
 	unverified, err := s.source.Search(ctx, collectionName, subjectDigests, attestations)
 	if err != nil {
 		return nil, err
 	}
 
-	verified := make([]VerifiedCollection, 0)
+	results := make([]CollectionVerificationResult, 0)
 	for _, toVerify := range unverified {
 		envelopeVerifiers, err := toVerify.Envelope.Verify(s.verifyOpts...)
 		if err != nil {
-			log.Debugf("(verified source) skipping envelope: couldn't verify enveloper's signature with the policy's verifiers: %w", err)
+			results = append(results,
+				CollectionVerificationResult{
+					Errors:             []error{fmt.Errorf("failed to verify envelope: %w", err)},
+					CollectionEnvelope: toVerify,
+				},
+			)
 			continue
 		}
 
@@ -59,11 +67,17 @@ func (s *VerifiedSource) Search(ctx context.Context, collectionName string, subj
 			passedVerifiers = append(passedVerifiers, verifier.Verifier)
 		}
 
-		verified = append(verified, VerifiedCollection{
+		var Errors []error
+		if len(passedVerifiers) == 0 {
+			Errors = append(Errors, fmt.Errorf("no verifiers passed"))
+		}
+
+		results = append(results, CollectionVerificationResult{
 			Verifiers:          passedVerifiers,
 			CollectionEnvelope: toVerify,
+			Errors:             Errors,
 		})
 	}
 
-	return verified, nil
+	return results, nil
 }

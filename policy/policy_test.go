@@ -22,6 +22,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
+	"log"
 	"testing"
 	"time"
 
@@ -147,11 +149,11 @@ deny[msg] {
 	intotoStatement, err := intoto.NewStatement(attestation.CollectionType, step1CollectionJson, map[string]cryptoutil.DigestSet{"dummy": {cryptoutil.DigestValue{Hash: crypto.SHA256}: "dummy"}})
 	require.NoError(t, err)
 
-	_, err = policy.Verify(
+	pass, _, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{"dummy"}),
 		WithVerifiedSource(
-			newDummyVerifiedSourcer([]source.VerifiedCollection{
+			newDummyVerifiedSourcer([]source.CollectionVerificationResult{
 				{
 					Verifiers: []cryptoutil.Verifier{verifier},
 					CollectionEnvelope: source.CollectionEnvelope{
@@ -164,12 +166,13 @@ deny[msg] {
 		),
 	)
 	assert.NoError(t, err)
+	assert.Equal(t, true, pass)
 
-	_, err = policy.Verify(
+	pass, results, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{"dummy"}),
 		WithVerifiedSource(
-			newDummyVerifiedSourcer([]source.VerifiedCollection{
+			newDummyVerifiedSourcer([]source.CollectionVerificationResult{
 				{
 					Verifiers: []cryptoutil.Verifier{},
 					CollectionEnvelope: source.CollectionEnvelope{
@@ -181,8 +184,16 @@ deny[msg] {
 			}),
 		),
 	)
-	assert.Error(t, err)
-	assert.IsType(t, ErrPolicyDenied{}, err)
+	assert.NoError(t, err)
+	assert.Equal(t, false, pass)
+
+	for _, result := range results {
+		if result.Analyze() == false {
+			return
+		}
+	}
+
+	assert.Fail(t, "expected a failure")
 }
 
 func TestArtifacts(t *testing.T) {
@@ -263,10 +274,10 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 	intotoStatement2, err := intoto.NewStatement(attestation.CollectionType, step2CollectionJson, map[string]cryptoutil.DigestSet{})
 	require.NoError(t, err)
-	_, err = policy.Verify(
+	pass, _, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{dummySha}),
-		WithVerifiedSource(newDummyVerifiedSourcer([]source.VerifiedCollection{
+		WithVerifiedSource(newDummyVerifiedSourcer([]source.CollectionVerificationResult{
 			{
 				Verifiers: []cryptoutil.Verifier{verifier},
 				CollectionEnvelope: source.CollectionEnvelope{
@@ -286,6 +297,7 @@ func TestArtifacts(t *testing.T) {
 		})),
 	)
 	assert.NoError(t, err)
+	assert.Equal(t, true, pass)
 
 	mats[path][cryptoutil.DigestValue{Hash: crypto.SHA256}] = "badhash"
 
@@ -302,10 +314,10 @@ func TestArtifacts(t *testing.T) {
 	require.NoError(t, err)
 	intotoStatement2, err = intoto.NewStatement(attestation.CollectionType, step2CollectionJson, map[string]cryptoutil.DigestSet{})
 	require.NoError(t, err)
-	_, err = policy.Verify(
+	pass, results, err := policy.Verify(
 		context.Background(),
 		WithSubjectDigests([]string{dummySha}),
-		WithVerifiedSource(newDummyVerifiedSourcer([]source.VerifiedCollection{
+		WithVerifiedSource(newDummyVerifiedSourcer([]source.CollectionVerificationResult{
 			{
 				Verifiers: []cryptoutil.Verifier{verifier},
 				CollectionEnvelope: source.CollectionEnvelope{
@@ -324,8 +336,19 @@ func TestArtifacts(t *testing.T) {
 			},
 		})),
 	)
-	assert.Error(t, err)
-	assert.IsType(t, ErrPolicyDenied{}, err)
+
+	assert.Equal(t, pass, false)
+	assert.NoError(t, err)
+
+	for _, result := range results {
+		if result.Analyze() == false {
+			assert.Contains(t, result.Error(), "failed to verify artifacts for step step2")
+			assert.Contains(t, result.Error(), "failed to verify artifacts: [mismatched digests for testfile]")
+			return
+		}
+	}
+
+	assert.Fail(t, "expected a failure")
 }
 
 type DummyMaterialer struct {
@@ -377,14 +400,14 @@ func (m DummyProducer) Products() map[string]attestation.Product {
 }
 
 type dummyVerifiedSourcer struct {
-	verifiedCollections []source.VerifiedCollection
+	verifiedCollections []source.CollectionVerificationResult
 }
 
-func newDummyVerifiedSourcer(verifiedCollections []source.VerifiedCollection) *dummyVerifiedSourcer {
+func newDummyVerifiedSourcer(verifiedCollections []source.CollectionVerificationResult) *dummyVerifiedSourcer {
 	return &dummyVerifiedSourcer{verifiedCollections}
 }
 
-func (s *dummyVerifiedSourcer) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]source.VerifiedCollection, error) {
+func (s *dummyVerifiedSourcer) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]source.CollectionVerificationResult, error) {
 	return s.verifiedCollections, nil
 }
 
@@ -460,5 +483,110 @@ func TestPubKeyVerifiers(t *testing.T) {
 				assert.IsType(t, testCase.expectedErr, err)
 			}
 		})
+	}
+}
+
+func TestCheckFunctionaries(t *testing.T) {
+	signers := []cryptoutil.Signer{}
+	verifiers := []cryptoutil.Verifier{}
+	for i := 0; i < 7; i++ {
+		signer, verifier, _, err := createTestKey()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		signers = append(signers, signer)
+		verifiers = append(verifiers, verifier)
+	}
+
+	keyIDs := make([]string, 0, len(signers))
+	for _, s := range signers {
+		keyID, err := s.KeyID()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		keyIDs = append(keyIDs, keyID)
+	}
+
+	testCases := []struct {
+		name         string
+		step         Step
+		statements   []source.CollectionVerificationResult
+		trustBundles map[string]TrustBundle
+		// expectedResults is a list of results with each entry containing only the fields that we wish to check (errors, warnings, valid functionaries)
+		// this is so we can compare the results without needing to copy the unnecessary fields in the testcase definitions below
+		expectedResults []source.CollectionVerificationResult
+	}{
+		{
+			name: "simple 1 functionary pass",
+			step: Step{
+				Name: "step1",
+				Functionaries: []Functionary{
+					{Type: "PublicKey", PublicKeyID: keyIDs[0]},
+				},
+				Attestations: []Attestation{
+					{Type: "dummy-prods"},
+					{Type: "dummy-mats"},
+				},
+			},
+			statements: []source.CollectionVerificationResult{
+				{
+					Verifiers: []cryptoutil.Verifier{verifiers[0]},
+					CollectionEnvelope: source.CollectionEnvelope{
+						Statement: intoto.Statement{PredicateType: attestation.CollectionType},
+					},
+				},
+			},
+			expectedResults: []source.CollectionVerificationResult{
+				{
+					ValidFunctionaries: []cryptoutil.Verifier{
+						verifiers[0],
+					},
+				},
+			},
+		},
+		{
+			name: "invalid functionary",
+			step: Step{
+				Name: "step1",
+				Functionaries: []Functionary{
+					{Type: "PublicKey", PublicKeyID: keyIDs[0]},
+				},
+				Attestations: []Attestation{
+					{Type: "dummy-prods"},
+					{Type: "dummy-mats"},
+				},
+			},
+			statements: []source.CollectionVerificationResult{
+				{
+					Verifiers: []cryptoutil.Verifier{verifiers[1]},
+					CollectionEnvelope: source.CollectionEnvelope{
+						Statement: intoto.Statement{PredicateType: attestation.CollectionType},
+					},
+				},
+			},
+			expectedResults: []source.CollectionVerificationResult{
+				{
+					Warnings: []string{fmt.Sprintf("failed to validate functionary of KeyID %s in step step1: verifier with ID %s is not a public key verifier or a x509 verifier", keyIDs[0], keyIDs[1])},
+				},
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		fmt.Println("running test case: ", testCase.name)
+		result := testCase.step.checkFunctionaries(testCase.statements, testCase.trustBundles)
+		resultCheckFields := []source.CollectionVerificationResult{}
+		for _, r := range result {
+			o := source.CollectionVerificationResult{
+				Errors:             r.Errors,
+				Warnings:           r.Warnings,
+				ValidFunctionaries: r.ValidFunctionaries,
+			}
+			resultCheckFields = append(resultCheckFields, o)
+		}
+
+		assert.Equal(t, testCase.expectedResults, resultCheckFields)
 	}
 }

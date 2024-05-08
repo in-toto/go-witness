@@ -152,7 +152,7 @@ func TestVerify(t *testing.T) {
 	env, err := Sign("dummydata", bytes.NewReader([]byte("this is some dummy data")), SignWithSigners(signer))
 	require.NoError(t, err)
 	approvedVerifiers, err := env.Verify(VerifyWithVerifiers(verifier))
-	assert.ElementsMatch(t, approvedVerifiers, []PassedVerifier{{Verifier: verifier}})
+	assert.ElementsMatch(t, approvedVerifiers, []CheckedVerifier{{Verifier: verifier}})
 	require.NoError(t, err)
 }
 
@@ -165,38 +165,44 @@ func TestFailVerify(t *testing.T) {
 	require.NoError(t, err)
 	approvedVerifiers, err := env.Verify(VerifyWithVerifiers(verifier))
 	assert.Empty(t, approvedVerifiers)
-	require.ErrorIs(t, err, ErrNoMatchingSigs{})
+	require.ErrorAs(t, err, &ErrNoMatchingSigs{Verifiers: []CheckedVerifier{{Verifier: verifier, Error: rsa.ErrVerification}}})
 }
 
 func TestMultiSigners(t *testing.T) {
 	signers := []cryptoutil.Signer{}
 	verifiers := []cryptoutil.Verifier{}
-	expectedVerifiers := []PassedVerifier{}
+	expectedVerifiers := []CheckedVerifier{}
 	for i := 0; i < 5; i++ {
 		s, v, err := createTestKey()
 		require.NoError(t, err)
 		signers = append(signers, s)
 		verifiers = append(verifiers, v)
-		expectedVerifiers = append(expectedVerifiers, PassedVerifier{Verifier: v})
+		expectedVerifiers = append(expectedVerifiers, CheckedVerifier{Verifier: v})
 	}
 
 	env, err := Sign("dummydata", bytes.NewReader([]byte("this is some dummy data")), SignWithSigners(signers...))
 	require.NoError(t, err)
 
-	approvedVerifiers, err := env.Verify(VerifyWithVerifiers(verifiers...))
+	checkedVerifiers, err := env.Verify(VerifyWithVerifiers(verifiers...))
+	approvedVerifiers := []CheckedVerifier{}
+	for _, v := range checkedVerifiers {
+		if v.Error == nil {
+			approvedVerifiers = append(approvedVerifiers, v)
+		}
+	}
 	require.NoError(t, err)
 	assert.ElementsMatch(t, approvedVerifiers, expectedVerifiers)
 }
 
 func TestThreshold(t *testing.T) {
 	signers := []cryptoutil.Signer{}
-	expectedVerifiers := []PassedVerifier{}
+	expectedVerifiers := []CheckedVerifier{}
 	verifiers := []cryptoutil.Verifier{}
 	for i := 0; i < 5; i++ {
 		s, v, err := createTestKey()
 		require.NoError(t, err)
 		signers = append(signers, s)
-		expectedVerifiers = append(expectedVerifiers, PassedVerifier{Verifier: v})
+		expectedVerifiers = append(expectedVerifiers, CheckedVerifier{Verifier: v})
 		verifiers = append(verifiers, v)
 	}
 
@@ -210,12 +216,26 @@ func TestThreshold(t *testing.T) {
 	env, err := Sign("dummydata", bytes.NewReader([]byte("this is some dummy data")), SignWithSigners(signers...))
 	require.NoError(t, err)
 
-	approvedVerifiers, err := env.Verify(VerifyWithVerifiers(verifiers...), VerifyWithThreshold(5))
+	checkedVerifiers, err := env.Verify(VerifyWithVerifiers(verifiers...), VerifyWithThreshold(5))
 	require.NoError(t, err)
+
+	approvedVerifiers := []CheckedVerifier{}
+	for _, v := range checkedVerifiers {
+		if v.Error == nil {
+			approvedVerifiers = append(approvedVerifiers, v)
+		}
+	}
 	assert.ElementsMatch(t, approvedVerifiers, expectedVerifiers)
 
-	approvedVerifiers, err = env.Verify(VerifyWithVerifiers(verifiers...), VerifyWithThreshold(10))
+	checkedVerifiers, err = env.Verify(VerifyWithVerifiers(verifiers...), VerifyWithThreshold(10))
 	require.ErrorIs(t, err, ErrThresholdNotMet{Actual: 5, Theshold: 10})
+
+	approvedVerifiers = []CheckedVerifier{}
+	for _, v := range checkedVerifiers {
+		if v.Error == nil {
+			approvedVerifiers = append(approvedVerifiers, v)
+		}
+	}
 	assert.ElementsMatch(t, approvedVerifiers, expectedVerifiers)
 
 	_, err = env.Verify(VerifyWithVerifiers(verifiers...), VerifyWithThreshold(-10))
@@ -257,9 +277,16 @@ func TestTimestamp(t *testing.T) {
 	env, err := Sign("dummydata", bytes.NewReader([]byte("this is some dummy data")), SignWithSigners(s), SignWithTimestampers(allTimestampers...))
 	require.NoError(t, err)
 
-	approvedVerifiers, err := env.Verify(VerifyWithVerifiers(v), VerifyWithRoots(root), VerifyWithIntermediates(intermediate), VerifyWithTimestampVerifiers(allTimestampVerifiers...))
+	checkedVerifiers, err := env.Verify(VerifyWithVerifiers(v), VerifyWithRoots(root), VerifyWithIntermediates(intermediate), VerifyWithTimestampVerifiers(allTimestampVerifiers...))
 	require.NoError(t, err)
+
+	approvedVerifiers := []CheckedVerifier{}
+	for _, v := range checkedVerifiers {
+		if v.Error == nil {
+			approvedVerifiers = append(approvedVerifiers, v)
+		}
+	}
 	assert.Len(t, approvedVerifiers, 1)
-	assert.Len(t, approvedVerifiers[0].PassedTimestampVerifiers, len(expectedTimestampers))
-	assert.ElementsMatch(t, approvedVerifiers[0].PassedTimestampVerifiers, expectedTimestampers)
+	assert.Len(t, approvedVerifiers[0].TimestampVerifiers, len(expectedTimestampers))
+	assert.ElementsMatch(t, approvedVerifiers[0].TimestampVerifiers, expectedTimestampers)
 }

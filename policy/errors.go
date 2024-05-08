@@ -22,10 +22,27 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 )
 
-type ErrNoAttestations string
+type ErrVerifyArtifactsFailed struct {
+	Reasons []string
+}
 
-func (e ErrNoAttestations) Error() string {
-	return fmt.Sprintf("no attestations found for step %v", string(e))
+func (e ErrVerifyArtifactsFailed) Error() string {
+	mess := "failed to verify artifacts: \n"
+	for i, r := range e.Reasons {
+		if i == len(e.Reasons)-1 {
+			mess += r + "\n"
+		}
+		mess += r + ", \n"
+	}
+	return fmt.Sprintf("failed to verify artifacts: %v", e.Reasons)
+}
+
+type ErrNoCollections struct {
+	Step string
+}
+
+func (e ErrNoCollections) Error() string {
+	return fmt.Sprintf("no collections found for step %v", e.Step)
 }
 
 type ErrMissingAttestation struct {
@@ -89,7 +106,7 @@ type ErrPolicyDenied struct {
 }
 
 func (e ErrPolicyDenied) Error() string {
-	return fmt.Sprintf("policy was denied due to:\n%v", strings.Join(e.Reasons, "\n  -"))
+	return fmt.Sprintf("policy was denied due to: %v", strings.Join(e.Reasons, ", "))
 }
 
 type ErrConstraintCheckFailed struct {

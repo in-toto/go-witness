@@ -16,6 +16,8 @@ package dsse
 
 import (
 	"fmt"
+
+	"github.com/in-toto/go-witness/log"
 )
 
 type ErrNoSignatures struct{}
@@ -24,10 +26,25 @@ func (e ErrNoSignatures) Error() string {
 	return "no signatures in dsse envelope"
 }
 
-type ErrNoMatchingSigs struct{}
+type ErrNoMatchingSigs struct {
+	Verifiers []CheckedVerifier
+}
 
 func (e ErrNoMatchingSigs) Error() string {
-	return "no valid signatures for the provided verifiers found"
+	mess := "no valid signatures for the provided verifiers found for keyids:\n"
+	for _, v := range e.Verifiers {
+		if v.Error != nil {
+			kid, err := v.Verifier.KeyID()
+			if err != nil {
+				log.Warn("failed to get key id from verifier: %v", err)
+			}
+
+			s := fmt.Sprintf("  %s: %v\n", kid, v.Error)
+			mess += s
+		}
+	}
+
+	return mess
 }
 
 type ErrThresholdNotMet struct {

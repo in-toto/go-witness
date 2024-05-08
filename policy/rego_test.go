@@ -44,8 +44,7 @@ deny[msg]{
 	attestor.Status["test"] = git.Status{Staging: "Modified"}
 	err := EvaluateRegoPolicy(&attestor, passPolicy)
 	assert.Error(t, err)
-	require.IsType(t, ErrPolicyDenied{}, err)
-	assert.ElementsMatch(t, []string{expectedReason}, err.(ErrPolicyDenied).Reasons)
+	require.Contains(t, err.Error(), "unexpected changes to git repository")
 }
 
 func TestInvalidDeny(t *testing.T) {

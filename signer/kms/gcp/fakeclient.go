@@ -64,7 +64,6 @@ type fakeGCPClient struct {
 }
 
 func newFakeGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*fakeGCPClient, error) {
-	fmt.Println(ksp.Reference)
 	if err := ValidReference(ksp.Reference); err != nil {
 		return nil, err
 	}
