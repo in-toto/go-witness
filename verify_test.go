@@ -21,11 +21,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/internal/test"
 	"github.com/in-toto/go-witness/intoto"
 	"github.com/in-toto/go-witness/timestamp"
+
+	"github.com/in-toto/go-witness/cryptoutil"
 )
 
 func TestVerifyPolicySignature(t *testing.T) {
