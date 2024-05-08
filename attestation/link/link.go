@@ -26,6 +26,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/material"
 	"github.com/in-toto/go-witness/attestation/product"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/registry"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -47,6 +48,19 @@ var (
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType,
 		func() attestation.Attestor { return New() },
+		registry.BoolConfigOption(
+			"export",
+			"Export the Link predicate in its own attestation",
+			defaultExport,
+			func(a attestation.Attestor, export bool) (attestation.Attestor, error) {
+				linkAttestor, ok := a.(*Link)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a Link provenance attestor", a)
+				}
+				WithExport(export)(linkAttestor)
+				return linkAttestor, nil
+			},
+		),
 	)
 }
 
@@ -81,7 +95,7 @@ func (l *Link) RunType() attestation.RunType {
 }
 
 func (l *Link) Export() bool {
-	return true
+	return l.export
 }
 
 func (l *Link) Attest(ctx *attestation.AttestationContext) error {

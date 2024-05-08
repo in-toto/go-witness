@@ -61,7 +61,7 @@ func init() {
 		func() attestation.Attestor { return New() },
 		registry.BoolConfigOption(
 			"export",
-			"Export the SLSA provenance attestation to its own file",
+			"Export the SLSA provenance predicate in its own attestation",
 			defaultExport,
 			func(a attestation.Attestor, export bool) (attestation.Attestor, error) {
 				slsaAttestor, ok := a.(*Provenance)
@@ -107,7 +107,7 @@ func (p *Provenance) RunType() attestation.RunType {
 }
 
 func (p *Provenance) Export() bool {
-	return true
+	return p.export
 }
 
 func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {

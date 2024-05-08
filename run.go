@@ -26,6 +26,7 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
+	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/timestamp"
 )
 
@@ -106,7 +107,11 @@ func run(stepName string, signer cryptoutil.Signer, opts []RunOption) ([]RunResu
 		if r.Error != nil {
 			errs = append(errs, r.Error)
 		} else {
-			if _, ok := r.Attestor.(attestation.Exporter); ok {
+			if exporter, ok := r.Attestor.(attestation.Exporter); ok {
+				if !exporter.Export() {
+					log.Debugf("%s attestor not configured to be exported as its own attestation", r.Attestor.Name())
+					continue
+				}
 				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
 					envelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
 					if err != nil {
