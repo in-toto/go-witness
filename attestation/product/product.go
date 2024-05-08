@@ -120,7 +120,7 @@ type Attestor struct {
 
 type attestorJson struct {
 	Products      map[string]attestation.Product `json:"products"`
-	Configuration attestorConfiguration          `json:"configuration"`
+	Configuration *attestorConfiguration          `json:"configuration,omitempty"`
 }
 
 type attestorConfiguration struct {
