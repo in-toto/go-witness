@@ -122,7 +122,7 @@ func fromDigestMap(workingDir string, digestMap map[string]cryptoutil.DigestSet)
 =======
 type attestorJson struct {
 	Products      map[string]attestation.Product `json:"products"`
-	Configuration attestorConfiguration          `json:"configuration"`
+	Configuration *attestorConfiguration          `json:"configuration,omitempty"`
 }
 
 type attestorConfiguration struct {
