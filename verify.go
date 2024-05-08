@@ -24,7 +24,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/policyverify"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
-	"github.com/in-toto/go-witness/internal/policy"
+	ipolicy "github.com/in-toto/go-witness/internal/policy"
 	"github.com/in-toto/go-witness/slsa"
 	"github.com/in-toto/go-witness/source"
 )
@@ -42,7 +42,7 @@ func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelo
 
 type verifyOptions struct {
 	attestorOptions              []policyverify.Option
-	verifyPolicySignatureOptions []policy.Option
+	verifyPolicySignatureOptions []ipolicy.Option
 	runOptions                   []RunOption
 	signers                      []cryptoutil.Signer
 }
@@ -89,7 +89,7 @@ func VerifyWithRunOptions(opts ...RunOption) VerifyOption {
 
 func VerifyWithPolicyCertConstraints(commonName string, dnsNames []string, emails []string, organizations []string, uris []string) VerifyOption {
 	return func(vo *verifyOptions) {
-		vo.verifyPolicySignatureOptions = append(vo.verifyPolicySignatureOptions, policy.VerifyWithPolicyCertConstraints(commonName, dnsNames, emails, organizations, uris))
+		vo.verifyPolicySignatureOptions = append(vo.verifyPolicySignatureOptions, ipolicy.VerifyWithPolicyCertConstraints(commonName, dnsNames, emails, organizations, uris))
 	}
 }
 
@@ -107,7 +107,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		opt(&vo)
 	}
 
-	vo.verifyPolicySignatureOptions = append(vo.verifyPolicySignatureOptions, policy.VerifyWithPolicyVerifiers(policyVerifiers))
+	vo.verifyPolicySignatureOptions = append(vo.verifyPolicySignatureOptions, ipolicy.VerifyWithPolicyVerifiers(policyVerifiers))
 	vo.attestorOptions = append(vo.attestorOptions, policyverify.VerifyWithPolicyEnvelope(policyEnvelope), policyverify.VerifyWithPolicyVerificationOptions(vo.verifyPolicySignatureOptions...))
 	if len(vo.signers) > 0 {
 		vo.runOptions = append(vo.runOptions, RunWithSigners(vo.signers...))

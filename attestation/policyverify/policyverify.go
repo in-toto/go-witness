@@ -181,15 +181,13 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		dsse.VerifyWithTimestampVerifiers(timestampVerifiers...),
 	)
 
-	accepted := true
-	policyResult, policyErr := pol.Verify(ctx.Context(), policy.WithSubjectDigests(a.subjectDigests), policy.WithVerifiedSource(verifiedSource))
-	if _, ok := policyErr.(policy.ErrPolicyDenied); ok {
-		accepted = false
-	} else if policyErr != nil {
+	accepted, stepResults, policyErr := pol.Verify(ctx.Context(), policy.WithSubjectDigests(a.subjectDigests), policy.WithVerifiedSource(verifiedSource))
+	if policyErr != nil {
+		// TODO: log stepResults
 		return fmt.Errorf("failed to verify policy: %w", policyErr)
 	}
 
-	a.VerificationSummary, err = verificationSummaryFromResults(ctx, a.policyEnvelope, policyResult, accepted)
+	a.VerificationSummary, err = verificationSummaryFromResults(ctx, a.policyEnvelope, stepResults, accepted)
 	if err != nil {
 		return fmt.Errorf("failed to generate verification summary: %w", err)
 	}
@@ -197,18 +195,18 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	return nil
 }
 
-func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyEnvelope dsse.Envelope, policyResult policy.PolicyResult, accepted bool) (slsa.VerificationSummary, error) {
-	inputAttestations := make([]slsa.ResourceDescriptor, 0, len(policyResult.EvidenceByStep))
-	for _, input := range policyResult.EvidenceByStep {
-		for _, attestation := range input {
-			digest, err := cryptoutil.CalculateDigestSetFromBytes(attestation.Envelope.Payload, ctx.Hashes())
+func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyEnvelope dsse.Envelope, stepResults map[string]policy.StepResult, accepted bool) (slsa.VerificationSummary, error) {
+	inputAttestations := make([]slsa.ResourceDescriptor, 0, len(stepResults))
+	for _, step := range stepResults {
+		for _, collection := range step.Passed {
+			digest, err := cryptoutil.CalculateDigestSetFromBytes(collection.Envelope.Payload, ctx.Hashes())
 			if err != nil {
 				log.Debugf("failed to calculate evidence hash: %v", err)
 				continue
 			}
 
 			inputAttestations = append(inputAttestations, slsa.ResourceDescriptor{
-				URI:    attestation.Reference,
+				URI:    collection.Reference,
 				Digest: digest,
 			})
 		}
