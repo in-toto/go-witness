@@ -33,6 +33,7 @@ const (
 	ExecuteRunType     RunType = "execute"
 	ProductRunType     RunType = "product"
 	PostProductRunType RunType = "postproduct"
+	VerifyRunType      RunType = "verify"
 )
 
 func runTypeOrder() []RunType {
@@ -131,8 +132,11 @@ func (ctx *AttestationContext) RunAttestors() error {
 				Reason:  "attestor run type not set",
 			}
 		}
-
 		attestors[attestor.RunType()] = append(attestors[attestor.RunType()], attestor)
+	}
+
+	if attestors[VerifyRunType] != nil && len(attestors) > 1 {
+		return fmt.Errorf("attestors of type %s cannot be run in conjunction with other attestor types", VerifyRunType)
 	}
 
 	order := runTypeOrder()

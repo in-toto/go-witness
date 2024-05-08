@@ -15,10 +15,8 @@
 package policyverify
 
 import (
-	"context"
 	"crypto"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -26,6 +24,7 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
+	ipolicy "github.com/in-toto/go-witness/internal/policy"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/policy"
 	"github.com/in-toto/go-witness/slsa"
@@ -36,7 +35,7 @@ import (
 const (
 	Name    = "policyverify"
 	Type    = slsa.VerificationSummaryPredicate
-	RunType = attestation.ExecuteRunType
+	RunType = attestation.VerifyRunType
 )
 
 var (
@@ -51,25 +50,23 @@ func init() {
 }
 
 type Attestor struct {
+	*ipolicy.VerifyPolicySignatureOptions
 	slsa.VerificationSummary
 
-	policyTimestampAuthorities []timestamp.TimestampVerifier
-	policyCARoots              []*x509.Certificate
-	policyCAIntermediates      []*x509.Certificate
-	policyEnvelope             dsse.Envelope
-	policyVerifiers            []cryptoutil.Verifier
-	collectionSource           source.Sourcer
-	subjectDigests             []string
-
-	// cert constraint options for policy envelope verification
-	policyCommonName    string
-	policyDNSNames      []string
-	policyEmails        []string
-	policyOrganizations []string
-	policyURIs          []string
+	policyEnvelope   dsse.Envelope
+	collectionSource source.Sourcer
+	subjectDigests   []string
 }
 
 type Option func(*Attestor)
+
+func VerifyWithPolicyVerificationOptions(opts ...ipolicy.Option) Option {
+	return func(a *Attestor) {
+		for _, opt := range opts {
+			opt(a.VerifyPolicySignatureOptions)
+		}
+	}
+}
 
 func VerifyWithPolicyEnvelope(policyEnvelope dsse.Envelope) Option {
 	return func(a *Attestor) {
@@ -77,63 +74,26 @@ func VerifyWithPolicyEnvelope(policyEnvelope dsse.Envelope) Option {
 	}
 }
 
-func VerifyWithPolicyVerifiers(policyVerifiers []cryptoutil.Verifier) Option {
-	return func(a *Attestor) {
-		a.policyVerifiers = append(a.policyVerifiers, policyVerifiers...)
-	}
-}
-
 func VerifyWithSubjectDigests(subjectDigests []cryptoutil.DigestSet) Option {
-	return func(a *Attestor) {
+	return func(vo *Attestor) {
 		for _, set := range subjectDigests {
 			for _, digest := range set {
-				a.subjectDigests = append(a.subjectDigests, digest)
+				vo.subjectDigests = append(vo.subjectDigests, digest)
 			}
 		}
 	}
 }
 
 func VerifyWithCollectionSource(source source.Sourcer) Option {
-	return func(a *Attestor) {
-		a.collectionSource = source
-	}
-}
-
-func VerifyWithPolicyTimestampAuthorities(authorities []timestamp.TimestampVerifier) Option {
-	return func(a *Attestor) {
-		a.policyTimestampAuthorities = authorities
-	}
-}
-
-func VerifyWithPolicyCARoots(roots []*x509.Certificate) Option {
-	return func(a *Attestor) {
-		a.policyCARoots = roots
-	}
-}
-
-func VerifyWithPolicyCAIntermediates(intermediates []*x509.Certificate) Option {
-	return func(a *Attestor) {
-		a.policyCAIntermediates = intermediates
-	}
-}
-
-func VerifyWithPolicyCertConstraints(commonName string, dnsNames []string, emails []string, organizations []string, uris []string) Option {
-	return func(a *Attestor) {
-		a.policyCommonName = commonName
-		a.policyDNSNames = dnsNames
-		a.policyEmails = emails
-		a.policyOrganizations = organizations
-		a.policyURIs = uris
+	return func(vo *Attestor) {
+		vo.collectionSource = source
 	}
 }
 
 func New(opts ...Option) *Attestor {
+	vps := ipolicy.NewVerifyPolicySignatureOptions()
 	a := &Attestor{
-		policyCommonName:    "*",
-		policyDNSNames:      []string{"*"},
-		policyOrganizations: []string{"*"},
-		policyURIs:          []string{"*"},
-		policyEmails:        []string{"*"},
+		VerifyPolicySignatureOptions: vps,
 	}
 
 	for _, opt := range opts {
@@ -168,7 +128,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	if err := verifyPolicySignature(ctx.Context(), a); err != nil {
+	if err := ipolicy.VerifyPolicySignature(ctx.Context(), a.policyEnvelope, a.VerifyPolicySignatureOptions); err != nil {
 		return fmt.Errorf("failed to verify policy signature: %w", err)
 	}
 
@@ -270,69 +230,10 @@ func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyE
 		},
 		TimeVerified: time.Now(),
 		Policy: slsa.ResourceDescriptor{
-			URI:    policyDigest[cryptoutil.DigestValue{Hash: crypto.SHA256, GitOID: false}], //TODO: find a better value for this...
+			URI:    policy.PolicyPredicate,
 			Digest: policyDigest,
 		},
 		InputAttestations:  inputAttestations,
 		VerificationResult: verificationResult,
 	}, nil
-}
-
-func verifyPolicySignature(ctx context.Context, vo *Attestor) error {
-	passedPolicyVerifiers, err := vo.policyEnvelope.Verify(dsse.VerifyWithVerifiers(vo.policyVerifiers...), dsse.VerifyWithTimestampVerifiers(vo.policyTimestampAuthorities...), dsse.VerifyWithRoots(vo.policyCARoots...), dsse.VerifyWithIntermediates(vo.policyCAIntermediates...))
-	if err != nil {
-		return fmt.Errorf("could not verify policy: %w", err)
-	}
-
-	var passed bool
-	for _, verifier := range passedPolicyVerifiers {
-		kid, err := verifier.Verifier.KeyID()
-		if err != nil {
-			return fmt.Errorf("could not get verifier key id: %w", err)
-		}
-
-		var f policy.Functionary
-		trustBundle := make(map[string]policy.TrustBundle)
-		if _, ok := verifier.Verifier.(*cryptoutil.X509Verifier); ok {
-			rootIDs := make([]string, 0)
-			for _, root := range vo.policyCARoots {
-				id := base64.StdEncoding.EncodeToString(root.Raw)
-				rootIDs = append(rootIDs, id)
-				trustBundle[id] = policy.TrustBundle{
-					Root: root,
-				}
-			}
-
-			f = policy.Functionary{
-				Type: "root",
-				CertConstraint: policy.CertConstraint{
-					Roots:         rootIDs,
-					CommonName:    vo.policyCommonName,
-					URIs:          vo.policyURIs,
-					Emails:        vo.policyEmails,
-					Organizations: vo.policyOrganizations,
-					DNSNames:      vo.policyDNSNames,
-				},
-			}
-
-		} else {
-			f = policy.Functionary{
-				Type:        "key",
-				PublicKeyID: kid,
-			}
-		}
-
-		err = f.Validate(verifier.Verifier, trustBundle)
-		if err != nil {
-			log.Debugf("Policy Verifier %s failed failed to match supplied constraints: %w, continuing...", kid, err)
-			continue
-		}
-		passed = true
-	}
-
-	if !passed {
-		return fmt.Errorf("no policy verifiers passed verification")
-	} else {
-		return nil
-	}
 }
