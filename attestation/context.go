@@ -40,6 +40,10 @@ func runTypeOrder() []RunType {
 	return []RunType{PreMaterialRunType, MaterialRunType, ExecuteRunType, ProductRunType, PostProductRunType}
 }
 
+func verifyTypeOrder() []RunType {
+	return []RunType{VerifyRunType}
+}
+
 func (r RunType) String() string {
 	return string(r)
 }
@@ -135,11 +139,13 @@ func (ctx *AttestationContext) RunAttestors() error {
 		attestors[attestor.RunType()] = append(attestors[attestor.RunType()], attestor)
 	}
 
+	order := runTypeOrder()
 	if attestors[VerifyRunType] != nil && len(attestors) > 1 {
 		return fmt.Errorf("attestors of type %s cannot be run in conjunction with other attestor types", VerifyRunType)
+	} else if attestors[VerifyRunType] != nil {
+		order = verifyTypeOrder()
 	}
 
-	order := runTypeOrder()
 	for _, k := range order {
 		log.Debugf("Starting %s attestors...", k.String())
 		for _, att := range attestors[k] {

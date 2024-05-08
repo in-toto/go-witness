@@ -53,6 +53,7 @@ type Attestor struct {
 	*ipolicy.VerifyPolicySignatureOptions
 	slsa.VerificationSummary
 
+	stepResults      map[string]policy.StepResult
 	policyEnvelope   dsse.Envelope
 	collectionSource source.Sourcer
 	subjectDigests   []string
@@ -127,6 +128,10 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	return subjects
 }
 
+func (a *Attestor) StepResults() map[string]policy.StepResult {
+	return a.stepResults
+}
+
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	if err := ipolicy.VerifyPolicySignature(ctx.Context(), a.policyEnvelope, a.VerifyPolicySignatureOptions); err != nil {
 		return fmt.Errorf("failed to verify policy signature: %w", err)
@@ -186,6 +191,8 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		// TODO: log stepResults
 		return fmt.Errorf("failed to verify policy: %w", policyErr)
 	}
+
+	a.stepResults = stepResults
 
 	a.VerificationSummary, err = verificationSummaryFromResults(ctx, a.policyEnvelope, stepResults, accepted)
 	if err != nil {

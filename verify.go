@@ -25,6 +25,7 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	ipolicy "github.com/in-toto/go-witness/internal/policy"
+	"github.com/in-toto/go-witness/policy"
 	"github.com/in-toto/go-witness/slsa"
 	"github.com/in-toto/go-witness/source"
 )
@@ -96,6 +97,7 @@ func VerifyWithPolicyCertConstraints(commonName string, dnsNames []string, email
 type VerifyResult struct {
 	RunResult
 	VerificationSummary slsa.VerificationSummary
+	StepResults         map[string]policy.StepResult
 }
 
 // Verify verifies a set of attestations against a provided policy. The set of attestations that satisfy the policy will be returned
@@ -140,9 +142,14 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 				return VerifyResult{}, fmt.Errorf("unknown attestor %T", att.Attestation)
 			}
 
+			vr.StepResults = verificationAttestor.StepResults()
 			vr.VerificationSummary = verificationAttestor.VerificationSummary
 			break
 		}
+	}
+
+	if vr.VerificationSummary.VerificationResult != slsa.PassedVerificationResult {
+		return vr, fmt.Errorf("policy verification failed")
 	}
 
 	return vr, nil
