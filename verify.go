@@ -104,7 +104,7 @@ func VerifyWithPolicyCertConstraints(commonName string, dnsNames []string, email
 
 // Verify verifies a set of attestations against a provided policy. The set of attestations that satisfy the policy will be returned
 // if verifiation is successful.
-func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (map[string][]source.VerifiedCollection, error) {
+func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers []cryptoutil.Verifier, opts ...VerifyOption) (map[string]policy.StepResult, error) {
 	vo := verifyOptions{
 		policyEnvelope:      policyEnvelope,
 		policyVerifiers:     policyVerifiers,
@@ -127,7 +127,7 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 
 	pol := policy.Policy{}
 	if err := json.Unmarshal(vo.policyEnvelope.Payload, &pol); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal policy from envelope: %w", err)
+		return nil, fmt.Errorf("failed to parse policy: %w", err)
 	}
 
 	pubKeysById, err := pol.PublicKeyVerifiers()
@@ -171,12 +171,17 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 		dsse.VerifyWithIntermediates(intermediates...),
 		dsse.VerifyWithTimestampVerifiers(timestampVerifiers...),
 	)
-	accepted, err := pol.Verify(ctx, policy.WithSubjectDigests(vo.subjectDigests), policy.WithVerifiedSource(verifiedSource))
+
+	pass, results, err := pol.Verify(ctx, policy.WithSubjectDigests(vo.subjectDigests), policy.WithVerifiedSource(verifiedSource))
 	if err != nil {
-		return nil, fmt.Errorf("failed to verify policy: %w", err)
+		return nil, fmt.Errorf("error encountered during policy verification: %w", err)
 	}
 
-	return accepted, nil
+	if !pass {
+		return results, fmt.Errorf("policy verification failed")
+	}
+
+	return results, nil
 }
 
 func verifyPolicySignature(ctx context.Context, vo verifyOptions) error {
