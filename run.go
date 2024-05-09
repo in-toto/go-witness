@@ -21,8 +21,6 @@ import (
 	"fmt"
 
 	"github.com/in-toto/go-witness/attestation"
-	"github.com/in-toto/go-witness/attestation/environment"
-	"github.com/in-toto/go-witness/attestation/git"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
@@ -31,42 +29,65 @@ import (
 
 type runOptions struct {
 	stepName        string
-	signer          cryptoutil.Signer
+	signers         []cryptoutil.Signer
 	attestors       []attestation.Attestor
 	attestationOpts []attestation.AttestationContextOption
 	timestampers    []timestamp.Timestamper
+	insecure        bool
 }
 
 type RunOption func(ro *runOptions)
 
-func RunWithAttestors(attestors []attestation.Attestor) RunOption {
+// RunWithInsecure will allow attestations to be generated unsigned. If insecure is true, RunResult will not
+// contain a signed DSSE envelope
+func RunWithInsecure(insecure bool) RunOption {
 	return func(ro *runOptions) {
-		ro.attestors = attestors
+		ro.insecure = insecure
 	}
 }
 
+// RunWithAttestors defines which attestors should be run and added to the resulting AttestationCollection
+func RunWithAttestors(attestors []attestation.Attestor) RunOption {
+	return func(ro *runOptions) {
+		ro.attestors = append(ro.attestors, attestors...)
+	}
+}
+
+// RunWithAttestationOpts takes in any AttestationContextOptions and forwards them to the context that Run
+// creates
 func RunWithAttestationOpts(opts ...attestation.AttestationContextOption) RunOption {
 	return func(ro *runOptions) {
 		ro.attestationOpts = opts
 	}
 }
 
+// RunWithTimestampers will timestamp any signatures created on the DSSE time envelope with the provided
+// timestampers
 func RunWithTimestampers(ts ...timestamp.Timestamper) RunOption {
 	return func(ro *runOptions) {
 		ro.timestampers = ts
 	}
 }
 
+// RunWithSigners configures the signers that will be used to sign the DSSE envelope containing the generated
+// attestation collection.
+func RunWithSigners(signers ...cryptoutil.Signer) RunOption {
+	return func(ro *runOptions) {
+		ro.signers = append(ro.signers, signers...)
+	}
+}
+
+// RunResult contains the generated attestation collection as well as the signed DSSE envelope, if one was
+// created.
 type RunResult struct {
 	Collection     attestation.Collection
 	SignedEnvelope dsse.Envelope
 }
 
-func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResult, error) {
+func Run(stepName string, opts ...RunOption) (RunResult, error) {
 	ro := runOptions{
-		stepName:  stepName,
-		signer:    signer,
-		attestors: []attestation.Attestor{environment.New(), git.New()},
+		stepName: stepName,
+		insecure: false,
 	}
 
 	for _, opt := range opts {
@@ -100,9 +121,12 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 	}
 
 	result.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
-	result.SignedEnvelope, err = signCollection(result.Collection, dsse.SignWithSigners(ro.signer), dsse.SignWithTimestampers(ro.timestampers...))
-	if err != nil {
-		return result, fmt.Errorf("failed to sign collection: %w", err)
+
+	if !ro.insecure {
+		result.SignedEnvelope, err = signCollection(result.Collection, dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
+		if err != nil {
+			return result, fmt.Errorf("failed to sign collection: %w", err)
+		}
 	}
 
 	return result, nil
@@ -113,8 +137,8 @@ func validateRunOpts(ro runOptions) error {
 		return fmt.Errorf("step name is required")
 	}
 
-	if ro.signer == nil {
-		return fmt.Errorf("signer is required")
+	if len(ro.signers) == 0 && !ro.insecure {
+		return fmt.Errorf("at lease one signer is required if not in insecure mode")
 	}
 
 	return nil

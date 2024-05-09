@@ -89,7 +89,7 @@ func EvaluateRegoPolicy(attestor attestation.Attestor, policies []RegoPolicy) er
 	}
 
 	if len(allDenyReasons) > 0 {
-		return ErrPolicyDenied{Reasons: allDenyReasons}
+		return fmt.Errorf("rego policy evaluation failed for attestor type %s: %w", attestor.Type(), ErrPolicyDenied{Reasons: allDenyReasons})
 	}
 
 	return nil
