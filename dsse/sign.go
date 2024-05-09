@@ -65,6 +65,10 @@ func Sign(bodyType string, body io.Reader, opts ...SignOption) (Envelope, error)
 	env.Signatures = make([]Signature, 0)
 	pae := preauthEncode(bodyType, bodyBytes)
 	for _, signer := range so.signers {
+		if signer == nil {
+			continue
+		}
+
 		sig, err := signer.Sign(bytes.NewReader(pae))
 		if err != nil {
 			return env, err

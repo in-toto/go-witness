@@ -39,7 +39,23 @@ var (
 	_ attestation.Attestor   = &Attestor{}
 	_ attestation.Subjecter  = &Attestor{}
 	_ attestation.BackReffer = &Attestor{}
+	_ GitLabAttestor         = &Attestor{}
 )
+
+type GitLabAttestor interface {
+	// Attestor
+	Name() string
+	Type() string
+	RunType() attestation.RunType
+	Attest(ctx *attestation.AttestationContext) error
+	Data() *Attestor
+
+	// Subjecter
+	Subjects() map[string]cryptoutil.DigestSet
+
+	// Backreffer
+	BackRefs() map[string]cryptoutil.DigestSet
+}
 
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
@@ -96,13 +112,15 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	a.CIServerUrl = os.Getenv("CI_SERVER_URL")
-	jwksUrl := fmt.Sprintf("%s/-/jwks", a.CIServerUrl)
-	jwtString := os.Getenv("CI_JOB_JWT")
+	jwksUrl := fmt.Sprintf("%s/oauth/discovery/keys", a.CIServerUrl)
+	jwtString := os.Getenv("ID_TOKEN")
 	if jwtString != "" {
 		a.JWT = jwt.New(jwt.WithToken(jwtString), jwt.WithJWKSUrl(jwksUrl))
 		if err := a.JWT.Attest(ctx); err != nil {
 			return err
 		}
+	} else {
+		log.Warn("(attestation/gitlab) no jwt token found in environment")
 	}
 
 	a.CIConfigPath = os.Getenv("CI_CONFIG_PATH")
@@ -119,6 +137,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.CIHost = os.Getenv("CI_SERVER_HOST")
 
 	return nil
+}
+
+func (a *Attestor) Data() *Attestor {
+	return a
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {

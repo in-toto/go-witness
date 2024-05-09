@@ -49,7 +49,23 @@ var (
 	_ attestation.Attestor   = &Attestor{}
 	_ attestation.Subjecter  = &Attestor{}
 	_ attestation.BackReffer = &Attestor{}
+	_ GitHubAttestor         = &Attestor{}
 )
+
+type GitHubAttestor interface {
+	// Attestor
+	Name() string
+	Type() string
+	RunType() attestation.RunType
+	Attest(ctx *attestation.AttestationContext) error
+	Data() *Attestor
+
+	// Subjecter
+	Subjects() map[string]cryptoutil.DigestSet
+
+	// Backreffer
+	BackRefs() map[string]cryptoutil.DigestSet
+}
 
 // init registers the github attestor.
 func init() {
@@ -58,11 +74,11 @@ func init() {
 	})
 }
 
-// ErrNotGitlab is an error type that indicates the environment is not a github ci job.
-type ErrNotGitlab struct{}
+// ErrNotGitHub is an error type that indicates the environment is not a github ci job.
+type ErrNotGitHub struct{}
 
-// Error returns the error message for ErrNotGitlab.
-func (e ErrNotGitlab) Error() string {
+// Error returns the error message for ErrNotGitHub.
+func (e ErrNotGitHub) Error() string {
 	return "not in a github ci job"
 }
 
@@ -116,7 +132,7 @@ func (a *Attestor) Schema() *jsonschema.Schema {
 // Attest performs the attestation for the github environment.
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
-		return ErrNotGitlab{}
+		return ErrNotGitHub{}
 	}
 
 	jwtString, err := fetchToken(a.tokenURL, os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN"), "witness")
@@ -145,6 +161,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.RunnerOS = os.Getenv("RUNNER_OS")
 	a.PipelineUrl = fmt.Sprintf("%s/actions/runs/%s", a.ProjectUrl, a.PipelineID)
 	return nil
+}
+
+func (a *Attestor) Data() *Attestor {
+	return a
 }
 
 // Subjects returns a map of subjects and their corresponding digest sets.

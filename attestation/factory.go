@@ -58,6 +58,11 @@ type Producer interface {
 	Products() map[string]Product
 }
 
+// Exporter allows attestors to export their attestations for separation from the collection.
+type Exporter interface {
+	Export() bool
+}
+
 // BackReffer allows attestors to indicate which of their subjects are good candidates
 // to find related attestations.  For example the git attestor's commit hash subject
 // is a good candidate to find all attestation collections that also refer to a specific

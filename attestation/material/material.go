@@ -34,7 +34,19 @@ const (
 var (
 	_ attestation.Attestor   = &Attestor{}
 	_ attestation.Materialer = &Attestor{}
+	_ MaterialAttestor       = &Attestor{}
 )
+
+type MaterialAttestor interface {
+	// Attestor
+	Name() string
+	Type() string
+	RunType() attestation.RunType
+	Attest(ctx *attestation.AttestationContext) error
+
+	// Materialer
+	Materials() map[string]cryptoutil.DigestSet
+}
 
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
