@@ -27,6 +27,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/product"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/registry"
+	"github.com/invopop/jsonschema"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -92,6 +93,12 @@ func (l *Link) Type() string {
 
 func (l *Link) RunType() attestation.RunType {
 	return RunType
+}
+
+func (l *Link) Schema() *jsonschema.Schema {
+	// NOTE: This isn't ideal. For some reason the reflect function is return an empty schema when passing in `p`
+	// TODO: Fix this later
+	return jsonschema.Reflect(&v0.Link{})
 }
 
 func (l *Link) Export() bool {
