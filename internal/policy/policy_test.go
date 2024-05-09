@@ -1,10 +1,10 @@
-// Copyright 2024 The Witness Contributors
+// Copyright 2023 The Witness Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//      http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package witness
+package policy
 
 import (
 	"bytes"
+	"context"
 	"crypto/x509"
-	"fmt"
 	"testing"
 	"time"
 
@@ -25,6 +25,8 @@ import (
 	"github.com/in-toto/go-witness/internal/test"
 	"github.com/in-toto/go-witness/intoto"
 	"github.com/in-toto/go-witness/timestamp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/in-toto/go-witness/cryptoutil"
 )
@@ -32,29 +34,15 @@ import (
 func TestVerifyPolicySignature(t *testing.T) {
 	// we dont care about the content of th envelope for this test
 	rsaSigner, rsaVerifier, _, err := test.CreateTestKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	require.NoError(t, err)
 	badRootCert, _, err := test.CreateRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	require.NoError(t, err)
 	rootCert, key, err := test.CreateRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	require.NoError(t, err)
 	leafCert, leafPriv, err := test.CreateLeaf(rootCert, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	require.NoError(t, err)
 	x509Signer, err := cryptoutil.NewSigner(leafPriv, cryptoutil.SignWithCertificate(leafCert))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	timestampers := []timestamp.FakeTimestamper{
 		{T: time.Now()},
@@ -69,7 +57,7 @@ func TestVerifyPolicySignature(t *testing.T) {
 		timestampers    []timestamp.FakeTimestamper
 		Roots           []*x509.Certificate
 		Intermediates   []*x509.Certificate
-		certConstraints VerifyOption
+		certConstraints Option
 		wantErr         bool
 	}{
 		{
@@ -126,37 +114,22 @@ func TestVerifyPolicySignature(t *testing.T) {
 		}
 
 		env, err := dsse.Sign(intoto.PayloadType, bytes.NewReader([]byte("this is some test data")), dsse.SignWithTimestampers(ts...), dsse.SignWithSigners(tt.signer))
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 
 		var tv []timestamp.TimestampVerifier
 		for _, t := range tt.timestampers {
 			tv = append(tv, t)
 		}
 
-		vo := verifyOptions{
-			policyEnvelope:             env,
-			policyVerifiers:            []cryptoutil.Verifier{tt.verifier},
-			policyCARoots:              tt.Roots,
-			policyTimestampAuthorities: tv,
-			policyCommonName:           "*",
-			policyDNSNames:             []string{"*"},
-			policyOrganizations:        []string{"*"},
-			policyURIs:                 []string{"*"},
-			policyEmails:               []string{"*"},
-		}
-
+		o := []Option{}
+		o = append(o, VerifyWithPolicyVerifiers([]cryptoutil.Verifier{tt.verifier}), VerifyWithPolicyCARoots(tt.Roots), VerifyWithPolicyTimestampAuthorities(tv))
 		if tt.certConstraints != nil {
-			tt.certConstraints(&vo)
+			o = append(o, tt.certConstraints)
 		}
 
-		err = verifyPolicySignature(vo)
-		if err != nil && !tt.wantErr {
-			t.Errorf("testName = %s, error = %v, wantErr %v", tt.name, err, tt.wantErr)
-		} else {
-			fmt.Printf("test %s passed\n", tt.name)
-		}
+		vo := NewVerifyPolicySignatureOptions(o...)
 
+		err = VerifyPolicySignature(context.TODO(), env, vo)
+		assert.Equal(t, err != nil, tt.wantErr, "testName = %s, error = %v, wantErr = %v", tt.name, err, tt.wantErr)
 	}
 }
