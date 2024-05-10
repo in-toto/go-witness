@@ -166,7 +166,11 @@ func New(opts ...Option) *Attestor {
 }
 
 func (a *Attestor) Schema() *jsonschema.Schema {
-	return jsonschema.Reflect(&a)
+	// NOTE: This isn't ideal. For some reason the reflect function is return an empty schema when passing in `p`
+	// TODO: Fix this later
+	return jsonschema.Reflect(struct {
+		Products map[string]attestation.Product
+	}{})
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
