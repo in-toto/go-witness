@@ -120,7 +120,7 @@ type Attestor struct {
 
 type attestorJson struct {
 	Products      map[string]attestation.Product `json:"products"`
-	Configuration *attestorConfiguration          `json:"configuration,omitempty"`
+	Configuration *attestorConfiguration         `json:"configuration,omitempty"`
 }
 
 type attestorConfiguration struct {
@@ -230,10 +230,18 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 func (a *Attestor) MarshalJSON() ([]byte, error) {
 	output := attestorJson{
 		Products: a.products,
-		Configuration: attestorConfiguration{
-			IncludeGlob: a.includeGlob,
-			ExcludeGlob: a.excludeGlob,
-		},
+	}
+
+	if a.includeGlob != "" || a.excludeGlob != "" {
+		config := attestorConfiguration{}
+
+		if a.includeGlob != "" {
+			config.IncludeGlob = a.includeGlob
+		}
+		if a.excludeGlob != "" {
+			config.ExcludeGlob = a.excludeGlob
+		}
+		output.Configuration = &config
 	}
 
 	return json.Marshal(output)
