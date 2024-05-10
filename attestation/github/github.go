@@ -29,6 +29,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/jwt"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/invopop/jsonschema"
 )
 
 const (
@@ -122,6 +123,14 @@ func (a *Attestor) Type() string {
 // RunType returns the run type of the attestor.
 func (a *Attestor) RunType() attestation.RunType {
 	return RunType
+}
+
+func (a *Attestor) Schema() *jsonschema.Schema {
+	// NOTE: This isn't ideal. For some reason the reflect function is return an empty schema when passing in `p`
+	// TODO: Fix this later
+	schema := jsonschema.Reflect(&a)
+	schema.Definitions["Attestor"].Properties.Set("jwt", jsonschema.Reflect(&a.JWT))
+	return schema
 }
 
 // Attest performs the attestation for the github environment.

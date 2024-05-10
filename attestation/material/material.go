@@ -20,6 +20,7 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/file"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/invopop/jsonschema"
 )
 
 const (
@@ -78,6 +79,14 @@ func New(opts ...Option) *Attestor {
 	}
 
 	return attestor
+}
+
+func (a *Attestor) Schema() *jsonschema.Schema {
+	// NOTE: This isn't ideal. For some reason the reflect function is return an empty schema when passing in `a`
+	// TODO: Fix this later
+	return jsonschema.Reflect(struct {
+		Materials map[string]cryptoutil.DigestSet
+	}{})
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {

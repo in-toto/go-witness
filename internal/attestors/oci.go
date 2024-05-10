@@ -18,11 +18,10 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/oci"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/invopop/jsonschema"
 )
 
-var (
-	_ oci.OCIAttestor = &TestOCIAttestor{}
-)
+var _ oci.OCIAttestor = &TestOCIAttestor{}
 
 type TestOCIAttestor struct {
 	ociAtt oci.Attestor
@@ -43,6 +42,10 @@ func (t *TestOCIAttestor) Type() string {
 
 func (t *TestOCIAttestor) RunType() attestation.RunType {
 	return t.ociAtt.RunType()
+}
+
+func (t *TestOCIAttestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&t)
 }
 
 func (t *TestOCIAttestor) Attest(ctx *attestation.AttestationContext) error {

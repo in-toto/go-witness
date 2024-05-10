@@ -33,6 +33,7 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
+	"github.com/invopop/jsonschema"
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -104,6 +105,12 @@ func (p *Provenance) Type() string {
 
 func (p *Provenance) RunType() attestation.RunType {
 	return RunType
+}
+
+func (p *Provenance) Schema() *jsonschema.Schema {
+	// NOTE: This isn't ideal. For some reason the reflect function is return an empty schema when passing in `p`
+	// TODO: Fix this later
+	return jsonschema.Reflect(prov.Provenance{})
 }
 
 func (p *Provenance) Export() bool {

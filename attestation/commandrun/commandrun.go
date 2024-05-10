@@ -23,6 +23,7 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/environment"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/invopop/jsonschema"
 )
 
 const (
@@ -121,6 +122,10 @@ type CommandRun struct {
 	materials            map[string]cryptoutil.DigestSet
 	enableTracing        bool
 	environmentBlockList map[string]struct{}
+}
+
+func (a *CommandRun) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&a)
 }
 
 func (rc *CommandRun) Attest(ctx *attestation.AttestationContext) error {

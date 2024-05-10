@@ -32,6 +32,7 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/intoto"
 	"github.com/in-toto/go-witness/source"
+	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -367,6 +368,10 @@ func (DummyMaterialer) RunType() attestation.RunType {
 	return attestation.PreMaterialRunType
 }
 
+func (DummyMaterialer) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(DummyMaterialer{})
+}
+
 func (DummyMaterialer) Attest(*attestation.AttestationContext) error {
 	return nil
 }
@@ -389,6 +394,10 @@ func (DummyProducer) Type() string {
 
 func (DummyProducer) RunType() attestation.RunType {
 	return attestation.PostProductRunType
+}
+
+func (DummyProducer) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(DummyProducer{})
 }
 
 func (DummyProducer) Attest(*attestation.AttestationContext) error {

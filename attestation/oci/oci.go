@@ -29,6 +29,7 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/invopop/jsonschema"
 )
 
 const (
@@ -137,6 +138,10 @@ func (a *Attestor) RunType() attestation.RunType {
 	return RunType
 }
 
+func (a *Attestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&a)
+}
+
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	if err := a.getCandidate(ctx); err != nil {
 		log.Debugf("(attestation/oci) error getting candidate: %w", err)
@@ -196,7 +201,6 @@ func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 }
 
 func (a *Attestor) parseMaifest(ctx *attestation.AttestationContext) error {
-
 	f, err := os.Open(a.tarFilePath)
 	if err != nil {
 		err = fmt.Errorf("error opening tar file: %w", err)
@@ -249,7 +253,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subj[fmt.Sprintf("tardigest:%s", a.TarDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.TarDigest
 	subj[fmt.Sprintf("imageid:%s", a.ImageID[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.ImageID
 
-	//image tags
+	// image tags
 	for _, tag := range a.ImageTags {
 		hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(tag), hashes)
 		if err != nil {
@@ -259,7 +263,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		subj[fmt.Sprintf("imagetag:%s", tag)] = hash
 	}
 
-	//diff ids
+	// diff ids
 	for layer := range a.LayerDiffIDs {
 		subj[fmt.Sprintf("layerdiffid%02d:%s", layer, a.LayerDiffIDs[layer][cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.LayerDiffIDs[layer]
 	}
@@ -322,7 +326,6 @@ func (m *Manifest) getLayerDIFFIDs(ctx *attestation.AttestationContext, tarFileP
 				}
 
 			}
-
 		}
 	}
 	return layerDiffIDs, nil

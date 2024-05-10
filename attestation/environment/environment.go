@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
+	"github.com/invopop/jsonschema"
 )
 
 const (
@@ -90,6 +91,10 @@ func (a *Attestor) Type() string {
 
 func (a *Attestor) RunType() attestation.RunType {
 	return RunType
+}
+
+func (a *Attestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&a)
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {

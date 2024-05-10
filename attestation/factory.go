@@ -19,6 +19,7 @@ import (
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/registry"
+	"github.com/invopop/jsonschema"
 )
 
 var (
@@ -32,6 +33,7 @@ type Attestor interface {
 	Type() string
 	RunType() RunType
 	Attest(ctx *AttestationContext) error
+	Schema() *jsonschema.Schema
 }
 
 // Subjecter allows attestors to expose bits of information that will be added to
@@ -110,7 +112,7 @@ func GetAttestor(nameOrType string) (Attestor, error) {
 	return attestors[0], nil
 }
 
-// Deprecated: use AddAttestors instead
+// Deprecated: use GetAttestors instead
 func Attestors(nameOrTypes []string) ([]Attestor, error) {
 	return GetAttestors(nameOrTypes)
 }

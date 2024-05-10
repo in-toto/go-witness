@@ -18,11 +18,10 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/commandrun"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/invopop/jsonschema"
 )
 
-var (
-	_ commandrun.CommandRunAttestor = &TestCommandRunAttestor{}
-)
+var _ commandrun.CommandRunAttestor = &TestCommandRunAttestor{}
 
 type TestCommandRunAttestor struct {
 	comAtt commandrun.CommandRun
@@ -43,6 +42,10 @@ func (t *TestCommandRunAttestor) Type() string {
 
 func (t *TestCommandRunAttestor) RunType() attestation.RunType {
 	return t.comAtt.RunType()
+}
+
+func (t *TestCommandRunAttestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&t)
 }
 
 func (t *TestCommandRunAttestor) Attest(ctx *attestation.AttestationContext) error {
