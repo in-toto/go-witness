@@ -18,11 +18,10 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/material"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/invopop/jsonschema"
 )
 
-var (
-	_ material.MaterialAttestor = &TestMaterialAttestor{}
-)
+var _ material.MaterialAttestor = &TestMaterialAttestor{}
 
 type TestMaterialAttestor struct {
 	matAtt    *material.Attestor
@@ -45,6 +44,10 @@ func (t *TestMaterialAttestor) Type() string {
 
 func (t *TestMaterialAttestor) RunType() attestation.RunType {
 	return t.matAtt.RunType()
+}
+
+func (t *TestMaterialAttestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&t)
 }
 
 func (t *TestMaterialAttestor) Attest(ctx *attestation.AttestationContext) error {

@@ -17,11 +17,10 @@ package attestors
 import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/environment"
+	"github.com/invopop/jsonschema"
 )
 
-var (
-	_ environment.EnvironmentAttestor = &TestEnvironmentAttestor{}
-)
+var _ environment.EnvironmentAttestor = &TestEnvironmentAttestor{}
 
 type TestEnvironmentAttestor struct {
 	environmentAtt environment.Attestor
@@ -42,6 +41,10 @@ func (t *TestEnvironmentAttestor) Type() string {
 
 func (t *TestEnvironmentAttestor) RunType() attestation.RunType {
 	return t.environmentAtt.RunType()
+}
+
+func (t *TestEnvironmentAttestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&t)
 }
 
 func (t *TestEnvironmentAttestor) Attest(ctx *attestation.AttestationContext) error {

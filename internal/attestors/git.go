@@ -18,11 +18,10 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/git"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/invopop/jsonschema"
 )
 
-var (
-	_ git.GitAttestor = &TestGitAttestor{}
-)
+var _ git.GitAttestor = &TestGitAttestor{}
 
 type TestGitAttestor struct {
 	gitAtt git.Attestor
@@ -43,6 +42,10 @@ func (t *TestGitAttestor) Type() string {
 
 func (t *TestGitAttestor) RunType() attestation.RunType {
 	return t.gitAtt.RunType()
+}
+
+func (t *TestGitAttestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&t)
 }
 
 func (t *TestGitAttestor) Attest(ctx *attestation.AttestationContext) error {
