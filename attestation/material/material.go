@@ -173,10 +173,17 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 func (a *Attestor) MarshalJSON() ([]byte, error) {
 	output := attestorJson{
 		Materials: a.materials,
-		Configuration: attestorConfiguration{
-			IncludeGlob: a.includeGlob,
-			ExcludeGlob: a.excludeGlob,
-		},
+	}
+
+	if a.includeGlob != "" || a.excludeGlob != "" {
+		config := attestorConfiguration{}
+
+		if a.includeGlob != "" {
+			config.IncludeGlob = a.includeGlob
+		}
+		if a.excludeGlob != "" {
+			config.ExcludeGlob = a.excludeGlob
+		}
 	}
 
 	return json.Marshal(output)
