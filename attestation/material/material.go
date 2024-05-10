@@ -22,11 +22,8 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/file"
 	"github.com/in-toto/go-witness/cryptoutil"
-<<<<<<< HEAD
-	"github.com/invopop/jsonschema"
-=======
 	"github.com/in-toto/go-witness/registry"
->>>>>>> 4797229 (feat: Add material incl/excl glob)
+	"github.com/invopop/jsonschema"
 )
 
 const (
