@@ -20,23 +20,9 @@ import (
 	"log"
 	"os"
 
+	// import all the attestation types
+	_ "github.com/in-toto/go-witness"
 	"github.com/in-toto/go-witness/attestation"
-	// this feels like an annoying way of importing them as it will need edited for each attestor added
-	_ "github.com/in-toto/go-witness/attestation/aws-iid"
-	_ "github.com/in-toto/go-witness/attestation/commandrun"
-	_ "github.com/in-toto/go-witness/attestation/environment"
-	_ "github.com/in-toto/go-witness/attestation/gcp-iit"
-	_ "github.com/in-toto/go-witness/attestation/git"
-	_ "github.com/in-toto/go-witness/attestation/github"
-	_ "github.com/in-toto/go-witness/attestation/gitlab"
-	_ "github.com/in-toto/go-witness/attestation/jwt"
-	_ "github.com/in-toto/go-witness/attestation/link"
-	_ "github.com/in-toto/go-witness/attestation/material"
-	_ "github.com/in-toto/go-witness/attestation/maven"
-	_ "github.com/in-toto/go-witness/attestation/oci"
-	_ "github.com/in-toto/go-witness/attestation/product"
-	_ "github.com/in-toto/go-witness/attestation/sarif"
-	_ "github.com/in-toto/go-witness/attestation/slsa"
 )
 
 var directory string
