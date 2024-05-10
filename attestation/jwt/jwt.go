@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/in-toto/go-witness/attestation"
+	"github.com/invopop/jsonschema"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 )
@@ -84,6 +85,10 @@ func New(opts ...Option) *Attestor {
 	}
 
 	return a
+}
+
+func (a *Attestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&a)
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {

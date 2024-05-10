@@ -26,6 +26,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/jwt"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/invopop/jsonschema"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -96,6 +97,14 @@ func (a *Attestor) Type() string {
 
 func (a *Attestor) RunType() attestation.RunType {
 	return RunType
+}
+
+func (a *Attestor) Schema() *jsonschema.Schema {
+	// NOTE: This isn't ideal. For some reason the reflect function is return an empty schema when passing in `p`
+	// TODO: Fix this later
+	schema := jsonschema.Reflect(&a)
+	schema.Definitions["Attestor"].Properties.Set("jwt", jsonschema.Reflect(&a.JWT))
+	return schema
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
@@ -171,7 +180,6 @@ func (a *Attestor) getInstanceData() {
 
 	a.ProjectID = projID
 	a.ProjectNumber = projNum
-
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {

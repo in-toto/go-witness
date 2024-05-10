@@ -30,6 +30,7 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/invopop/jsonschema"
 )
 
 const (
@@ -99,7 +100,6 @@ func New() *Attestor {
 		session: *sess,
 		conf:    conf,
 	}
-
 }
 
 func (a *Attestor) Name() string {
@@ -112,6 +112,10 @@ func (a *Attestor) Type() string {
 
 func (a *Attestor) RunType() attestation.RunType {
 	return RunType
+}
+
+func (a *Attestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&a)
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
