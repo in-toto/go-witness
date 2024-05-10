@@ -15,6 +15,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -37,13 +39,20 @@ func main() {
 	for _, entry := range entries {
 		att := entry.Factory()
 		schema := att.Schema()
-		json, err := schema.MarshalJSON()
+		schemaJson, err := schema.MarshalJSON()
 		if err != nil {
 			log.Fatal(err)
 		}
 
+		var indented bytes.Buffer
+		err = json.Indent(&indented, schemaJson, "", "  ")
+		if err != nil {
+			fmt.Println("Error marshalling JSON schema:", err)
+			os.Exit(1)
+		}
+
 		log.Printf("Writing schema for attestor %s to %s/%s.json", att.Name(), directory, att.Name())
-		err = os.WriteFile(fmt.Sprintf("%s/%s.json", directory, att.Name()), json, 0644)
+		err = os.WriteFile(fmt.Sprintf("%s/%s.json", directory, att.Name()), indented.Bytes(), 0644)
 		if err != nil {
 			log.Fatal("Error writing to file:", err)
 		}
