@@ -13,7 +13,7 @@ require (
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/in-toto/archivista v0.4.0
-	github.com/in-toto/attestation v1.0.1
+	github.com/in-toto/attestation v1.0.2
 	github.com/invopop/jsonschema v0.12.0
 	github.com/jellydator/ttlcache/v3 v3.2.0
 	github.com/mattn/go-isatty v0.0.20
