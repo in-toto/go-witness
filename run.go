@@ -89,9 +89,12 @@ type RunResult struct {
 // Deprecated: Use RunWithExports instead
 func Run(stepName string, opts ...RunOption) (RunResult, error) {
 	results, err := run(stepName, opts)
-	if len(results) > 1 {
+	if len(results) == 0 {
+		return RunResult{}, err
+	} else if len(results) > 1 {
 		return RunResult{}, errors.New("expected a single result, got multiple")
 	}
+
 	return results[0], err
 }
 

@@ -25,6 +25,7 @@ import (
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/policy"
 	"github.com/in-toto/go-witness/timestamp"
+	"github.com/sigstore/fulcio/pkg/certificate"
 )
 
 type VerifyPolicySignatureOptions struct {
@@ -37,6 +38,7 @@ type VerifyPolicySignatureOptions struct {
 	policyEmails               []string
 	policyOrganizations        []string
 	policyURIs                 []string
+	fulcioCertExtensions       certificate.Extensions
 }
 
 type Option func(*VerifyPolicySignatureOptions)
@@ -79,6 +81,12 @@ func NewVerifyPolicySignatureOptions(opts ...Option) *VerifyPolicySignatureOptio
 	}
 
 	return vo
+}
+
+func VerifyWithPolicyFulcioCertExtensions(extensions certificate.Extensions) Option {
+	return func(vo *VerifyPolicySignatureOptions) {
+		vo.fulcioCertExtensions = extensions
+	}
 }
 
 func VerifyWithPolicyCertConstraints(commonName string, dnsNames []string, emails []string, organizations []string, uris []string) Option {
@@ -125,6 +133,7 @@ func VerifyPolicySignature(ctx context.Context, envelope dsse.Envelope, vo *Veri
 					Emails:        vo.policyEmails,
 					Organizations: vo.policyOrganizations,
 					DNSNames:      vo.policyDNSNames,
+					Extensions:    vo.fulcioCertExtensions,
 				},
 			}
 

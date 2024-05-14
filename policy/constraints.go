@@ -110,7 +110,7 @@ func (cc CertConstraint) checkExtensions(ext []pkix.Extension) error {
 	for _, field := range fields {
 		constraintField := reflect.ValueOf(cc.Extensions).FieldByName(field.Name)
 		if constraintField.String() == "" {
-			log.Infof("No constraint for field %s, allowing all values", field.Name)
+			log.Debugf("No constraint for field %s, allowing all values", field.Name)
 			continue
 		}
 		extensionsField := reflect.ValueOf(extensions).FieldByName(field.Name)

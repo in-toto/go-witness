@@ -16,6 +16,7 @@ package witness
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,6 +29,8 @@ import (
 	"github.com/in-toto/go-witness/policy"
 	"github.com/in-toto/go-witness/slsa"
 	"github.com/in-toto/go-witness/source"
+	"github.com/in-toto/go-witness/timestamp"
+	"github.com/sigstore/fulcio/pkg/certificate"
 )
 
 func VerifySignature(r io.Reader, verifiers ...cryptoutil.Verifier) (dsse.Envelope, error) {
@@ -88,9 +91,33 @@ func VerifyWithRunOptions(opts ...RunOption) VerifyOption {
 	}
 }
 
+func VerifyWithPolicyFulcioCertExtensions(extensions certificate.Extensions) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.verifyPolicySignatureOptions = append(vo.verifyPolicySignatureOptions, ipolicy.VerifyWithPolicyFulcioCertExtensions(extensions))
+	}
+}
+
 func VerifyWithPolicyCertConstraints(commonName string, dnsNames []string, emails []string, organizations []string, uris []string) VerifyOption {
 	return func(vo *verifyOptions) {
 		vo.verifyPolicySignatureOptions = append(vo.verifyPolicySignatureOptions, ipolicy.VerifyWithPolicyCertConstraints(commonName, dnsNames, emails, organizations, uris))
+	}
+}
+
+func VerifyWithPolicyTimestampAuthorities(verifiers []timestamp.TimestampVerifier) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.verifyPolicySignatureOptions = append(vo.verifyPolicySignatureOptions, ipolicy.VerifyWithPolicyTimestampAuthorities(verifiers))
+	}
+}
+
+func VerifyWithPolicyCARoots(certs []*x509.Certificate) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.verifyPolicySignatureOptions = append(vo.verifyPolicySignatureOptions, ipolicy.VerifyWithPolicyCARoots(certs))
+	}
+}
+
+func VerifyWithPolicyCAIntermediates(certs []*x509.Certificate) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.verifyPolicySignatureOptions = append(vo.verifyPolicySignatureOptions, ipolicy.VerifyWithPolicyCAIntermediates(certs))
 	}
 }
 
