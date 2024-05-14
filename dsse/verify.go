@@ -197,9 +197,7 @@ func verifyX509Time(cert *x509.Certificate, sigIntermediates, roots []*x509.Cert
 		return nil, err
 	}
 
-	if err := verifier.Verify(bytes.NewReader(pae), sig); err != nil {
-		return nil, err
-	}
+	err = verifier.Verify(bytes.NewReader(pae), sig)
 
-	return verifier, nil
+	return verifier, err
 }

@@ -36,7 +36,7 @@ func (e ErrNoMatchingSigs) Error() string {
 		if v.Error != nil {
 			kid, err := v.Verifier.KeyID()
 			if err != nil {
-				log.Warn("failed to get key id from verifier: %v", err)
+				log.Warnf("failed to get key id from verifier: %w", err)
 			}
 
 			s := fmt.Sprintf("  %s: %v\n", kid, v.Error)
