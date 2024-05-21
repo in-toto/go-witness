@@ -18,16 +18,16 @@ func init() {
 	})
 }
 
-func NewOmnitrailAttestor() *OmnitrailAttestor {
-	return &OmnitrailAttestor{}
+type Attestor struct {
+	Envelope *ot.Envelope `json:"Envelope"`
 }
 
-type OmnitrailAttestor struct {
-	Envelope *ot.Envelope `json:"trail"`
+func NewOmnitrailAttestor() *Attestor {
+	return &Attestor{}
 }
 
 // Attest implements attestation.Attestor.
-func (o *OmnitrailAttestor) Attest(ctx *attestation.AttestationContext) error {
+func (o *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	trail := ot.NewTrail()
 	err := trail.Add(ctx.WorkingDir())
 	if err != nil {
@@ -38,21 +38,21 @@ func (o *OmnitrailAttestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 // Name implements attestation.Attestor.
-func (o *OmnitrailAttestor) Name() string {
+func (o *Attestor) Name() string {
 	return Name
 }
 
 // RunType implements attestation.Attestor.
-func (o *OmnitrailAttestor) RunType() attestation.RunType {
+func (o *Attestor) RunType() attestation.RunType {
 	return RunType
 }
 
 // // Schema implements attestation.Attestor.
-func (o *OmnitrailAttestor) Schema() *jsonschema.Schema {
+func (o *Attestor) Schema() *jsonschema.Schema {
 	return jsonschema.Reflect(&o)
 }
 
 // Type implements attestation.Attestor.
-func (o *OmnitrailAttestor) Type() string {
+func (o *Attestor) Type() string {
 	return Type
 }
