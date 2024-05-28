@@ -21,6 +21,8 @@ require (
 	github.com/go-git/go-git/v5 v5.13.2
 	github.com/go-jose/go-jose/v3 v3.0.4
 	github.com/google/go-containerregistry v0.20.6
+	github.com/hashicorp/vault/api v1.16.0
+	github.com/hashicorp/vault/api/auth/kubernetes v0.7.0
 	github.com/in-toto/archivista v0.9.3
 	github.com/in-toto/attestation v1.1.2
 	github.com/invopop/jsonschema v0.12.0
@@ -84,6 +86,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.3.1 // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
@@ -131,6 +134,15 @@ require (
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.1 // indirect
 	github.com/h2non/filetype v1.1.3 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
+	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
+	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7 // indirect
+	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
+	github.com/hashicorp/go-sockaddr v1.0.5 // indirect
+	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -167,6 +179,7 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
+	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sagikazarmark/locafero v0.9.0 // indirect
 	github.com/sassoftware/relic v7.2.1+incompatible // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.9.0 // indirect
