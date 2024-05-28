@@ -40,6 +40,9 @@ import (
 	// signer providers
 	_ "github.com/in-toto/go-witness/signer/file"
 	_ "github.com/in-toto/go-witness/signer/fulcio"
+	_ "github.com/in-toto/go-witness/signer/kms/aws"
+	_ "github.com/in-toto/go-witness/signer/kms/gcp"
+	_ "github.com/in-toto/go-witness/signer/kms/hashivault"
 	_ "github.com/in-toto/go-witness/signer/spiffe"
 	_ "github.com/in-toto/go-witness/signer/vault"
 )
