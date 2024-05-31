@@ -22,7 +22,7 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.1.7
 	github.com/stretchr/testify v1.9.0
 	go.step.sm/crypto v0.43.1
-	golang.org/x/sys v0.18.0
+	golang.org/x/sys v0.20.0
 	google.golang.org/api v0.169.0
 	google.golang.org/grpc v1.62.1
 	gopkg.in/square/go-jose.v2 v2.6.0
@@ -136,12 +136,12 @@ require (
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/yashtewari/glob-intersection v0.2.0 // indirect
 	github.com/zeebo/errs v1.3.0 // indirect
-	golang.org/x/crypto v0.21.0 // indirect
-	golang.org/x/net v0.23.0 // indirect
-	golang.org/x/term v0.18.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/crypto v0.23.0 // indirect
+	golang.org/x/net v0.25.0 // indirect
+	golang.org/x/term v0.20.0 // indirect
+	golang.org/x/text v0.15.0 // indirect
 	google.golang.org/genproto v0.0.0-20240221002015-b0ce06bbee7c // indirect
-	google.golang.org/protobuf v1.33.0
+	google.golang.org/protobuf v1.34.1
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
