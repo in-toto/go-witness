@@ -33,10 +33,15 @@ const (
 	ExecuteRunType     RunType = "execute"
 	ProductRunType     RunType = "product"
 	PostProductRunType RunType = "postproduct"
+	VerifyRunType      RunType = "verify"
 )
 
 func runTypeOrder() []RunType {
 	return []RunType{PreMaterialRunType, MaterialRunType, ExecuteRunType, ProductRunType, PostProductRunType}
+}
+
+func verifyTypeOrder() []RunType {
+	return []RunType{VerifyRunType}
 }
 
 func (r RunType) String() string {
@@ -92,6 +97,7 @@ type AttestationContext struct {
 	completedAttestors []CompletedAttestor
 	products           map[string]Product
 	materials          map[string]cryptoutil.DigestSet
+	stepName           string
 }
 
 type Product struct {
@@ -99,7 +105,7 @@ type Product struct {
 	Digest   cryptoutil.DigestSet `json:"digest"`
 }
 
-func NewContext(attestors []Attestor, opts ...AttestationContextOption) (*AttestationContext, error) {
+func NewContext(stepName string, attestors []Attestor, opts ...AttestationContextOption) (*AttestationContext, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -112,6 +118,7 @@ func NewContext(attestors []Attestor, opts ...AttestationContextOption) (*Attest
 		hashes:     []cryptoutil.DigestValue{{Hash: crypto.SHA256}, {Hash: crypto.SHA256, GitOID: true}, {Hash: crypto.SHA1, GitOID: true}},
 		materials:  make(map[string]cryptoutil.DigestSet),
 		products:   make(map[string]Product),
+		stepName:   stepName,
 	}
 
 	for _, opt := range opts {
@@ -131,11 +138,16 @@ func (ctx *AttestationContext) RunAttestors() error {
 				Reason:  "attestor run type not set",
 			}
 		}
-
 		attestors[attestor.RunType()] = append(attestors[attestor.RunType()], attestor)
 	}
 
 	order := runTypeOrder()
+	if attestors[VerifyRunType] != nil && len(attestors) > 1 {
+		return fmt.Errorf("attestors of type %s cannot be run in conjunction with other attestor types", VerifyRunType)
+	} else if attestors[VerifyRunType] != nil {
+		order = verifyTypeOrder()
+	}
+
 	for _, k := range order {
 		log.Debugf("Starting %s attestors...", k.String())
 		for _, att := range attestors[k] {
@@ -207,6 +219,10 @@ func (ctx *AttestationContext) Products() map[string]Product {
 		out[k] = v
 	}
 	return out
+}
+
+func (ctx *AttestationContext) StepName() string {
+	return ctx.stepName
 }
 
 func (ctx *AttestationContext) addMaterials(materialer Materialer) {

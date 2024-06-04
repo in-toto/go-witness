@@ -49,7 +49,7 @@ func TestRunWorksWithCommits(t *testing.T) {
 	_, dir, cleanup := createTestRepo(t, true)
 	defer cleanup()
 
-	ctx, err := attestation.NewContext([]attestation.Attestor{attestor}, attestation.WithWorkingDir(dir))
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor}, attestation.WithWorkingDir(dir))
 	require.NoError(t, err, "Expected no error from NewContext")
 
 	err = ctx.RunAttestors()
@@ -146,7 +146,7 @@ func TestRunWorksWithoutCommits(t *testing.T) {
 	_, dir, cleanup := createTestRepo(t, false)
 	defer cleanup()
 
-	ctx, err := attestation.NewContext([]attestation.Attestor{attestor}, attestation.WithWorkingDir(dir))
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor}, attestation.WithWorkingDir(dir))
 	require.NoError(t, err, "Expected no error from NewContext")
 
 	err = ctx.RunAttestors()

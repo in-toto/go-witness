@@ -28,12 +28,13 @@ import (
 	"github.com/in-toto/go-witness/attestation/file"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/registry"
+	"github.com/invopop/jsonschema"
 )
 
 const (
-	Name    = "product"
-	Type    = "https://witness.dev/attestations/product/v0.1"
-	RunType = attestation.ProductRunType
+	ProductName    = "product"
+	ProductType    = "https://witness.dev/attestations/product/v0.1"
+	ProductRunType = attestation.ProductRunType
 
 	defaultIncludeGlob = "*"
 	defaultExcludeGlob = ""
@@ -47,8 +48,22 @@ var (
 	_ attestation.Producer  = &Attestor{}
 )
 
+type ProductAttestor interface {
+	// Attestor
+	Name() string
+	Type() string
+	RunType() attestation.RunType
+	Attest(ctx *attestation.AttestationContext) error
+
+	// Subjector
+	Subjects() map[string]cryptoutil.DigestSet
+
+	// Producter
+	Products() map[string]attestation.Product
+}
+
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor { return New() },
+	attestation.RegisterAttestation(ProductName, ProductType, ProductRunType, func() attestation.Attestor { return New() },
 		registry.StringConfigOption(
 			"include-glob",
 			"Pattern to use when recording products. Files that match this pattern will be included as subjects on the attestation.",
@@ -126,15 +141,15 @@ func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attesta
 }
 
 func (a *Attestor) Name() string {
-	return Name
+	return ProductName
 }
 
 func (a *Attestor) Type() string {
-	return Type
+	return ProductType
 }
 
 func (a *Attestor) RunType() attestation.RunType {
-	return RunType
+	return ProductRunType
 }
 
 func New(opts ...Option) *Attestor {
@@ -148,6 +163,14 @@ func New(opts ...Option) *Attestor {
 	}
 
 	return a
+}
+
+func (a *Attestor) Schema() *jsonschema.Schema {
+	// NOTE: This isn't ideal. For some reason the reflect function is return an empty schema when passing in `p`
+	// TODO: Fix this later
+	return jsonschema.Reflect(struct {
+		Products map[string]attestation.Product
+	}{})
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
