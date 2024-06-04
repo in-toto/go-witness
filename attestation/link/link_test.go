@@ -129,7 +129,10 @@ func TestAttest(t *testing.T) {
 
 	testJson := []byte(testLinkJSON)
 	if !bytes.Equal(linkJson, testJson) {
-		t.Errorf("expected \n%s\n, got \n%s\n", testJson, linkJson)
+		testJson := []byte(testLinkJSONAlternative)
+		if !bytes.Equal(linkJson, testJson) {
+			t.Errorf("expected \n%s\n, got \n%s\n", testJson, linkJson)
+		}
 	}
 }
 
@@ -178,6 +181,7 @@ func setupLink(t *testing.T) *Link {
 
 	return link
 }
+
 func TestRegistration(t *testing.T) {
 	registrations := attestation.RegistrationEntries()
 
@@ -191,7 +195,6 @@ func TestRegistration(t *testing.T) {
 	if !found {
 		t.Errorf("expected %s to be registered", Name)
 	}
-
 }
 
 const testLinkJSON = `{
@@ -209,6 +212,32 @@ const testLinkJSON = `{
     },
     {
       "name": "test1",
+      "digest": {
+        "sha256": "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f"
+      }
+    }
+  ],
+  "environment": {
+    "COLORFGBG": "7;0",
+    "COLORTERM": "truecolor"
+  }
+}`
+
+const testLinkJSONAlternative = `{
+  "name": "test",
+  "command": [
+    "touch",
+    "test.txt"
+  ],
+  "materials": [
+    {
+      "name": "test1",
+      "digest": {
+        "sha256": "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f"
+      }
+    },
+    {
+      "name": "test2",
       "digest": {
         "sha256": "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f"
       }

@@ -128,7 +128,7 @@ func TestAttest(t *testing.T) {
 	// Setup OCI
 	o := attestors.NewTestOCIAttestor()
 
-	var tests = []struct {
+	tests := []struct {
 		name         string
 		attestors    []attestation.Attestor
 		expectedJson string
@@ -140,9 +140,9 @@ func TestAttest(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Logf("Running test %s", test.name)
-			s := New()
+			slsaAttestor := New()
 
-			ctx, err := attestation.NewContext("test", append(test.attestors, s))
+			ctx, err := attestation.NewContext("test", append(test.attestors, slsaAttestor))
 			if err != nil {
 				t.Errorf("error creating attestation context: %s", err)
 			}
@@ -154,17 +154,17 @@ func TestAttest(t *testing.T) {
 
 			// TODO: We don't have a way to mock out times on attestor runs
 			// Set attestor times manually to match testProvenanceJSON
-			s.PbProvenance.RunDetails.Metadata.StartedOn = &timestamppb.Timestamp{
+			slsaAttestor.PbProvenance.RunDetails.Metadata.StartedOn = &timestamppb.Timestamp{
 				Seconds: 1711199861,
 				Nanos:   560152000,
 			}
-			s.PbProvenance.RunDetails.Metadata.FinishedOn = &timestamppb.Timestamp{
+			slsaAttestor.PbProvenance.RunDetails.Metadata.FinishedOn = &timestamppb.Timestamp{
 				Seconds: 1711199861,
 				Nanos:   560152000,
 			}
 
 			var prov []byte
-			if prov, err = json.MarshalIndent(s, "", "  "); err != nil {
+			if prov, err = json.MarshalIndent(slsaAttestor, "", "  "); err != nil {
 				t.Errorf("unexpected error: %s", err)
 			}
 
@@ -221,6 +221,7 @@ func setupProvenance(t *testing.T) *Provenance {
 
 	return provenance
 }
+
 func TestRegistration(t *testing.T) {
 	registrations := attestation.RegistrationEntries()
 
@@ -234,7 +235,6 @@ func TestRegistration(t *testing.T) {
 	if !found {
 		t.Errorf("expected %s to be registered", Name)
 	}
-
 }
 
 const testGHProvJSON = `{
