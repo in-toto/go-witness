@@ -139,7 +139,7 @@ func GetAttestors(nameOrTypes []string) ([]Attestor, error) {
 
 		attestor := factory()
 		opts := AttestorOptions(nameOrType)
-		attestor, err := attestorRegistry.SetDefaultVals(attestor, opts)
+		attestor, err := registry.SetDefaultVals(attestor, opts)
 		if err != nil {
 			return nil, err
 		}

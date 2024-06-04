@@ -42,6 +42,10 @@ func NewSignerProvider(name string, opts ...func(SignerProvider) (SignerProvider
 	return signerRegistry.NewEntity(name, opts...)
 }
 
+func NewSignerProviderFromConfigMap(name string, configMap map[string]any) (SignerProvider, error) {
+	return signerRegistry.NewEntityFromConfigMap(name, configMap)
+}
+
 // NOTE: This is a temporary interface, and should not be used. It will be deprecated in a future release.
 // The same applies to the functions that use this interface.
 type VerifierProvider interface {
