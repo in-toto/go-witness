@@ -94,6 +94,7 @@ type Attestor struct {
 	Refs           []string             `json:"refs,omitempty"`
 	Remotes        []string             `json:"remotes,omitempty"`
 	Tags           []Tag                `json:"tags,omitempty"`
+	RefNameShort   string               `json:"branch,omitempty"`
 }
 
 func New() *Attestor {
@@ -184,6 +185,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.CommitDate = commit.Author.When.String()
 	a.CommitMessage = commit.Message
 	a.Signature = commit.PGPSignature
+	a.RefNameShort = head.Name().Short()
 
 	for _, parent := range commit.ParentHashes {
 		a.ParentHashes = append(a.ParentHashes, parent.String())
@@ -288,6 +290,14 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		}
 		subjects[subjectName] = ds
 	}
+
+	// add refname short
+	subjectName = fmt.Sprintf("refnameshort:%v", a.RefNameShort)
+	ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(a.RefNameShort), hashes)
+	if err != nil {
+		return nil
+	}
+	subjects[subjectName] = ds
 
 	return subjects
 }
