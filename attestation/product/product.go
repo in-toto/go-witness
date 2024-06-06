@@ -33,7 +33,7 @@ import (
 
 const (
 	ProductName    = "product"
-	ProductType    = "https://witness.dev/attestations/product/v0.1"
+	ProductType    = "https://witness.dev/attestations/product/v0.2"
 	ProductRunType = attestation.ProductRunType
 
 	defaultIncludeGlob = "*"
@@ -118,6 +118,16 @@ type Attestor struct {
 	compiledExcludeGlob glob.Glob
 }
 
+type attestorJson struct {
+	Products      map[string]attestation.Product `json:"products"`
+	Configuration *attestorConfiguration          `json:"configuration,omitempty"`
+}
+
+type attestorConfiguration struct {
+	IncludeGlob string `json:"includeGlob"`
+	ExcludeGlob string `json:"excludeGlob"`
+}
+
 func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
 	products := make(map[string]attestation.Product)
 	for fileName, digestSet := range digestMap {
@@ -187,7 +197,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.compiledExcludeGlob = compiledExcludeGlob
 
 	a.baseArtifacts = ctx.Materials()
-	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{})
+	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, compiledIncludeGlob, compiledExcludeGlob)
 	if err != nil {
 		return err
 	}
@@ -197,16 +207,35 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func (a *Attestor) MarshalJSON() ([]byte, error) {
-	return json.Marshal(a.products)
+	output := attestorJson{
+		Products: a.products,
+	}
+
+	if a.includeGlob != "" || a.excludeGlob != "" {
+		config := attestorConfiguration{}
+
+		if a.includeGlob != "" {
+			config.IncludeGlob = a.includeGlob
+		}
+		if a.excludeGlob != "" {
+			config.ExcludeGlob = a.excludeGlob
+		}
+	}
+
+	return json.Marshal(output)
 }
 
 func (a *Attestor) UnmarshalJSON(data []byte) error {
-	prods := make(map[string]attestation.Product)
-	if err := json.Unmarshal(data, &prods); err != nil {
+	attestation := attestorJson{
+		Products: make(map[string]attestation.Product),
+	}
+	if err := json.Unmarshal(data, &attestation); err != nil {
 		return err
 	}
 
-	a.products = prods
+	a.products = attestation.Products
+	a.includeGlob = attestation.Configuration.IncludeGlob
+	a.excludeGlob = attestation.Configuration.ExcludeGlob
 	return nil
 }
 
@@ -217,15 +246,18 @@ func (a *Attestor) Products() map[string]attestation.Product {
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subjects := make(map[string]cryptoutil.DigestSet)
 	for productName, product := range a.products {
+
+		includeSubject := true
 		if a.compiledExcludeGlob != nil && a.compiledExcludeGlob.Match(productName) {
-			continue
+			includeSubject = false
+		}
+		if a.compiledIncludeGlob != nil && a.compiledIncludeGlob.Match(productName) {
+			includeSubject = true
 		}
 
-		if a.compiledIncludeGlob != nil && !a.compiledIncludeGlob.Match(productName) {
-			continue
+		if includeSubject {
+			subjects[fmt.Sprintf("file:%v", productName)] = product.Digest
 		}
-
-		subjects[fmt.Sprintf("file:%v", productName)] = product.Digest
 	}
 
 	return subjects
