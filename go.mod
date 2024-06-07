@@ -158,5 +158,3 @@ require (
 replace github.com/sigstore/rekor => github.com/testifysec/rekor v0.4.0-dsse-intermediates-2
 
 replace github.com/gin-gonic/gin v1.5.0 => github.com/gin-gonic/gin v1.7.7
-
-replace github.com/opencontainers/image-spec => github.com/opencontainers/image-spec v1.0.3-0.20220303224323-02efb9a75ee1
