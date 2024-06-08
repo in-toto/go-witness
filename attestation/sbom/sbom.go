@@ -7,8 +7,8 @@ import (
 	"os"
 
 	"github.com/in-toto/go-witness/attestation"
-	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/invopop/jsonschema"
 )
 
 const (
@@ -16,8 +16,17 @@ const (
 	Type    = "https://witness.dev/attestations/sbom/v0.1"
 	RunType = attestation.PostProductRunType
 
-	spdxMimeType      = "application/spdx+json"
-	cycloneDxMimeType = "application/vnd.cyclonedx+json"
+	SPDXPredicateType      = "https://spdx.dev/Document"
+	SPDXMimeType           = "application/spdx+json"
+	CycloneDxPredicateType = "https://cyclonedx.org/bom"
+	CycloneDxMimeType      = "application/vnd.cyclonedx+json"
+)
+
+// This is a hacky way to create a compile time error in case the attestor
+// doesn't implement the expected interfaces.
+var (
+	_ attestation.Attestor = &SBOMAttestor{}
+	_ attestation.Exporter = &SBOMAttestor{}
 )
 
 func init() {
@@ -26,14 +35,24 @@ func init() {
 	})
 }
 
+type Option func(*SBOMAttestor)
+
+func WithExport(export bool) Option {
+	return func(a *SBOMAttestor) {
+		a.export = export
+	}
+}
+
 type SBOMAttestor struct {
-	SBOMDocument  interface{}          `json:"sbomDocument"`
-	SBOMFile      string               `json:"sbomFileName"`
-	SBOMDigestSet cryptoutil.DigestSet `json:"sbomDigestSet"`
+	SBOMDocument  interface{}
+	predicateType string
+	export        bool
 }
 
 func NewSBOMAttestor() *SBOMAttestor {
-	return &SBOMAttestor{}
+	return &SBOMAttestor{
+		predicateType: Type,
+	}
 }
 
 func (a *SBOMAttestor) Name() string {
@@ -41,16 +60,36 @@ func (a *SBOMAttestor) Name() string {
 }
 
 func (a *SBOMAttestor) Type() string {
-	return Type
+	return a.predicateType
 }
 
 func (a *SBOMAttestor) RunType() attestation.RunType {
 	return RunType
 }
 
+func (a *SBOMAttestor) Export() bool {
+	return a.export
+}
+
+func (a *SBOMAttestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(a.SBOMDocument)
+}
+
 func (a *SBOMAttestor) Attest(ctx *attestation.AttestationContext) error {
 	if err := a.getCandidate(ctx); err != nil {
 		log.Debugf("(attestation/sbom) error getting candidate: %w", err)
+		return err
+	}
+
+	return nil
+}
+
+func (a *SBOMAttestor) MarshalJSON() ([]byte, error) {
+	return json.Marshal(&a.SBOMDocument)
+}
+
+func (a *SBOMAttestor) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &a.SBOMDocument); err != nil {
 		return err
 	}
 
@@ -65,17 +104,12 @@ func (a *SBOMAttestor) getCandidate(ctx *attestation.AttestationContext) error {
 	}
 
 	for path, product := range products {
-		if product.MimeType != spdxMimeType && product.MimeType != cycloneDxMimeType {
+		if product.MimeType == SPDXMimeType {
+			a.predicateType = SPDXPredicateType
+		} else if product.MimeType == CycloneDxMimeType {
+			a.predicateType = CycloneDxPredicateType
+		} else {
 			continue
-		}
-
-		newDigestSet, err := cryptoutil.CalculateDigestSetFromFile(path, ctx.Hashes())
-		if newDigestSet == nil || err != nil {
-			return fmt.Errorf("error calculating digest set from file: %s", path)
-		}
-
-		if !newDigestSet.Equal(product.Digest) {
-			return fmt.Errorf("integrity error: product digest set does not match candidate digest set")
 		}
 
 		f, err := os.Open(path)
@@ -94,11 +128,10 @@ func (a *SBOMAttestor) getCandidate(ctx *attestation.AttestationContext) error {
 			continue
 		}
 
-		a.SBOMFile = path
-		a.SBOMDigestSet = product.Digest
 		a.SBOMDocument = sbomDocument
 
 		return nil
 	}
+
 	return fmt.Errorf("no SBOM file found")
 }
