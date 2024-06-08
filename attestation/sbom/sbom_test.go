@@ -78,7 +78,10 @@ func TestAttest(t *testing.T) {
 		{"Bad JSON", "./boms/emptyDir", "bad.json", Type, new(error)},
 	}
 
-	os.Mkdir("emptyDir", 0777)
+	err := os.Mkdir("emptyDir", 0777)
+	if err != nil && !os.IsExist(err) {
+		t.Errorf("could not create empty directory: %s", err.Error())
+	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

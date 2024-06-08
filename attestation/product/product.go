@@ -118,7 +118,6 @@ type Attestor struct {
 func fromDigestMap(workingDir string, digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
 	products := make(map[string]attestation.Product)
 	for fileName, digestSet := range digestMap {
-		mimeType := "unknown"
 		filePath := workingDir + fileName
 		mimeType, err := getFileContentType(filePath)
 		if err != nil {
