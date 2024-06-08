@@ -86,7 +86,7 @@ func (a *SBOMAttestor) Export() bool {
 }
 
 func (a *SBOMAttestor) Schema() *jsonschema.Schema {
-	return jsonschema.Reflect(a.SBOMDocument)
+	return jsonschema.Reflect(a)
 }
 
 func (a *SBOMAttestor) Attest(ctx *attestation.AttestationContext) error {
