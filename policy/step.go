@@ -65,7 +65,7 @@ type StepResult struct {
 // in order to save the failure reasons so we can present them all at the end of the verification process.
 func (r StepResult) Analyze() bool {
 	var pass bool
-	if len(r.Passed) > 0 && len(r.Rejected) == 0 {
+	if len(r.Passed) > 0 {
 		pass = true
 	}
 

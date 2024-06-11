@@ -331,6 +331,7 @@ func (p Policy) verifyArtifacts(resultsByStep map[string]StepResult) (map[string
 				}
 
 				result.Rejected = append(result.Rejected, reject)
+				result.Passed = []source.CollectionVerificationResult{}
 				resultsByStep[step.Name] = result
 			}
 		}
