@@ -15,14 +15,11 @@
 package product
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"mime"
-	"net/http"
-	"os"
-	"path/filepath"
 
+	"github.com/gabriel-vasile/mimetype"
 	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/file"
@@ -118,17 +115,13 @@ type Attestor struct {
 	compiledExcludeGlob glob.Glob
 }
 
-func fromDigestMap(digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
+func fromDigestMap(workingDir string, digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
 	products := make(map[string]attestation.Product)
 	for fileName, digestSet := range digestMap {
-		mimeType := "unknown"
-		f, err := os.OpenFile(fileName, os.O_RDONLY, 0666)
-		if err == nil {
-			mimeType, err = getFileContentType(f)
-			if err != nil {
-				mimeType = "unknown"
-			}
-			f.Close()
+		filePath := workingDir + fileName
+		mimeType, err := getFileContentType(filePath)
+		if err != nil {
+			mimeType = "unknown"
 		}
 
 		products[fileName] = attestation.Product{
@@ -192,7 +185,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return err
 	}
 
-	a.products = fromDigestMap(products)
+	a.products = fromDigestMap(ctx.WorkingDir(), products)
 	return nil
 }
 
@@ -231,47 +224,26 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	return subjects
 }
 
-func getFileContentType(file *os.File) (string, error) {
-	// Read up to 512 bytes from the file.
-	buffer := make([]byte, 512)
-	_, err := file.Read(buffer)
-	if err != nil && err != io.EOF {
+func getFileContentType(fileName string) (string, error) {
+	// Add SPDX JSON detector
+	mimetype.Lookup("application/json").Extend(func(buf []byte, limit uint32) bool {
+		return bytes.HasPrefix(buf, []byte(`{"spdxVersion": "SPDX-`))
+	}, "application/spdx+json", ".spdx.json")
+
+	// Add CycloneDx JSON detector
+	mimetype.Lookup("application/json").Extend(func(buf []byte, limit uint32) bool {
+		return bytes.HasPrefix(buf, []byte(`{"$schema": "http://cyclonedx.org/schema/bom-`))
+	}, "application/vnd.cyclonedx+json", ".cdx.json")
+
+	// Add CycloneDx XML detector
+	mimetype.Lookup("text/xml").Extend(func(buf []byte, limit uint32) bool {
+		return bytes.HasPrefix(buf, []byte(`<?xml version="1.0" encoding="UTF-8"?><bom xmlns="http://cyclonedx.org/schema/bom/`))
+	}, "application/vnd.cyclonedx+xml", ".cdx.xml")
+
+	contentType, err := mimetype.DetectFile(fileName)
+	if err != nil {
 		return "", err
 	}
 
-	// Try to detect the content type using http.DetectContentType().
-	contentType := http.DetectContentType(buffer)
-
-	// If the content type is application/octet-stream, try to detect the content type using a file signature.
-	if contentType == "application/octet-stream" {
-		// Try to match the file signature to a content type.
-		if signature, _ := getFileSignature(buffer); signature != "application/octet-stream" {
-			contentType = signature
-		} else if extension := filepath.Ext(file.Name()); extension != "" {
-			contentType = mime.TypeByExtension(extension)
-		}
-	}
-
-	return contentType, nil
-}
-
-// getFileSignature tries to match the file signature to a content type.
-func getFileSignature(buffer []byte) (string, error) {
-	// Create a new buffer with a length of 512 bytes and copy the data from the input buffer into the new buffer to prevent out of bounds errors.
-	newBuffer := make([]byte, 512)
-	copy(newBuffer, buffer)
-
-	var signature string
-	switch {
-	// https://en.wikipedia.org/wiki/List_of_file_signatures
-	case buffer[257] == 0x75 && buffer[258] == 0x73 && buffer[259] == 0x74 && buffer[260] == 0x61 && buffer[261] == 0x72:
-		signature = "application/x-tar"
-	case buffer[0] == 0x25 && buffer[1] == 0x50 && buffer[2] == 0x44 && buffer[3] == 0x46 && buffer[4] == 0x2D:
-		signature = "application/pdf"
-	default:
-		// If the file signature is not recognized, return application/octet-stream by default
-		signature = "application/octet-stream"
-	}
-
-	return signature, nil
+	return contentType.String(), nil
 }

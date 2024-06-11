@@ -34,7 +34,7 @@ func TestFromDigestMap(t *testing.T) {
 	assert.NoError(t, err)
 	testDigestSet := make(map[string]cryptoutil.DigestSet)
 	testDigestSet["test"] = testDigest
-	result := fromDigestMap(testDigestSet)
+	result := fromDigestMap("", testDigestSet)
 	assert.Len(t, result, 1)
 	digest := result["test"].Digest
 	assert.True(t, digest.Equal(testDigest))
@@ -126,7 +126,7 @@ func TestGetFileContentType(t *testing.T) {
 	// Run the test cases.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			contentType, err := getFileContentType(test.file)
+			contentType, err := getFileContentType(test.file.Name())
 			require.NoError(t, err)
 			require.Equal(t, test.expected, contentType)
 		})

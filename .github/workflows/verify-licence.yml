@@ -40,4 +40,4 @@ jobs:
         - name: Check license headers
           run: |
             set -e
-            addlicense --check -l apache -c 'The Witness Contributors' -v *
+            addlicense --check -l apache -c 'The Witness Contributors' --ignore "**/*.xml" -v *
