@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 
 	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
@@ -41,8 +42,9 @@ const (
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
-	_ attestation.Attestor = &SBOMAttestor{}
-	_ attestation.Exporter = &SBOMAttestor{}
+	_ attestation.Attestor  = &SBOMAttestor{}
+	_ attestation.Subjecter = &SBOMAttestor{}
+	_ attestation.Exporter  = &SBOMAttestor{}
 )
 
 func init() {
@@ -76,6 +78,7 @@ type SBOMAttestor struct {
 	SBOMDocument  interface{}
 	predicateType string
 	export        bool
+	subjects      map[string]cryptoutil.DigestSet
 }
 
 func NewSBOMAttestor() *SBOMAttestor {
@@ -113,6 +116,10 @@ func (a *SBOMAttestor) Attest(ctx *attestation.AttestationContext) error {
 	return nil
 }
 
+func (a *SBOMAttestor) Subjects() map[string]cryptoutil.DigestSet {
+	return a.subjects
+}
+
 func (a *SBOMAttestor) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&a.SBOMDocument)
 }
@@ -132,6 +139,7 @@ func (a *SBOMAttestor) getCandidate(ctx *attestation.AttestationContext) error {
 		return fmt.Errorf("no products to attest")
 	}
 
+	a.subjects = make(map[string]cryptoutil.DigestSet)
 	for path, product := range products {
 		if product.MimeType == SPDXMimeType {
 			a.predicateType = SPDXPredicateType
@@ -140,6 +148,8 @@ func (a *SBOMAttestor) getCandidate(ctx *attestation.AttestationContext) error {
 		} else {
 			continue
 		}
+
+		a.subjects[fmt.Sprintf("file:%v", path)] = product.Digest
 
 		f, err := os.Open(filepath.Join(ctx.WorkingDir(), path))
 		if err != nil {

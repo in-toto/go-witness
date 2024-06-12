@@ -108,6 +108,11 @@ func TestAttest(t *testing.T) {
 					}
 				}
 			}
+
+			if test.expectedError == "" &&
+				sbom.Subjects()["file:"+test.sbomFileName] == nil {
+				t.Errorf("expected subject %s, got nil", test.sbomFileName)
+			}
 		})
 	}
 }
