@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gobwas/glob"
@@ -118,7 +119,7 @@ type Attestor struct {
 func fromDigestMap(workingDir string, digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
 	products := make(map[string]attestation.Product)
 	for fileName, digestSet := range digestMap {
-		filePath := workingDir + fileName
+		filePath := filepath.Join(workingDir, fileName)
 		mimeType, err := getFileContentType(filePath)
 		if err != nil {
 			mimeType = "unknown"
@@ -227,12 +228,12 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 func getFileContentType(fileName string) (string, error) {
 	// Add SPDX JSON detector
 	mimetype.Lookup("application/json").Extend(func(buf []byte, limit uint32) bool {
-		return bytes.HasPrefix(buf, []byte(`{"spdxVersion": "SPDX-`))
+		return bytes.HasPrefix(buf, []byte(`{"spdxVersion":"SPDX-`))
 	}, "application/spdx+json", ".spdx.json")
 
 	// Add CycloneDx JSON detector
 	mimetype.Lookup("application/json").Extend(func(buf []byte, limit uint32) bool {
-		return bytes.HasPrefix(buf, []byte(`{"$schema": "http://cyclonedx.org/schema/bom-`))
+		return bytes.HasPrefix(buf, []byte(`{"$schema":"http://cyclonedx.org/schema/bom-`))
 	}, "application/vnd.cyclonedx+json", ".cdx.json")
 
 	// Add CycloneDx XML detector
