@@ -48,7 +48,7 @@ var (
 )
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType,
+	attestation.RegisterAttestationWithTypes(Name, []string{Type, SPDXPredicateType, CycloneDxPredicateType}, RunType,
 		func() attestation.Attestor { return NewSBOMAttestor() },
 		registry.BoolConfigOption(
 			"export",
