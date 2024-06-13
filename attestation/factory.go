@@ -90,6 +90,14 @@ func RegisterAttestation(name, predicateType string, run RunType, factoryFunc re
 	attestationsByRun[run] = registrationEntry
 }
 
+func RegisterAttestationWithTypes(name string, predicateTypes []string, run RunType, factoryFunc registry.FactoryFunc[Attestor], opts ...registry.Configurer) {
+	registrationEntry := attestorRegistry.Register(name, factoryFunc, opts...)
+	for _, predicateType := range predicateTypes {
+		attestationsByType[predicateType] = registrationEntry
+	}
+	attestationsByRun[run] = registrationEntry
+}
+
 func FactoryByType(uri string) (registry.FactoryFunc[Attestor], bool) {
 	registrationEntry, ok := attestationsByType[uri]
 	return registrationEntry.Factory, ok
