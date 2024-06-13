@@ -27,10 +27,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	akms "github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
@@ -303,15 +303,6 @@ func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider)
 	}
 
 	opts := []func(*config.LoadOptions) error{}
-	if a.endpoint != "" {
-		opts = append(opts, config.WithEndpointResolverWithOptions(
-			aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-				return aws.Endpoint{
-					URL: "https://" + a.endpoint,
-				}, nil
-			}),
-		))
-	}
 
 	if a.options.insecureSkipVerify {
 		log.Warn("InsecureSkipVerify is enabled for AWS KMS attestor")
@@ -352,7 +343,14 @@ func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider)
 		return fmt.Errorf("loading AWS config: %w", err)
 	}
 
-	a.client = akms.NewFromConfig(cfg)
+	if a.endpoint != "" {
+		a.client = akms.NewFromConfig(cfg, func(o *akms.Options) {
+			o.BaseEndpoint = aws.String("https://" + a.endpoint)
+		})
+	} else {
+		a.client = akms.NewFromConfig(cfg)
+	}
+
 	return
 }
 
