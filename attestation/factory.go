@@ -61,6 +61,7 @@ type Producer interface {
 // Exporter allows attestors to export their attestations for separation from the collection.
 type Exporter interface {
 	Export() bool
+	Subjects() map[string]cryptoutil.DigestSet
 }
 
 // BackReffer allows attestors to indicate which of their subjects are good candidates

@@ -16,14 +16,11 @@ package sbom
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/product"
-)
-
-const (
-	defaultExport = false
 )
 
 func TestName(t *testing.T) {
@@ -48,18 +45,18 @@ func TestRunType(t *testing.T) {
 }
 
 func TestExport(t *testing.T) {
-	provenance := NewSBOMAttestor()
-	if provenance.export != defaultExport {
-		t.Errorf("expected %t, got %t", defaultExport, provenance.export)
+	sbom := NewSBOMAttestor()
+	if sbom.export != defaultExport {
+		t.Errorf("expected %t, got %t", defaultExport, sbom.export)
 	}
 
-	WithExport(true)(provenance)
-	if !provenance.export {
-		t.Errorf("expected %t, got %t", true, provenance.export)
+	WithExport(true)(sbom)
+	if !sbom.export {
+		t.Errorf("expected %t, got %t", true, sbom.export)
 	}
 
-	if provenance.Export() != true {
-		t.Errorf("expected %t, got %t", true, provenance.Export())
+	if sbom.Export() != true {
+		t.Errorf("expected %t, got %t", true, sbom.Export())
 	}
 }
 
@@ -69,13 +66,14 @@ func TestAttest(t *testing.T) {
 		sbomPath      string
 		sbomFileName  string
 		expectedType  string
-		expectedError *error
+		expectedError string
 	}{
-		{"SPDX 2.2", "./boms/spdx-2.2/", "alpine.spdx-2-2.json", SPDXPredicateType, nil},
-		{"SPDX 2.3", "./boms/spdx-2.3/", "alpine.spdx-2-3.json", SPDXPredicateType, nil},
-		{"CycloneDx", "./boms/cyclonedx-json/", "alpine.cyclonedx.json", CycloneDxPredicateType, nil},
-		{"CycloneDx XML", "./boms/cyclonedx-xml/", "alpine.cyclonedx.xml", Type, new(error)},
-		{"Bad JSON", "./boms/emptyDir", "bad.json", Type, new(error)},
+		{"SPDX 2.2", "./boms/spdx-2.2/", "alpine.spdx-2-2.json", SPDXPredicateType, ""},
+		{"SPDX 2.3", "./boms/spdx-2.3/", "alpine.spdx-2-3.json", SPDXPredicateType, ""},
+		{"CycloneDx", "./boms/cyclonedx-json/", "alpine.cyclonedx.json", CycloneDxPredicateType, ""},
+		{"CycloneDx XML", "./boms/cyclonedx-xml/", "alpine.cyclonedx.xml", Type, "no SBOM file found"},
+		{"Bad JSON", "./boms/bad-json/", "bad.json", SPDXPredicateType, "no SBOM file found"},
+		{"No JSON", "./boms/emptyDir", "no.json", Type, "no products to attest"},
 	}
 
 	err := os.Mkdir("emptyDir", 0777)
@@ -100,6 +98,20 @@ func TestAttest(t *testing.T) {
 
 			if sbom.predicateType != test.expectedType {
 				t.Errorf("expected SBOM type %s, got %s", test.expectedType, sbom.predicateType)
+			}
+
+			for _, a := range ctx.CompletedAttestors() {
+				if a.Attestor.Name() == sbom.Name() {
+					if a.Error != nil &&
+						!strings.HasPrefix(a.Error.Error(), test.expectedError) {
+						t.Errorf("expected error: %s, got %s", test.expectedError, a.Error.Error())
+					}
+				}
+			}
+
+			if test.expectedError == "" &&
+				sbom.Subjects()["file:"+test.sbomFileName] == nil {
+				t.Errorf("expected subject %s, got nil", test.sbomFileName)
 			}
 		})
 	}

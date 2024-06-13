@@ -19,17 +19,20 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
 )
 
 const (
-	Name    = "sbom"
-	Type    = "https://witness.dev/attestations/sbom/v0.1"
-	RunType = attestation.PostProductRunType
-
+	Name                   = "sbom"
+	Type                   = "https://witness.dev/attestations/sbom/v0.1"
+	RunType                = attestation.PostProductRunType
+	defaultExport          = false
 	SPDXPredicateType      = "https://spdx.dev/Document"
 	SPDXMimeType           = "application/spdx+json"
 	CycloneDxPredicateType = "https://cyclonedx.org/bom"
@@ -39,14 +42,28 @@ const (
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
-	_ attestation.Attestor = &SBOMAttestor{}
-	_ attestation.Exporter = &SBOMAttestor{}
+	_ attestation.Attestor  = &SBOMAttestor{}
+	_ attestation.Subjecter = &SBOMAttestor{}
+	_ attestation.Exporter  = &SBOMAttestor{}
 )
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
-		return NewSBOMAttestor()
-	})
+	attestation.RegisterAttestation(Name, Type, RunType,
+		func() attestation.Attestor { return NewSBOMAttestor() },
+		registry.BoolConfigOption(
+			"export",
+			"Export the SBOM predicate in its own attestation",
+			defaultExport,
+			func(a attestation.Attestor, export bool) (attestation.Attestor, error) {
+				sbomAttestor, ok := a.(*SBOMAttestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not an SBOM attestor", a)
+				}
+				WithExport(export)(sbomAttestor)
+				return sbomAttestor, nil
+			},
+		),
+	)
 }
 
 type Option func(*SBOMAttestor)
@@ -61,6 +78,7 @@ type SBOMAttestor struct {
 	SBOMDocument  interface{}
 	predicateType string
 	export        bool
+	subjects      map[string]cryptoutil.DigestSet
 }
 
 func NewSBOMAttestor() *SBOMAttestor {
@@ -98,6 +116,10 @@ func (a *SBOMAttestor) Attest(ctx *attestation.AttestationContext) error {
 	return nil
 }
 
+func (a *SBOMAttestor) Subjects() map[string]cryptoutil.DigestSet {
+	return a.subjects
+}
+
 func (a *SBOMAttestor) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&a.SBOMDocument)
 }
@@ -117,6 +139,7 @@ func (a *SBOMAttestor) getCandidate(ctx *attestation.AttestationContext) error {
 		return fmt.Errorf("no products to attest")
 	}
 
+	a.subjects = make(map[string]cryptoutil.DigestSet)
 	for path, product := range products {
 		if product.MimeType == SPDXMimeType {
 			a.predicateType = SPDXPredicateType
@@ -126,7 +149,9 @@ func (a *SBOMAttestor) getCandidate(ctx *attestation.AttestationContext) error {
 			continue
 		}
 
-		f, err := os.Open(path)
+		a.subjects[fmt.Sprintf("file:%v", path)] = product.Digest
+
+		f, err := os.Open(filepath.Join(ctx.WorkingDir(), path))
 		if err != nil {
 			return fmt.Errorf("error opening file: %s", path)
 		}
