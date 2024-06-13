@@ -30,7 +30,7 @@ require (
 	golang.org/x/sys v0.20.0
 	google.golang.org/api v0.177.0
 	google.golang.org/grpc v1.63.2
-	gopkg.in/square/go-jose.v2 v2.6.0
+	gopkg.in/go-jose/go-jose.v2 v2.6.3
 	k8s.io/apimachinery v0.30.0
 )
 
@@ -117,7 +117,6 @@ require (
 	golang.org/x/tools v0.21.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240429193739-8cf5692501f6 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240429193739-8cf5692501f6 // indirect
-	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/klog/v2 v2.120.1 // indirect
 	k8s.io/utils v0.0.0-20240423183400-0849a56e8f22 // indirect
