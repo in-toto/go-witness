@@ -21,8 +21,8 @@ import (
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/invopop/jsonschema"
-	"gopkg.in/square/go-jose.v2"
-	"gopkg.in/square/go-jose.v2/jwt"
+	"gopkg.in/go-jose/go-jose.v2"
+	"gopkg.in/go-jose/go-jose.v2/jwt"
 )
 
 const (
