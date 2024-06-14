@@ -61,6 +61,7 @@ type Producer interface {
 // Exporter allows attestors to export their attestations for separation from the collection.
 type Exporter interface {
 	Export() bool
+	Subjects() map[string]cryptoutil.DigestSet
 }
 
 // BackReffer allows attestors to indicate which of their subjects are good candidates
@@ -86,6 +87,14 @@ func (e ErrAttestorNotFound) Error() string {
 func RegisterAttestation(name, predicateType string, run RunType, factoryFunc registry.FactoryFunc[Attestor], opts ...registry.Configurer) {
 	registrationEntry := attestorRegistry.Register(name, factoryFunc, opts...)
 	attestationsByType[predicateType] = registrationEntry
+	attestationsByRun[run] = registrationEntry
+}
+
+func RegisterAttestationWithTypes(name string, predicateTypes []string, run RunType, factoryFunc registry.FactoryFunc[Attestor], opts ...registry.Configurer) {
+	registrationEntry := attestorRegistry.Register(name, factoryFunc, opts...)
+	for _, predicateType := range predicateTypes {
+		attestationsByType[predicateType] = registrationEntry
+	}
 	attestationsByRun[run] = registrationEntry
 }
 

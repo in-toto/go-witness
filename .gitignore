@@ -15,3 +15,4 @@ test/log
 .idea/
 profile.cov
 .vscode/
+.aider*

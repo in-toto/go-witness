@@ -22,7 +22,7 @@ tmpdir2=$(mktemp -d)
 cp ./schemagen/*.json "$tmpdir2/"
 go run ./schemagen --dir "$tmpdir"
 echo "###########################################"
-echo "If diffs are found, run: make docgen"
+echo "If diffs are found, run: make schema"
 echo "###########################################"
 diff -Nau "$tmpdir" "$tmpdir2"
 rm -rf "$tmpdir" "$tmpdir2"
