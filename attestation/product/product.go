@@ -241,6 +241,11 @@ func getFileContentType(fileName string) (string, error) {
 		return bytes.HasPrefix(buf, []byte(`<?xml version="1.0" encoding="UTF-8"?><bom xmlns="http://cyclonedx.org/schema/bom/`))
 	}, "application/vnd.cyclonedx+xml", ".cdx.xml")
 
+	// Add Vex JSON detector
+	mimetype.Lookup("application/json").Extend(func(buf []byte, limit uint32) bool {
+		return bytes.HasPrefix(buf, []byte(`{"@context":"https://openvex.dev/ns`))
+	}, "application/vex+json", ".vex.json")
+
 	contentType, err := mimetype.DetectFile(fileName)
 	if err != nil {
 		return "", err
