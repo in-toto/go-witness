@@ -6,6 +6,7 @@ toolchain go1.22.4
 
 require (
 	cloud.google.com/go/kms v1.15.9
+	github.com/CycloneDX/cyclonedx-go v0.9.0
 	github.com/aws/aws-sdk-go-v2/config v1.27.18
 	github.com/aws/aws-sdk-go-v2/service/kms v1.31.3
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
@@ -24,6 +25,7 @@ require (
 	github.com/open-policy-agent/opa v0.64.0
 	github.com/owenrumney/go-sarif v1.1.1
 	github.com/sigstore/fulcio v1.4.5
+	github.com/spdx/tools-golang v0.5.4
 	github.com/spiffe/go-spiffe/v2 v2.1.7
 	github.com/stretchr/testify v1.9.0
 	go.step.sm/crypto v0.44.8
@@ -42,6 +44,7 @@ require (
 	dario.cat/mergo v1.0.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/agnivade/levenshtein v1.1.1 // indirect
+	github.com/anchore/go-struct-converter v0.0.0-20221118182256-c68fdcfa2092 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.27.2 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.18 // indirect
