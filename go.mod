@@ -33,7 +33,7 @@ require (
 	google.golang.org/api v0.177.0
 	google.golang.org/grpc v1.63.2
 	gopkg.in/go-jose/go-jose.v2 v2.6.3
-	k8s.io/apimachinery v0.30.0
+	k8s.io/apimachinery v0.30.2
 )
 
 require (
