@@ -76,18 +76,17 @@ func (p Policy) PublicKeyVerifiers(ko map[string][]func(signer.SignerProvider) (
 					}
 				}
 
-				kspv, ok := vp.(*kms.KMSSignerProvider)
-				if !ok {
-					return nil, fmt.Errorf("provided verifier provider is not a KMS verifier provider")
+				if vp != nil {
+					var ok bool
+					ksp, ok = vp.(*kms.KMSSignerProvider)
+					if !ok {
+						return nil, fmt.Errorf("provided verifier provider is not a KMS verifier provider")
+					}
 				}
 
-				verifier, err = kspv.Verifier(context.TODO())
+				verifier, err = ksp.Verifier(context.TODO())
 				if err != nil {
 					return nil, fmt.Errorf("failed to create kms verifier: %w", err)
-				}
-
-				if err != nil {
-					return nil, fmt.Errorf("KMS Key ID recognized but not valid: %w", err)
 				}
 
 			}
