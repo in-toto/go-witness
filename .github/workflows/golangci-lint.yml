@@ -43,4 +43,4 @@ jobs:
         with:
           version: latest
           args: --timeout=3m
-          skip-pkg-cache: true
+          skip-cache: true
