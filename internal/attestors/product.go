@@ -36,7 +36,7 @@ func (t *TestProductAttestor) Name() string {
 	return t.prodAtt.Name()
 }
 
-func (t *TestProductAttestor) Type() string {
+func (t *TestProductAttestor) Type() attestation.TypeSet {
 	return t.prodAtt.Type()
 }
 

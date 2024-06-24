@@ -30,10 +30,29 @@ var (
 
 type Attestor interface {
 	Name() string
-	Type() string
+	Type() TypeSet
 	RunType() RunType
 	Attest(ctx *AttestationContext) error
 	Schema() *jsonschema.Schema
+}
+
+type TypeSet []string
+
+func (s TypeSet) First() string {
+	if len(s) == 0 {
+		return ""
+	} else {
+		return s[0]
+	}
+}
+
+func (s TypeSet) Contains(t string) bool {
+	for _, v := range s {
+		if v == t {
+			return true
+		}
+	}
+	return false
 }
 
 // Subjecter allows attestors to expose bits of information that will be added to
@@ -84,9 +103,11 @@ func (e ErrAttestorNotFound) Error() string {
 	return fmt.Sprintf("attestor not found: %v", string(e))
 }
 
-func RegisterAttestation(name, predicateType string, run RunType, factoryFunc registry.FactoryFunc[Attestor], opts ...registry.Configurer) {
+func RegisterAttestation(name string, predicateType TypeSet, run RunType, factoryFunc registry.FactoryFunc[Attestor], opts ...registry.Configurer) {
 	registrationEntry := attestorRegistry.Register(name, factoryFunc, opts...)
-	attestationsByType[predicateType] = registrationEntry
+	for _, t := range predicateType {
+		attestationsByType[t] = registrationEntry
+	}
 	attestationsByRun[run] = registrationEntry
 }
 

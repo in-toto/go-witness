@@ -137,7 +137,7 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 					continue
 				}
 				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
-					envelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
+					envelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type().First(), subjecter.Subjects(), dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
 					if err != nil {
 						return result, fmt.Errorf("failed to sign envelope: %w", err)
 					}

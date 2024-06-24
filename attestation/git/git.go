@@ -37,16 +37,17 @@ const (
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
-	_ attestation.Attestor   = &Attestor{}
-	_ attestation.Subjecter  = &Attestor{}
-	_ attestation.BackReffer = &Attestor{}
-	_ GitAttestor            = &Attestor{}
+	_     attestation.Attestor   = &Attestor{}
+	_     attestation.Subjecter  = &Attestor{}
+	_     attestation.BackReffer = &Attestor{}
+	_     GitAttestor            = &Attestor{}
+	types                        = attestation.TypeSet{Type}
 )
 
 type GitAttestor interface {
 	// Attestor
 	Name() string
-	Type() string
+	Type() attestation.TypeSet
 	RunType() attestation.RunType
 	Attest(ctx *attestation.AttestationContext) error
 	Data() *Attestor
@@ -59,7 +60,7 @@ type GitAttestor interface {
 }
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
+	attestation.RegisterAttestation(Name, types, RunType, func() attestation.Attestor {
 		return New()
 	})
 }
@@ -107,8 +108,8 @@ func (a *Attestor) Name() string {
 	return Name
 }
 
-func (a *Attestor) Type() string {
-	return Type
+func (a *Attestor) Type() attestation.TypeSet {
+	return types
 }
 
 func (a *Attestor) RunType() attestation.RunType {

@@ -35,21 +35,22 @@ const (
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
-	_ attestation.Attestor = &CommandRun{}
-	_ CommandRunAttestor   = &CommandRun{}
+	_     attestation.Attestor = &CommandRun{}
+	_     CommandRunAttestor   = &CommandRun{}
+	types                      = attestation.TypeSet{Type}
 )
 
 type CommandRunAttestor interface {
 	// Attestor
 	Name() string
-	Type() string
+	Type() attestation.TypeSet
 	RunType() attestation.RunType
 	Attest(ctx *attestation.AttestationContext) error
 	Data() *CommandRun
 }
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
+	attestation.RegisterAttestation(Name, types, RunType, func() attestation.Attestor {
 		return New()
 	})
 }
@@ -152,8 +153,8 @@ func (rc *CommandRun) Name() string {
 	return Name
 }
 
-func (rc *CommandRun) Type() string {
-	return Type
+func (rc *CommandRun) Type() attestation.TypeSet {
+	return types
 }
 
 func (rc *CommandRun) RunType() attestation.RunType {

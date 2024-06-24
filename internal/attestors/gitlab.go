@@ -38,7 +38,7 @@ func (t *TestGitLabAttestor) Name() string {
 	return t.gitlabAtt.Name()
 }
 
-func (t *TestGitLabAttestor) Type() string {
+func (t *TestGitLabAttestor) Type() attestation.TypeSet {
 	return t.gitlabAtt.Type()
 }
 

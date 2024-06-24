@@ -36,7 +36,7 @@ func (t *TestCommandRunAttestor) Name() string {
 	return t.comAtt.Name()
 }
 
-func (t *TestCommandRunAttestor) Type() string {
+func (t *TestCommandRunAttestor) Type() attestation.TypeSet {
 	return t.comAtt.Type()
 }
 

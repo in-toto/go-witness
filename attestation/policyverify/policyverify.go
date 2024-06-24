@@ -40,12 +40,13 @@ const (
 )
 
 var (
-	_ attestation.Subjecter = &Attestor{}
-	_ attestation.Attestor  = &Attestor{}
+	_     attestation.Subjecter = &Attestor{}
+	_     attestation.Attestor  = &Attestor{}
+	types                       = attestation.TypeSet{Type}
 )
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
+	attestation.RegisterAttestation(Name, types, RunType, func() attestation.Attestor {
 		return New()
 	})
 }
@@ -109,8 +110,8 @@ func (a *Attestor) Name() string {
 	return Name
 }
 
-func (a *Attestor) Type() string {
-	return Type
+func (a *Attestor) Type() attestation.TypeSet {
+	return types
 }
 
 func (a *Attestor) RunType() attestation.RunType {

@@ -38,7 +38,7 @@ func (t *TestMaterialAttestor) Name() string {
 	return t.matAtt.Name()
 }
 
-func (t *TestMaterialAttestor) Type() string {
+func (t *TestMaterialAttestor) Type() attestation.TypeSet {
 	return t.matAtt.Type()
 }
 

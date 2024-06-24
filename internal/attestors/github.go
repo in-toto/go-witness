@@ -38,7 +38,7 @@ func (t *TestGitHubAttestor) Name() string {
 	return t.githubAtt.Name()
 }
 
-func (t *TestGitHubAttestor) Type() string {
+func (t *TestGitHubAttestor) Type() attestation.TypeSet {
 	return t.githubAtt.Type()
 }
 

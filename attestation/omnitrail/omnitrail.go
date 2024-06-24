@@ -28,8 +28,10 @@ const (
 	RunType = attestation.PreMaterialRunType
 )
 
+var types = attestation.TypeSet{Type}
+
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
+	attestation.RegisterAttestation(Name, types, RunType, func() attestation.Attestor {
 		return NewOmnitrailAttestor()
 	})
 }
@@ -69,6 +71,6 @@ func (o *Attestor) Schema() *jsonschema.Schema {
 }
 
 // Type implements attestation.Attestor.
-func (o *Attestor) Type() string {
-	return Type
+func (o *Attestor) Type() attestation.TypeSet {
+	return types
 }

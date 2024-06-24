@@ -40,10 +40,11 @@ var (
 	_ attestation.Attestor = &Attestor{}
 
 	mimeTypes = []string{"text/plain", "application/json"}
+	types     = attestation.TypeSet{Type}
 )
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
+	attestation.RegisterAttestation(Name, types, RunType, func() attestation.Attestor {
 		return New()
 	})
 }
@@ -62,8 +63,8 @@ func (a *Attestor) Name() string {
 	return Name
 }
 
-func (a *Attestor) Type() string {
-	return Type
+func (a *Attestor) Type() attestation.TypeSet {
+	return types
 }
 
 func (a *Attestor) RunType() attestation.RunType {
@@ -116,7 +117,7 @@ func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 			return fmt.Errorf("error reading file: %s", path)
 		}
 
-		//check to see if we can unmarshal into sarif type
+		// check to see if we can unmarshal into sarif type
 		if err := json.Unmarshal(reportBytes, &a.Report); err != nil {
 			log.Debugf("(attestation/sarif) error unmarshaling report: %w", err)
 			continue

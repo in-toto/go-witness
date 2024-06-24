@@ -27,7 +27,6 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
-	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
 	"github.com/spdx/tools-golang/spdx"
 )
@@ -46,28 +45,15 @@ const (
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
-	_ attestation.Attestor  = &SBOMAttestor{}
-	_ attestation.Subjecter = &SBOMAttestor{}
-	_ attestation.Exporter  = &SBOMAttestor{}
+	_     attestation.Attestor = &SBOMAttestor{}
+	_     attestation.Exporter = &SBOMAttestor{}
+	types                      = attestation.TypeSet{Type, CycloneDxPredicateType, SPDXPredicateType}
 )
 
 func init() {
-	attestation.RegisterAttestationWithTypes(Name, []string{Type, SPDXPredicateType, CycloneDxPredicateType}, RunType,
-		func() attestation.Attestor { return NewSBOMAttestor() },
-		registry.BoolConfigOption(
-			"export",
-			"Export the SBOM predicate in its own attestation",
-			defaultExport,
-			func(a attestation.Attestor, export bool) (attestation.Attestor, error) {
-				sbomAttestor, ok := a.(*SBOMAttestor)
-				if !ok {
-					return a, fmt.Errorf("unexpected attestor type: %T is not an SBOM attestor", a)
-				}
-				WithExport(export)(sbomAttestor)
-				return sbomAttestor, nil
-			},
-		),
-	)
+	attestation.RegisterAttestation(Name, types, RunType, func() attestation.Attestor {
+		return NewSBOMAttestor()
+	})
 }
 
 type Option func(*SBOMAttestor)
@@ -95,8 +81,8 @@ func (a *SBOMAttestor) Name() string {
 	return Name
 }
 
-func (a *SBOMAttestor) Type() string {
-	return a.predicateType
+func (a *SBOMAttestor) Type() attestation.TypeSet {
+	return types
 }
 
 func (a *SBOMAttestor) RunType() attestation.RunType {

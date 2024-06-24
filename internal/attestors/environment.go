@@ -35,7 +35,7 @@ func (t *TestEnvironmentAttestor) Name() string {
 	return t.environmentAtt.Name()
 }
 
-func (t *TestEnvironmentAttestor) Type() string {
+func (t *TestEnvironmentAttestor) Type() attestation.TypeSet {
 	return t.environmentAtt.Type()
 }
 

@@ -36,7 +36,7 @@ func (t *TestOCIAttestor) Name() string {
 	return t.ociAtt.Name()
 }
 
-func (t *TestOCIAttestor) Type() string {
+func (t *TestOCIAttestor) Type() attestation.TypeSet {
 	return t.ociAtt.Type()
 }
 

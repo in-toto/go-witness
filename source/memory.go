@@ -96,7 +96,7 @@ func (s *MemorySource) LoadEnvelope(reference string, env dsse.Envelope) error {
 	s.subjectDigestsByReference[reference] = subDigestIndex
 	attestationIndex := make(map[string]struct{})
 	for _, att := range collEnv.Collection.Attestations {
-		attestationIndex[att.Attestation.Type()] = struct{}{}
+		attestationIndex[att.Attestation.Type().First()] = struct{}{}
 	}
 
 	s.attestationsByReference[reference] = attestationIndex

@@ -53,12 +53,13 @@ const (
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
-	_ attestation.Attestor  = &Provenance{}
-	_ attestation.Subjecter = &Provenance{}
+	_     attestation.Attestor  = &Provenance{}
+	_     attestation.Subjecter = &Provenance{}
+	types                       = attestation.TypeSet{Type}
 )
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType,
+	attestation.RegisterAttestation(Name, types, RunType,
 		func() attestation.Attestor { return New() },
 		registry.BoolConfigOption(
 			"export",
@@ -99,8 +100,8 @@ func (p *Provenance) Name() string {
 	return Name
 }
 
-func (p *Provenance) Type() string {
-	return Type
+func (p *Provenance) Type() attestation.TypeSet {
+	return types
 }
 
 func (p *Provenance) RunType() attestation.RunType {

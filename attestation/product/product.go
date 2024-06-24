@@ -41,15 +41,16 @@ const (
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
-	_ attestation.Attestor  = &Attestor{}
-	_ attestation.Subjecter = &Attestor{}
-	_ attestation.Producer  = &Attestor{}
+	_     attestation.Attestor  = &Attestor{}
+	_     attestation.Subjecter = &Attestor{}
+	_     attestation.Producer  = &Attestor{}
+	types                       = attestation.TypeSet{ProductType}
 )
 
 type ProductAttestor interface {
 	// Attestor
 	Name() string
-	Type() string
+	Type() attestation.TypeSet
 	RunType() attestation.RunType
 	Attest(ctx *attestation.AttestationContext) error
 
@@ -61,7 +62,7 @@ type ProductAttestor interface {
 }
 
 func init() {
-	attestation.RegisterAttestation(ProductName, ProductType, ProductRunType, func() attestation.Attestor { return New() },
+	attestation.RegisterAttestation(ProductName, types, ProductRunType, func() attestation.Attestor { return New() },
 		registry.StringConfigOption(
 			"include-glob",
 			"Pattern to use when recording products. Files that match this pattern will be included as subjects on the attestation.",
@@ -138,8 +139,8 @@ func (a *Attestor) Name() string {
 	return ProductName
 }
 
-func (a *Attestor) Type() string {
-	return ProductType
+func (a *Attestor) Type() attestation.TypeSet {
+	return types
 }
 
 func (a *Attestor) RunType() attestation.RunType {
