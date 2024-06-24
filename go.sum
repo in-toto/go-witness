@@ -263,8 +263,8 @@ github.com/omnibor/omnibor-go v0.0.0-20230521145532-a77de61a16cd h1:25EpGVgctk6V
 github.com/omnibor/omnibor-go v0.0.0-20230521145532-a77de61a16cd/go.mod h1:ArlQivzDQvZnFe8itjlA3ndPTXd9iWOgqzF31OyIEFQ=
 github.com/onsi/gomega v1.31.0 h1:54UJxxj6cPInHS3a35wm6BK/F9nHYueZ1NVujHDrnXE=
 github.com/onsi/gomega v1.31.0/go.mod h1:DW9aCi7U6Yi40wNVAvT6kzFnEVEI5n3DloYBiKiT6zk=
-github.com/open-policy-agent/opa v0.64.0 h1:2g0JTt78zxhFaoBmZViY4UXvtOlzBjhhrnyrIxkm+tI=
-github.com/open-policy-agent/opa v0.64.0/go.mod h1:j4VeLorVpKipnkQ2TDjWshEuV3cvP/rHzQhYaraUXZY=
+github.com/open-policy-agent/opa v0.64.1 h1:n8IJTYlFWzqiOYx+JiawbErVxiqAyXohovcZxYbskxQ=
+github.com/open-policy-agent/opa v0.64.1/go.mod h1:j4VeLorVpKipnkQ2TDjWshEuV3cvP/rHzQhYaraUXZY=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/openvex/go-vex v0.2.5 h1:41utdp2rHgAGCsG+UbjmfMG5CWQxs15nGqir1eRgSrQ=
