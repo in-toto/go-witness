@@ -27,6 +27,7 @@ import (
 	ipolicy "github.com/in-toto/go-witness/internal/policy"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/policy"
+	"github.com/in-toto/go-witness/signer"
 	"github.com/in-toto/go-witness/slsa"
 	"github.com/in-toto/go-witness/source"
 	"github.com/in-toto/go-witness/timestamp"
@@ -54,10 +55,11 @@ type Attestor struct {
 	*ipolicy.VerifyPolicySignatureOptions
 	slsa.VerificationSummary
 
-	stepResults      map[string]policy.StepResult
-	policyEnvelope   dsse.Envelope
-	collectionSource source.Sourcer
-	subjectDigests   []string
+	stepResults        map[string]policy.StepResult
+	policyEnvelope     dsse.Envelope
+	collectionSource   source.Sourcer
+	subjectDigests     []string
+	kmsProviderOptions map[string][]func(signer.SignerProvider) (signer.SignerProvider, error)
 }
 
 type Option func(*Attestor)
@@ -73,6 +75,12 @@ func VerifyWithPolicyVerificationOptions(opts ...ipolicy.Option) Option {
 func VerifyWithPolicyEnvelope(policyEnvelope dsse.Envelope) Option {
 	return func(a *Attestor) {
 		a.policyEnvelope = policyEnvelope
+	}
+}
+
+func VerifyWithKMSProviderOptions(opts map[string][]func(signer.SignerProvider) (signer.SignerProvider, error)) Option {
+	return func(a *Attestor) {
+		a.kmsProviderOptions = opts
 	}
 }
 
@@ -149,7 +157,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return fmt.Errorf("failed to unmarshal policy from envelope: %w", err)
 	}
 
-	pubKeysById, err := pol.PublicKeyVerifiers()
+	pubKeysById, err := pol.PublicKeyVerifiers(a.kmsProviderOptions)
 	if err != nil {
 		return fmt.Errorf("failed to get public keys from policy: %w", err)
 	}

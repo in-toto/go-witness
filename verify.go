@@ -27,6 +27,7 @@ import (
 	"github.com/in-toto/go-witness/dsse"
 	ipolicy "github.com/in-toto/go-witness/internal/policy"
 	"github.com/in-toto/go-witness/policy"
+	"github.com/in-toto/go-witness/signer"
 	"github.com/in-toto/go-witness/slsa"
 	"github.com/in-toto/go-witness/source"
 	"github.com/in-toto/go-witness/timestamp"
@@ -49,6 +50,7 @@ type verifyOptions struct {
 	verifyPolicySignatureOptions []ipolicy.Option
 	runOptions                   []RunOption
 	signers                      []cryptoutil.Signer
+	kmsProviderOptions           map[string][]func(signer.SignerProvider) (signer.SignerProvider, error)
 }
 
 type VerifyOption func(*verifyOptions)
@@ -121,6 +123,12 @@ func VerifyWithPolicyCAIntermediates(certs []*x509.Certificate) VerifyOption {
 	}
 }
 
+func VerifyWithKMSProviderOptions(opts map[string][]func(signer.SignerProvider) (signer.SignerProvider, error)) VerifyOption {
+	return func(vo *verifyOptions) {
+		vo.kmsProviderOptions = opts
+	}
+}
+
 type VerifyResult struct {
 	RunResult
 	VerificationSummary slsa.VerificationSummary
@@ -148,7 +156,12 @@ func Verify(ctx context.Context, policyEnvelope dsse.Envelope, policyVerifiers [
 	vo.runOptions = append(vo.runOptions,
 		RunWithAttestors(
 			[]attestation.Attestor{
-				policyverify.New(vo.attestorOptions...),
+				policyverify.New(
+					append(
+						[]policyverify.Option{policyverify.VerifyWithKMSProviderOptions(vo.kmsProviderOptions)},
+						vo.attestorOptions...,
+					)...,
+				),
 			},
 		),
 	)

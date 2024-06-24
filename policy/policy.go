@@ -25,6 +25,7 @@ import (
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/signer"
 	"github.com/in-toto/go-witness/signer/kms"
 	"github.com/in-toto/go-witness/source"
 
@@ -55,7 +56,7 @@ type PublicKey struct {
 }
 
 // PublicKeyVerifiers returns verifiers for each of the policy's embedded public keys grouped by the key's ID
-func (p Policy) PublicKeyVerifiers() (map[string]cryptoutil.Verifier, error) {
+func (p Policy) PublicKeyVerifiers(ko map[string][]func(signer.SignerProvider) (signer.SignerProvider, error)) (map[string]cryptoutil.Verifier, error) {
 	verifiers := make(map[string]cryptoutil.Verifier)
 	var err error
 
@@ -63,10 +64,32 @@ func (p Policy) PublicKeyVerifiers() (map[string]cryptoutil.Verifier, error) {
 		var verifier cryptoutil.Verifier
 		for _, prefix := range kms.SupportedProviders() {
 			if strings.HasPrefix(key.KeyID, prefix) {
-				verifier, err = kms.New(kms.WithRef(key.KeyID), kms.WithHash("SHA256")).Verifier(context.TODO())
+				ksp := kms.New(kms.WithRef(key.KeyID), kms.WithHash("SHA256"))
+				var vp signer.SignerProvider
+				for _, opt := range ksp.Options {
+					pn := opt.ProviderName()
+					for _, setter := range ko[pn] {
+						vp, err = setter(ksp)
+						if err != nil {
+							continue
+						}
+					}
+				}
+
+				kspv, ok := vp.(*kms.KMSSignerProvider)
+				if !ok {
+					return nil, fmt.Errorf("provided verifier provider is not a KMS verifier provider")
+				}
+
+				verifier, err = kspv.Verifier(context.TODO())
+				if err != nil {
+					return nil, fmt.Errorf("failed to create kms verifier: %w", err)
+				}
+
 				if err != nil {
 					return nil, fmt.Errorf("KMS Key ID recognized but not valid: %w", err)
 				}
+
 			}
 		}
 
