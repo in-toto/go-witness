@@ -25,7 +25,7 @@ require (
 	github.com/open-policy-agent/opa v0.64.1
 	github.com/owenrumney/go-sarif v1.1.1
 	github.com/sigstore/fulcio v1.4.5
-	github.com/spdx/tools-golang v0.5.4
+	github.com/spdx/tools-golang v0.5.5
 	github.com/spiffe/go-spiffe/v2 v2.1.7
 	github.com/stretchr/testify v1.9.0
 	go.step.sm/crypto v0.44.8
