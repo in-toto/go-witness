@@ -23,6 +23,7 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/attestation/commandrun"
 	"github.com/in-toto/go-witness/attestation/file"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/registry"
@@ -184,6 +185,25 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{})
 	if err != nil {
 		return err
+	}
+
+	for _, completedAttestor := range ctx.CompletedAttestors() {
+		attestor := completedAttestor.Attestor
+		if commandRunAttestor, ok := attestor.(*commandrun.CommandRun); ok && commandRunAttestor.EnableTracing {
+			openedFileSet := map[string]bool{}
+
+			for _, process := range commandRunAttestor.Processes {
+				for file := range process.OpenedFiles {
+					openedFileSet[file] = true;
+				}
+			}
+
+			for file := range products {
+				if _, ok := openedFileSet[file]; !ok {
+					delete(products, file)
+				}
+			}
+		}
 	}
 
 	a.products = fromDigestMap(ctx.WorkingDir(), products)
