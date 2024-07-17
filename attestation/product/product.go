@@ -182,28 +182,26 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.compiledExcludeGlob = compiledExcludeGlob
 
 	a.baseArtifacts = ctx.Materials()
-	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{})
-	if err != nil {
-		return err
-	}
+
+	processWasTraced := false
+	openedFileSet := map[string]bool{}
 
 	for _, completedAttestor := range ctx.CompletedAttestors() {
 		attestor := completedAttestor.Attestor
 		if commandRunAttestor, ok := attestor.(*commandrun.CommandRun); ok && commandRunAttestor.EnableTracing {
-			openedFileSet := map[string]bool{}
+			processWasTraced = true
 
 			for _, process := range commandRunAttestor.Processes {
 				for file := range process.OpenedFiles {
 					openedFileSet[file] = true;
 				}
 			}
-
-			for file := range products {
-				if _, ok := openedFileSet[file]; !ok {
-					delete(products, file)
-				}
-			}
 		}
+	}
+
+	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, processWasTraced, openedFileSet)
+	if err != nil {
+		return err
 	}
 
 	a.products = fromDigestMap(ctx.WorkingDir(), products)
