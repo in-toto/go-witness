@@ -70,7 +70,7 @@ func WithMaterials(materials map[string]cryptoutil.DigestSet) Option {
 
 func WithTracing(enabled bool) Option {
 	return func(cr *CommandRun) {
-		cr.EnableTracing = enabled
+		cr.enableTracing = enabled
 	}
 }
 
@@ -117,10 +117,10 @@ type CommandRun struct {
 	Stderr    string        `json:"stderr,omitempty"`
 	ExitCode  int           `json:"exitcode"`
 	Processes []ProcessInfo `json:"processes,omitempty"`
-	EnableTracing        bool
 
 	silent               bool
 	materials            map[string]cryptoutil.DigestSet
+	enableTracing        bool
 	environmentBlockList map[string]struct{}
 }
 
@@ -160,6 +160,10 @@ func (rc *CommandRun) RunType() attestation.RunType {
 	return RunType
 }
 
+func (rc *CommandRun) EnableTracing() bool {
+	return rc.enableTracing
+}
+
 func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	c := exec.Command(r.Cmd[0], r.Cmd[1:]...)
 	c.Dir = ctx.WorkingDir()
@@ -176,7 +180,7 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	stderrWriter := io.MultiWriter(stderrWriters...)
 	c.Stdout = stdoutWriter
 	c.Stderr = stderrWriter
-	if r.EnableTracing {
+	if r.enableTracing {
 		enableTracing(c)
 	}
 
@@ -185,7 +189,7 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	}
 
 	var err error
-	if r.EnableTracing {
+	if r.enableTracing {
 		r.Processes, err = r.trace(c, ctx)
 	} else {
 		err = c.Wait()

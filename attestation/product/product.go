@@ -188,12 +188,12 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	for _, completedAttestor := range ctx.CompletedAttestors() {
 		attestor := completedAttestor.Attestor
-		if commandRunAttestor, ok := attestor.(*commandrun.CommandRun); ok && commandRunAttestor.EnableTracing {
+		if commandRunAttestor, ok := attestor.(*commandrun.CommandRun); ok && commandRunAttestor.EnableTracing() {
 			processWasTraced = true
 
 			for _, process := range commandRunAttestor.Processes {
-				for file := range process.OpenedFiles {
-					openedFileSet[file] = true;
+				for fname := range process.OpenedFiles {
+					openedFileSet[fname] = true
 				}
 			}
 		}
