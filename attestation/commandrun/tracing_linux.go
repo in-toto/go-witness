@@ -75,7 +75,7 @@ func (r *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext) ([
 
 func (p *ptraceContext) runTrace() error {
 	defer p.retryOpenedFiles()
-	
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	status := unix.WaitStatus(0)
