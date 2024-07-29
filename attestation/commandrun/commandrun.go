@@ -160,7 +160,7 @@ func (rc *CommandRun) RunType() attestation.RunType {
 	return RunType
 }
 
-func (rc *CommandRun) EnableTracing() bool {
+func (rc *CommandRun) TracingEnabled() bool {
 	return rc.enableTracing
 }
 

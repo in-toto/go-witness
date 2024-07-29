@@ -188,7 +188,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	for _, completedAttestor := range ctx.CompletedAttestors() {
 		attestor := completedAttestor.Attestor
-		if commandRunAttestor, ok := attestor.(*commandrun.CommandRun); ok && commandRunAttestor.EnableTracing() {
+		if commandRunAttestor, ok := attestor.(*commandrun.CommandRun); ok && commandRunAttestor.TracingEnabled() {
 			processWasTraced = true
 
 			for _, process := range commandRunAttestor.Processes {
