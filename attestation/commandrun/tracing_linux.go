@@ -74,6 +74,8 @@ func (r *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext) ([
 }
 
 func (p *ptraceContext) runTrace() error {
+	defer p.retryOpenedFiles()
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	status := unix.WaitStatus(0)
@@ -118,6 +120,26 @@ func (p *ptraceContext) runTrace() error {
 		if err := unix.PtraceSyscall(pid, injectedSig); err != nil {
 			log.Debugf("(tracing) got error from ptrace syscall: %w", err)
 		}
+	}
+}
+
+func (p *ptraceContext) retryOpenedFiles() {
+	// after tracing, look through opened files to try to resolve any newly created files
+	procInfo := p.getProcInfo(p.parentPid)
+
+	for file, digestSet := range procInfo.OpenedFiles {
+		if digestSet != nil {
+			continue
+		}
+
+		newDigest, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
+
+		if err != nil {
+			delete(procInfo.OpenedFiles, file)
+			continue
+		}
+
+		procInfo.OpenedFiles[file] = newDigest
 	}
 }
 
@@ -213,6 +235,10 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 		procInfo := p.getProcInfo(pid)
 		digestSet, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
 		if err != nil {
+			if _, isPathErr := err.(*os.PathError); isPathErr {
+				procInfo.OpenedFiles[file] = nil
+			}
+
 			return err
 		}
 

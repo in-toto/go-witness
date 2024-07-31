@@ -160,6 +160,10 @@ func (rc *CommandRun) RunType() attestation.RunType {
 	return RunType
 }
 
+func (rc *CommandRun) TracingEnabled() bool {
+	return rc.enableTracing
+}
+
 func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	c := exec.Command(r.Cmd[0], r.Cmd[1:]...)
 	c.Dir = ctx.WorkingDir()

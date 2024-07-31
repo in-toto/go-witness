@@ -23,6 +23,7 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/attestation/commandrun"
 	"github.com/in-toto/go-witness/attestation/file"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/registry"
@@ -181,7 +182,24 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.compiledExcludeGlob = compiledExcludeGlob
 
 	a.baseArtifacts = ctx.Materials()
-	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{})
+
+	processWasTraced := false
+	openedFileSet := map[string]bool{}
+
+	for _, completedAttestor := range ctx.CompletedAttestors() {
+		attestor := completedAttestor.Attestor
+		if commandRunAttestor, ok := attestor.(*commandrun.CommandRun); ok && commandRunAttestor.TracingEnabled() {
+			processWasTraced = true
+
+			for _, process := range commandRunAttestor.Processes {
+				for fname := range process.OpenedFiles {
+					openedFileSet[fname] = true
+				}
+			}
+		}
+	}
+
+	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, processWasTraced, openedFileSet)
 	if err != nil {
 		return err
 	}
