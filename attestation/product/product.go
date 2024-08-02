@@ -264,6 +264,11 @@ func getFileContentType(fileName string) (string, error) {
 		return bytes.HasPrefix(buf, []byte(`{"@context":"https://openvex.dev/ns`))
 	}, "application/vex+json", ".vex.json")
 
+	// Add sha256 digest detector
+	mimetype.Lookup("text/plain").Extend(func(buf []byte, limit uint32) bool {
+		return bytes.HasPrefix(buf, []byte(`sha256:`))
+	}, "text/sha256+text", ".sha256")
+
 	contentType, err := mimetype.DetectFile(fileName)
 	if err != nil {
 		return "", err
