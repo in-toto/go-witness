@@ -67,7 +67,7 @@ jobs:
               path: /tmp
 
           - if: ${{ inputs.pre-command != '' && inputs.pull_request == false }}
-            uses: testifysec/witness-run-action@85ddab8b46a86b2905a3b547a1806ab264fbb810
+            uses: testifysec/witness-run-action@f77c0a5b024ed206a6d2e7426611e4306af4dd66
             with:
               step: pre-${{ inputs.step }}
               attestations: ${{ inputs.attestations }}
@@ -76,7 +76,7 @@ jobs:
             run: ${{ inputs.pre-command }}
 
           - if: ${{ inputs.pull_request == false }}
-            uses: testifysec/witness-run-action@85ddab8b46a86b2905a3b547a1806ab264fbb810
+            uses: testifysec/witness-run-action@f77c0a5b024ed206a6d2e7426611e4306af4dd66
             with:
               step: ${{ inputs.step }}
               attestations: ${{ inputs.attestations }}
