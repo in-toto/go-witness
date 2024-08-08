@@ -243,15 +243,25 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	return subjects
 }
 
+func IsSPDXJson(buf []byte) bool {
+	header := buf[:500]
+	return bytes.Contains(header, []byte(`"spdxVersion":"SPDX-`)) || bytes.Contains(header, []byte(`"spdxVersion": "SPDX-`))
+}
+
+func IsCycloneDXJson(buf []byte) bool {
+	header := buf[:500]
+	return bytes.Contains(header, []byte(`"bomFormat":"CycloneDX"`)) || bytes.Contains(header, []byte(`"bomFormat": "CycloneDX"`))
+}
+
 func getFileContentType(fileName string) (string, error) {
 	// Add SPDX JSON detector
 	mimetype.Lookup("application/json").Extend(func(buf []byte, limit uint32) bool {
-		return bytes.HasPrefix(buf, []byte(`{"spdxVersion":"SPDX-`))
+		return IsSPDXJson(buf)
 	}, "application/spdx+json", ".spdx.json")
 
 	// Add CycloneDx JSON detector
 	mimetype.Lookup("application/json").Extend(func(buf []byte, limit uint32) bool {
-		return bytes.HasPrefix(buf, []byte(`{"$schema":"http://cyclonedx.org/schema/bom-`))
+		return IsCycloneDXJson(buf)
 	}, "application/vnd.cyclonedx+json", ".cdx.json")
 
 	// Add CycloneDx XML detector

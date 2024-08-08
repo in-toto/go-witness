@@ -25,6 +25,7 @@ import (
 
 	"github.com/CycloneDX/cyclonedx-go"
 	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/attestation/product"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
@@ -129,9 +130,9 @@ func (a *SBOMAttestor) MarshalJSON() ([]byte, error) {
 }
 
 func (a *SBOMAttestor) UnmarshalJSON(data []byte) error {
-	if bytes.HasPrefix(data, []byte(`{"spdxVersion":"SPDX-`)) {
+	if product.IsSPDXJson(data) {
 		a.predicateType = SPDXPredicateType
-	} else if bytes.HasPrefix(data, []byte(`{"$schema":"http://cyclonedx.org/schema/bom-`)) {
+	} else if product.IsCycloneDXJson(data) {
 		a.predicateType = CycloneDxPredicateType
 	} else {
 		log.Warn("Unknown sbom predicate type")
