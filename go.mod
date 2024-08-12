@@ -1,6 +1,7 @@
 module github.com/in-toto/go-witness
 
-go 1.22.0
+go 1.22.5
+
 require (
 	cloud.google.com/go/kms v1.15.9
 	github.com/CycloneDX/cyclonedx-go v0.9.0
