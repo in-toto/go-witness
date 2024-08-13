@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
@@ -149,10 +150,15 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	if met != nil {
+		if strings.HasPrefix(met.ContainerImageDigest, "sha256:") {
+			log.Debugf("setting image digest as", met.ContainerImageDigest)
+			a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}] = met.ContainerImageDigest
+		} else {
+			log.Warnf("found metadata file does not contain image digest of expected format: '%s'", met.ContainerImageDigest)
+		}
+
 		a.ImageDigest = map[cryptoutil.DigestValue]string{}
-		a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}] = met.ContainerImageDigest
-		fmt.Println("setting image digest as", met.ContainerImageDigest)
-		fmt.Println("setting image references as", met.ImageName)
+		log.Debugf("setting image references as", met.ImageName)
 		a.ImageReferences = []string{}
 		a.ImageReferences = append(a.ImageReferences, met.ImageName)
 	}
@@ -169,12 +175,10 @@ func (a *Attestor) getDockerCandidate(ctx *attestation.AttestationContext) (*doc
 
 	//NOTE: it's not ideal to try and parse it without a mime type but the metadata file is completely different depending on how the buildx is executed
 	for path, product := range products {
-		fmt.Println("inspecting", path)
 		if strings.Contains(sha256MimeType, product.MimeType) {
-			log.Info("found image id")
-			f, err := os.ReadFile(path)
+			f, err := os.ReadFile(filepath.Join(ctx.WorkingDir(), path))
 			if err != nil {
-				return nil, fmt.Errorf("failed to read file %s", path)
+				return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 			}
 
 			a.ImageID = map[cryptoutil.DigestValue]string{}
@@ -186,7 +190,7 @@ func (a *Attestor) getDockerCandidate(ctx *attestation.AttestationContext) (*doc
 
 		f, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read file %s", path)
+			return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 		}
 
 		err = json.Unmarshal(f, &met)

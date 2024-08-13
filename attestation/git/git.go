@@ -17,6 +17,7 @@ package git
 import (
 	"crypto"
 	"fmt"
+	giturl "github.com/whilp/git-urls"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 	"github.com/invopop/jsonschema"
 )
 
@@ -153,7 +155,15 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	for _, remote := range remotes {
-		a.Remotes = append(a.Remotes, remote.Config().URLs...)
+		for _, u := range remote.Config().URLs {
+			rurl, err := giturl.Parse(u)
+			if err != nil {
+				log.Debugf("failed to parse remote url: %w", err)
+			}
+
+			//NOTE: Not added the scheme to the remote so far, can add it if needed
+			a.Remotes = append(a.Remotes, fmt.Sprintf("%s/%s", rurl.Host, rurl.Path))
+		}
 	}
 
 	refs, err := repo.References()
@@ -285,6 +295,16 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	for _, parentHash := range a.ParentHashes {
 		subjectName = fmt.Sprintf("parenthash:%v", parentHash)
 		ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(parentHash), hashes)
+		if err != nil {
+			return nil
+		}
+		subjects[subjectName] = ds
+	}
+
+	// add remotes
+	for _, remote := range a.Remotes {
+		subjectName = fmt.Sprintf("remote:%v", remote)
+		ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(remote), hashes)
 		if err != nil {
 			return nil
 		}
