@@ -151,14 +151,14 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	if met != nil {
 		if strings.HasPrefix(met.ContainerImageDigest, "sha256:") {
-			log.Debugf("setting image digest as", met.ContainerImageDigest)
+			log.Debugf("setting image digest as '%s'", met.ContainerImageDigest)
+			a.ImageDigest = map[cryptoutil.DigestValue]string{}
 			a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}] = met.ContainerImageDigest
 		} else {
 			log.Warnf("found metadata file does not contain image digest of expected format: '%s'", met.ContainerImageDigest)
 		}
 
-		a.ImageDigest = map[cryptoutil.DigestValue]string{}
-		log.Debugf("setting image references as", met.ImageName)
+		log.Debugf("setting image references as '%s'", met.ImageName)
 		a.ImageReferences = []string{}
 		a.ImageReferences = append(a.ImageReferences, met.ImageName)
 	}
