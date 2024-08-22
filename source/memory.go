@@ -22,7 +22,6 @@ import (
 	"os"
 
 	"github.com/in-toto/go-witness/dsse"
-	"github.com/in-toto/go-witness/log"
 )
 
 type ErrDuplicateReference string
@@ -32,7 +31,6 @@ func (e ErrDuplicateReference) Error() string {
 }
 
 type MemorySource struct {
-	searched                   bool
 	envelopesByReference       map[string]CollectionEnvelope
 	referencesByCollectionName map[string][]string
 	subjectDigestsByReference  map[string]map[string]struct{}
@@ -41,7 +39,6 @@ type MemorySource struct {
 
 func NewMemorySource() *MemorySource {
 	return &MemorySource{
-		searched:                   false,
 		envelopesByReference:       make(map[string]CollectionEnvelope),
 		referencesByCollectionName: make(map[string][]string),
 		subjectDigestsByReference:  make(map[string]map[string]struct{}),
@@ -107,13 +104,6 @@ func (s *MemorySource) LoadEnvelope(reference string, env dsse.Envelope) error {
 }
 
 func (s *MemorySource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
-	if s.searched {
-		log.Debug("skipping memory source search: already performed")
-		return []CollectionEnvelope{}, nil
-	} else {
-		s.searched = true
-	}
-
 	matches := make([]CollectionEnvelope, 0)
 	for _, potentialMatchReference := range s.referencesByCollectionName[collectionName] {
 		env, ok := s.envelopesByReference[potentialMatchReference]
@@ -132,6 +122,20 @@ func (s *MemorySource) Search(ctx context.Context, collectionName string, subjec
 		}
 
 		if !subjectMatchFound {
+			continue
+		}
+
+		// make sure all the expected attestations appear in the collection
+		attestationsMatched := true
+		indexAttestations := s.attestationsByReference[potentialMatchReference]
+		for _, checkAttestation := range attestations {
+			if _, ok := indexAttestations[checkAttestation]; !ok {
+				attestationsMatched = false
+				break
+			}
+		}
+
+		if !attestationsMatched {
 			continue
 		}
 

@@ -239,30 +239,30 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 	resultsByStep := make(map[string]StepResult)
 	for depth := 0; depth < vo.searchDepth; depth++ {
 		for stepName, step := range p.Steps {
-			// initialize the result for this step if it hasn't been already
-			if _, ok := resultsByStep[stepName]; !ok {
-				resultsByStep[stepName] = StepResult{Step: stepName}
-			}
-
+			// Use search to get all the attestations that match the supplied step name and subjects
 			collections, err := vo.verifiedSource.Search(ctx, stepName, vo.subjectDigests, attestationsByStep[stepName])
 			if err != nil {
 				return false, nil, err
 			}
 
 			if len(collections) == 0 {
-				continue
+				collections = append(collections, source.CollectionVerificationResult{Errors: []error{ErrNoCollections{Step: stepName}}})
 			}
 
-			// Verify the functionaries and validate attestations
+			// Verify the functionaries
 			collections = step.checkFunctionaries(collections, trustBundles)
+
 			stepResult := step.validateAttestations(collections)
 
-			// Merge the results
-			if result, ok := resultsByStep[stepName]; ok {
-				result.Passed = append(result.Passed, stepResult.Passed...)
-				result.Rejected = append(result.Rejected, stepResult.Rejected...)
-
-				resultsByStep[stepName] = result
+			// We perform many searches against the same step, so we need to merge the relevant fields
+			if resultsByStep[stepName].Step == "" {
+				resultsByStep[stepName] = stepResult
+			} else {
+				if result, ok := resultsByStep[stepName]; ok {
+					result.Passed = append(result.Passed, stepResult.Passed...)
+					result.Rejected = append(result.Rejected, stepResult.Rejected...)
+					resultsByStep[stepName] = result
+				}
 			}
 
 			for _, coll := range stepResult.Passed {
@@ -325,6 +325,13 @@ func (p Policy) verifyArtifacts(resultsByStep map[string]StepResult) (map[string
 	for _, step := range p.Steps {
 		accepted := false
 		if len(resultsByStep[step.Name].Passed) == 0 {
+			if result, ok := resultsByStep[step.Name]; ok {
+				result.Rejected = append(result.Rejected, RejectedCollection{Reason: fmt.Errorf("failed to verify artifacts for step %s: no passed collections present", step.Name)})
+				resultsByStep[step.Name] = result
+			} else {
+				return nil, fmt.Errorf("failed to find step %s in step results map", step.Name)
+			}
+
 			continue
 		}
 
