@@ -95,7 +95,7 @@ func (e Envelope) Verify(opts ...VerificationOption) ([]CheckedVerifier, error) 
 	checkedVerifiers := make([]CheckedVerifier, 0)
 	verified := 0
 	for _, sig := range e.Signatures {
-		if sig.Certificate != nil && len(sig.Certificate) > 0 {
+		if len(sig.Certificate) > 0 {
 			cert, err := cryptoutil.TryParseCertificate(sig.Certificate)
 			if err != nil {
 				continue
