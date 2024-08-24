@@ -30,7 +30,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
@@ -224,7 +223,7 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 	// Make insecure true only if the scheme is HTTP
 	insecure := scheme == "http"
 
-	fClient, err := newClient(ctx, scheme+"://"+u.Host, port, insecure)
+	fClient, err := newClient(scheme+"://"+u.Host, port, insecure)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +404,7 @@ func getCert(ctx context.Context, key *ecdsa.PrivateKey, fc fulciopb.CAClient, t
 	return sc, nil
 }
 
-func newClient(ctx context.Context, fulcioURL string, fulcioPort int, isInsecure bool) (fulciopb.CAClient, error) {
+func newClient(fulcioURL string, fulcioPort int, isInsecure bool) (fulciopb.CAClient, error) {
 	if isInsecure {
 		log.Infof("Fulcio client is running in insecure mode")
 	}
@@ -443,11 +442,7 @@ func newClient(ctx context.Context, fulcioURL string, fulcioPort int, isInsecure
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
 	}
 
-	// Dial the gRPC server
-	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(dialCtx, net.JoinHostPort(u.Hostname(), strconv.Itoa(fulcioPort)), dialOpts...)
+	conn, err := grpc.NewClient(net.JoinHostPort(u.Hostname(), strconv.Itoa(fulcioPort)), dialOpts...)
 	if err != nil {
 		return nil, err
 	}
