@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -121,9 +122,17 @@ func fromDigestMap(workingDir string, digestMap map[string]cryptoutil.DigestSet)
 	products := make(map[string]attestation.Product)
 	for fileName, digestSet := range digestMap {
 		filePath := filepath.Join(workingDir, fileName)
+
 		mimeType, err := getFileContentType(filePath)
 		if err != nil {
 			mimeType = "unknown"
+		}
+
+		if mimeType == "application/octet-stream" {
+			fileInfo, err := os.Stat(filePath)
+			if err == nil && fileInfo.IsDir() {
+				mimeType = "text/directory"
+			}
 		}
 
 		products[fileName] = attestation.Product{
@@ -199,7 +208,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		}
 	}
 
-	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, processWasTraced, openedFileSet)
+	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, processWasTraced, openedFileSet, ctx.DirHashGlob())
 	if err != nil {
 		return err
 	}
@@ -237,7 +246,11 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 			continue
 		}
 
-		subjects[fmt.Sprintf("file:%v", productName)] = product.Digest
+		subjectType := "file"
+		if product.MimeType == "text/directory" {
+			subjectType = "dir"
+		}
+		subjects[fmt.Sprintf("%v:%v", subjectType, productName)] = product.Digest
 	}
 
 	return subjects

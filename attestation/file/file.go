@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 )
@@ -26,20 +27,38 @@ import (
 // recordArtifacts will walk basePath and record the digests of each file with each of the functions in hashes.
 // If file already exists in baseArtifacts and the two artifacts are equal the artifact will not be in the
 // returned map of artifacts.
-func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.DigestSet, hashes []cryptoutil.DigestValue, visitedSymlinks map[string]struct{}, processWasTraced bool, openedFiles map[string]bool) (map[string]cryptoutil.DigestSet, error) {
+func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.DigestSet, hashes []cryptoutil.DigestValue, visitedSymlinks map[string]struct{}, processWasTraced bool, openedFiles map[string]bool, dirHashGlob []glob.Glob) (map[string]cryptoutil.DigestSet, error) {
 	artifacts := make(map[string]cryptoutil.DigestSet)
 	err := filepath.Walk(basePath, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if info.IsDir() {
-			return nil
-		}
-
 		relPath, err := filepath.Rel(basePath, path)
 		if err != nil {
 			return err
+		}
+
+		if info.IsDir() {
+			dirHashMatch := false
+			for _, globItem := range dirHashGlob {
+				if !dirHashMatch && globItem.Match(relPath) {
+					dirHashMatch = true
+				}
+			}
+
+			if dirHashMatch {
+				dir, err := cryptoutil.CalculateDigestSetFromDir(path, hashes)
+
+				if err != nil {
+					return err
+				}
+
+				artifacts[relPath+string(os.PathSeparator)] = dir
+				return filepath.SkipDir
+			}
+
+			return nil
 		}
 
 		if info.Mode()&fs.ModeSymlink != 0 {
@@ -57,7 +76,7 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 			}
 
 			visitedSymlinks[linkedPath] = struct{}{}
-			symlinkedArtifacts, err := RecordArtifacts(linkedPath, baseArtifacts, hashes, visitedSymlinks, processWasTraced, openedFiles)
+			symlinkedArtifacts, err := RecordArtifacts(linkedPath, baseArtifacts, hashes, visitedSymlinks, processWasTraced, openedFiles, dirHashGlob)
 			if err != nil {
 				return err
 			}
