@@ -39,8 +39,8 @@ import (
 )
 
 func TestVerify(t *testing.T) {
-	policy, functionarySigner := makepolicyRSA(t)
-	policyEnvelope, policySigner := signPolicyRSA(t, policy)
+	testPolicy, functionarySigner := makepolicyRSA(t)
+	policyEnvelope, policySigner := signPolicyRSA(t, testPolicy)
 	policyVerifier, err := policySigner.Verifier()
 	require.NoError(t, err)
 	workingDir := t.TempDir()
@@ -126,6 +126,46 @@ func TestVerify(t *testing.T) {
 			context.Background(),
 			policyEnvelope,
 			[]cryptoutil.Verifier{policyVerifier},
+			VerifyWithCollectionSource(memorySource),
+			VerifyWithSubjectDigests(subjects),
+		)
+
+		require.Error(t, err, fmt.Sprintf("passed with results: %+v", results))
+	})
+
+	t.Run("Fail with missing attestation", func(t *testing.T) {
+		functionaryVerifier, err := functionarySigner.Verifier()
+		require.NoError(t, err)
+		functionaryKeyID, err := functionaryVerifier.KeyID()
+		require.NoError(t, err)
+		functionaryPublicKey, err := functionaryVerifier.Bytes()
+		require.NoError(t, err)
+		failPolicy := makepolicy(policy.Functionary{
+			Type:        "PublicKey",
+			PublicKeyID: functionaryKeyID,
+		},
+			policy.PublicKey{
+				KeyID: functionaryKeyID,
+				Key:   functionaryPublicKey,
+			},
+			map[string]policy.Root{},
+		)
+
+		step1 := failPolicy.Steps["step01"]
+		step1.Attestations = append(step1.Attestations, policy.Attestation{Type: "nonexistent atttestation"})
+		failPolicy.Steps["step01"] = step1
+		failPolicyEnvelope, failPolicySigner := signPolicyRSA(t, failPolicy)
+		failPolicyVerifier, err := failPolicySigner.Verifier()
+		require.NoError(t, err)
+
+		memorySource := source.NewMemorySource()
+		require.NoError(t, memorySource.LoadEnvelope("step01", step1Result.SignedEnvelope))
+		require.NoError(t, memorySource.LoadEnvelope("step02", step2Result.SignedEnvelope))
+
+		results, err := Verify(
+			context.Background(),
+			failPolicyEnvelope,
+			[]cryptoutil.Verifier{failPolicyVerifier},
 			VerifyWithCollectionSource(memorySource),
 			VerifyWithSubjectDigests(subjects),
 		)
