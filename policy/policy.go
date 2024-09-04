@@ -244,7 +244,7 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 				resultsByStep[stepName] = StepResult{Step: stepName}
 			}
 
-			collections, err := vo.verifiedSource.Search(ctx, stepName, vo.subjectDigests, attestationsByStep[stepName])
+			collections, err := vo.verifiedSource.Search(ctx, depth, stepName, vo.subjectDigests, attestationsByStep[stepName])
 			if err != nil {
 				return false, nil, err
 			}

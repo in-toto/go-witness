@@ -106,12 +106,11 @@ func (s *MemorySource) LoadEnvelope(reference string, env dsse.Envelope) error {
 	return nil
 }
 
-func (s *MemorySource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
-	if s.searched {
+func (s *MemorySource) Search(ctx context.Context, depth int, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
+	if depth > 0 {
+		fmt.Println("skipping memory source search")
 		log.Debug("skipping memory source search: already performed")
 		return []CollectionEnvelope{}, nil
-	} else {
-		s.searched = true
 	}
 
 	matches := make([]CollectionEnvelope, 0)

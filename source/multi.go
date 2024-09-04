@@ -28,7 +28,7 @@ func NewMultiSource(sources ...Sourcer) *MultiSource {
 }
 
 // Search concurrently queries all sources and returns the combined results.
-func (s *MultiSource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
+func (s *MultiSource) Search(ctx context.Context, depth int, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
 	results := []CollectionEnvelope{}
 	errors := []error{}
 
@@ -61,7 +61,7 @@ func (s *MultiSource) Search(ctx context.Context, collectionName string, subject
 		// Goroutine for querying a source and collecting the results or error
 		go func(src Sourcer) {
 			defer wg.Done()
-			res, err := src.Search(ctx, collectionName, subjectDigests, attestations)
+			res, err := src.Search(ctx, depth, collectionName, subjectDigests, attestations)
 			if err != nil {
 				errs <- err
 			} else {
