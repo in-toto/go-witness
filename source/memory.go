@@ -32,7 +32,6 @@ func (e ErrDuplicateReference) Error() string {
 }
 
 type MemorySource struct {
-	searched                   bool
 	envelopesByReference       map[string]CollectionEnvelope
 	referencesByCollectionName map[string][]string
 	subjectDigestsByReference  map[string]map[string]struct{}
@@ -41,7 +40,6 @@ type MemorySource struct {
 
 func NewMemorySource() *MemorySource {
 	return &MemorySource{
-		searched:                   false,
 		envelopesByReference:       make(map[string]CollectionEnvelope),
 		referencesByCollectionName: make(map[string][]string),
 		subjectDigestsByReference:  make(map[string]map[string]struct{}),
