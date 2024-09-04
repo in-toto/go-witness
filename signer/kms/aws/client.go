@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -303,7 +304,6 @@ func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider)
 	}
 
 	opts := []func(*config.LoadOptions) error{}
-
 	if a.options.insecureSkipVerify {
 		log.Warn("InsecureSkipVerify is enabled for AWS KMS attestor")
 		opts = append(opts, config.WithHTTPClient(&http.Client{
@@ -320,6 +320,9 @@ func (a *awsClient) setupClient(ctx context.Context, ksp *kms.KMSSignerProvider)
 		}
 
 		log.Debug("Using file ", f, " as credentials file for AWS KMS provider")
+		if _, err := os.ReadFile(f); err != nil {
+			return fmt.Errorf("error reading credentials file: %w", err)
+		}
 		opts = append(opts, config.WithSharedCredentialsFiles([]string{f}))
 	}
 

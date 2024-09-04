@@ -99,8 +99,8 @@ func TestAttest(t *testing.T) {
 	// Setup Materials
 	m := attestors.NewTestMaterialAttestor()
 	materials := make(map[string]cryptoutil.DigestSet)
-	materials["test2"] = cryptoutil.DigestSet{{Hash: crypto.SHA256, GitOID: false}: "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f"}
-	materials["test1"] = cryptoutil.DigestSet{{Hash: crypto.SHA256, GitOID: false}: "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f"}
+	materials["test2"] = cryptoutil.DigestSet{{Hash: crypto.SHA256, GitOID: false, DirHash: false}: "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f"}
+	materials["test1"] = cryptoutil.DigestSet{{Hash: crypto.SHA256, GitOID: false, DirHash: false}: "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f"}
 	m.SetMaterials(materials)
 
 	// Setup CommandRun

@@ -22,43 +22,63 @@ import (
 	"hash"
 	"io"
 	"os"
+
+	"golang.org/x/mod/sumdb/dirhash"
 )
 
 var (
 	hashNames = map[DigestValue]string{
 		{
-			Hash:   crypto.SHA256,
-			GitOID: false,
+			Hash:    crypto.SHA256,
+			GitOID:  false,
+			DirHash: false,
 		}: "sha256",
 		{
-			Hash:   crypto.SHA1,
-			GitOID: false,
+			Hash:    crypto.SHA1,
+			GitOID:  false,
+			DirHash: false,
 		}: "sha1",
 		{
-			Hash:   crypto.SHA256,
-			GitOID: true,
+			Hash:    crypto.SHA256,
+			GitOID:  true,
+			DirHash: false,
 		}: "gitoid:sha256",
 		{
-			Hash:   crypto.SHA1,
-			GitOID: true,
+			Hash:    crypto.SHA1,
+			GitOID:  true,
+			DirHash: false,
 		}: "gitoid:sha1",
+		{
+			Hash:    crypto.SHA256,
+			GitOID:  false,
+			DirHash: true,
+		}: "dirHash",
 	}
 
 	hashesByName = map[string]DigestValue{
 		"sha256": {
 			crypto.SHA256,
 			false,
+			false,
 		},
 		"sha1": {
 			crypto.SHA1,
+			false,
 			false,
 		},
 		"gitoid:sha256": {
 			crypto.SHA256,
 			true,
+			false,
 		},
 		"gitoid:sha1": {
 			crypto.SHA1,
+			true,
+			false,
+		},
+		"dirHash": {
+			crypto.SHA256,
+			false,
 			true,
 		},
 	}
@@ -72,7 +92,8 @@ func (e ErrUnsupportedHash) Error() string {
 
 type DigestValue struct {
 	crypto.Hash
-	GitOID bool
+	GitOID  bool
+	DirHash bool
 }
 
 func (dv DigestValue) New() hash.Hash {
@@ -201,6 +222,19 @@ func CalculateDigestSetFromFile(path string, hashes []DigestValue) (DigestSet, e
 
 	defer file.Close()
 	return CalculateDigestSet(file, hashes)
+}
+
+func CalculateDigestSetFromDir(dir string, hashes []DigestValue) (DigestSet, error) {
+
+	dirHash, err := dirhash.HashDir(dir, "", DirhHashSha256)
+	if err != nil {
+		return nil, err
+	}
+
+	digestSetByName := make(map[string]string)
+	digestSetByName["dirHash"] = dirHash
+
+	return NewDigestSet(digestSetByName)
 }
 
 func (ds DigestSet) MarshalJSON() ([]byte, error) {

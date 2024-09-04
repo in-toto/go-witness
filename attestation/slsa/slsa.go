@@ -27,6 +27,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/git"
 	"github.com/in-toto/go-witness/attestation/github"
 	"github.com/in-toto/go-witness/attestation/gitlab"
+	"github.com/in-toto/go-witness/attestation/jenkins"
 	"github.com/in-toto/go-witness/attestation/material"
 	"github.com/in-toto/go-witness/attestation/oci"
 	"github.com/in-toto/go-witness/attestation/product"
@@ -48,6 +49,7 @@ const (
 	DefaultBuilderId = "https://witness.dev/witness-default-builder@v0.1"
 	GHABuilderId     = "https://witness.dev/witness-github-action-builder@v0.1"
 	GLCBuilderId     = "https://witness.dev/witness-gitlab-component-builder@v0.1"
+	JenkinsBuilderId = "https://witness.dev/witness-jenkins-component-builder@v0.1"
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -185,6 +187,11 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 				log.Warn("No SHA found in GitLab JWT")
 			}
 
+		case jenkins.Name:
+			jks := attestor.Attestor.(jenkins.JenkinsAttestor)
+			p.PbProvenance.RunDetails.Builder.Id = JenkinsBuilderId
+			p.PbProvenance.RunDetails.Metadata.InvocationId = jks.Data().PipelineUrl
+
 		// Material Attestors
 		case material.Name:
 			mats := attestor.Attestor.(material.MaterialAttestor).Materials()
@@ -237,7 +244,7 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 
 	// NOTE: We want to warn users that they can use the github and gitlab attestors to enrich their provenance
 	if p.PbProvenance.RunDetails.Builder.Id == DefaultBuilderId {
-		log.Warn("No build system attestor invoked. Consider using github or gitlab attestors (if appropriate) to enrich your SLSA provenance")
+		log.Warn("No build system attestor invoked. Consider using github, gitlab, or jenkins attestors (if appropriate) to enrich your SLSA provenance")
 	}
 
 	var err error
