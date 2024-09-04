@@ -151,11 +151,19 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	if met != nil {
 		if strings.HasPrefix(met.ContainerImageDigest, "sha256:") {
-			log.Debugf("setting image digest as '%s'", met.ContainerImageDigest)
+			log.Debugf("(attestation/oci) found image digest '%s'", met.ContainerImageDigest)
 			a.ImageDigest = map[cryptoutil.DigestValue]string{}
-			a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}] = met.ContainerImageDigest
+			log.Debugf("(attestation/oci) removing 'sha256:' prefix from digest '%s'", met.ContainerImageDigest)
+			trimmed, found := strings.CutPrefix(met.ContainerImageDigest, "sha256:")
+			if found == false {
+				err := fmt.Errorf("failed to remove prefix from digest")
+				log.Debugf("(attestation/oci) %s", err.Error())
+				return err
+			}
+			log.Debugf("(attestation/oci) setting image digest as '%s'", trimmed)
+			a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}] = trimmed
 		} else {
-			log.Warnf("found metadata file does not contain image digest of expected format: '%s'", met.ContainerImageDigest)
+			log.Warnf("(attestation/oci) found metadata file does not contain image digest of expected format: '%s'", met.ContainerImageDigest)
 		}
 
 		log.Debugf("setting image references as '%s'", met.ImageName)
