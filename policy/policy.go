@@ -250,9 +250,11 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 			}
 
 			// Verify the functionaries
-			collections = step.checkFunctionaries(collections, trustBundles)
-
-			stepResult := step.validateAttestations(collections)
+			functionaryCheckResults := step.checkFunctionaries(collections, trustBundles)
+			stepResult := step.validateAttestations(functionaryCheckResults.Passed)
+			for _, functionaryReject := range functionaryCheckResults.Rejected {
+				stepResult.Rejected = append(stepResult.Rejected, functionaryReject)
+			}
 
 			// We perform many searches against the same step, so we need to merge the relevant fields
 			if resultsByStep[stepName].Step == "" {
@@ -293,11 +295,12 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for
 // the step the statement corresponds to
-func (step Step) checkFunctionaries(statements []source.CollectionVerificationResult, trustBundles map[string]TrustBundle) []source.CollectionVerificationResult {
+func (step Step) checkFunctionaries(statements []source.CollectionVerificationResult, trustBundles map[string]TrustBundle) StepResult {
+	result := StepResult{Step: step.Name}
 	for i, statement := range statements {
 		// Check that the statement contains a predicate type that we accept
 		if statement.Statement.PredicateType != attestation.CollectionType {
-			statements[i].Errors = append(statement.Errors, fmt.Errorf("predicate type %v is not a collection predicate type", statement.Statement.PredicateType))
+			result.Rejected = append(result.Rejected, RejectedCollection{Collection: statement, Reason: fmt.Errorf("predicate type %v is not a collection predicate type", statement.Statement.PredicateType)})
 		}
 
 		if len(statement.Verifiers) > 0 {
@@ -311,12 +314,19 @@ func (step Step) checkFunctionaries(statements []source.CollectionVerificationRe
 					}
 				}
 			}
+
+			if len(statements[i].ValidFunctionaries) == 0 {
+				result.Rejected = append(result.Rejected, RejectedCollection{Collection: statement, Reason: fmt.Errorf("no verifiers matched with allowed functionaries for step %s", step.Name)})
+			} else {
+				result.Passed = append(result.Passed, statement)
+			}
 		} else {
-			statements[i].Errors = append(statement.Errors, fmt.Errorf("no verifiers present to validate against collection verifiers"))
+			statements[i].Errors = append(statement.Errors)
+			result.Rejected = append(result.Rejected, RejectedCollection{Collection: statement, Reason: fmt.Errorf("no verifiers present to validate against collection verifiers")})
 		}
 	}
 
-	return statements
+	return result
 }
 
 // verifyArtifacts will check the artifacts (materials+products) of the step referred to by `ArtifactsFrom` against the

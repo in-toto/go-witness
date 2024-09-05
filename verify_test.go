@@ -39,10 +39,8 @@ import (
 )
 
 func TestVerify(t *testing.T) {
-	testPolicy, functionarySigner := makepolicyRSA(t)
-	policyEnvelope, policySigner := signPolicyRSA(t, testPolicy)
-	policyVerifier, err := policySigner.Verifier()
-	require.NoError(t, err)
+	testPolicy, functionarySigner := makePolicyWithPublicKeyFunctionary(t)
+	policyEnvelope, _, policyVerifier := signPolicyRSA(t, testPolicy)
 	workingDir := t.TempDir()
 
 	step1Result, err := Run(
@@ -136,27 +134,46 @@ func TestVerify(t *testing.T) {
 	t.Run("Fail with missing attestation", func(t *testing.T) {
 		functionaryVerifier, err := functionarySigner.Verifier()
 		require.NoError(t, err)
-		functionaryKeyID, err := functionaryVerifier.KeyID()
-		require.NoError(t, err)
-		functionaryPublicKey, err := functionaryVerifier.Bytes()
-		require.NoError(t, err)
-		failPolicy := makepolicy(policy.Functionary{
-			Type:        "PublicKey",
-			PublicKeyID: functionaryKeyID,
-		},
-			policy.PublicKey{
-				KeyID: functionaryKeyID,
-				Key:   functionaryPublicKey,
-			},
-			map[string]policy.Root{},
-		)
+		policyFunctionary, policyPk := functionaryFromVerifier(t, functionaryVerifier)
+		failPolicy := makePolicy(policyFunctionary, policyPk, map[string]policy.Root{})
 
 		step1 := failPolicy.Steps["step01"]
 		step1.Attestations = append(step1.Attestations, policy.Attestation{Type: "nonexistent atttestation"})
 		failPolicy.Steps["step01"] = step1
-		failPolicyEnvelope, failPolicySigner := signPolicyRSA(t, failPolicy)
-		failPolicyVerifier, err := failPolicySigner.Verifier()
+		failPolicyEnvelope, _, failPolicyVerifier := signPolicyRSA(t, failPolicy)
+
+		memorySource := source.NewMemorySource()
+		require.NoError(t, memorySource.LoadEnvelope("step01", step1Result.SignedEnvelope))
+		require.NoError(t, memorySource.LoadEnvelope("step02", step2Result.SignedEnvelope))
+
+		results, err := Verify(
+			context.Background(),
+			failPolicyEnvelope,
+			[]cryptoutil.Verifier{failPolicyVerifier},
+			VerifyWithCollectionSource(memorySource),
+			VerifyWithSubjectDigests(subjects),
+		)
+
+		require.Error(t, err, fmt.Sprintf("passed with results: %+v", results))
+	})
+
+	t.Run("Fail with incorrect signer", func(t *testing.T) {
+		functionaryVerifier, err := functionarySigner.Verifier()
 		require.NoError(t, err)
+		policyFunctionary, policyPk := functionaryFromVerifier(t, functionaryVerifier)
+		failPolicy := makePolicy(policyFunctionary, policyPk, map[string]policy.Root{})
+
+		// create a new key and functionary, and replace the step's functionary with it.
+		// the attestation would not have been signed with this key, so verification should fail.
+		newSigner := createTestRSAKey(t)
+		newVerifier, err := newSigner.Verifier()
+		require.NoError(t, err)
+		failPolicyFunctionary, failPolicyPk := functionaryFromVerifier(t, newVerifier)
+		failPolicy.PublicKeys[failPolicyPk.KeyID] = failPolicyPk
+		step1 := failPolicy.Steps["step01"]
+		step1.Functionaries = []policy.Functionary{failPolicyFunctionary}
+		failPolicy.Steps["step01"] = step1
+		failPolicyEnvelope, _, failPolicyVerifier := signPolicyRSA(t, failPolicy)
 
 		memorySource := source.NewMemorySource()
 		require.NoError(t, memorySource.LoadEnvelope("step01", step1Result.SignedEnvelope))
@@ -174,7 +191,7 @@ func TestVerify(t *testing.T) {
 	})
 }
 
-func makepolicy(functionary policy.Functionary, publicKey policy.PublicKey, roots map[string]policy.Root) policy.Policy {
+func makePolicy(functionary policy.Functionary, publicKey policy.PublicKey, roots map[string]policy.Root) policy.Policy {
 	step01 := policy.Step{
 		Name:          "step01",
 		Functionaries: []policy.Functionary{functionary},
@@ -209,33 +226,39 @@ func makepolicy(functionary policy.Functionary, publicKey policy.PublicKey, root
 	return p
 }
 
-func makepolicyRSA(t *testing.T) (policy.Policy, cryptoutil.Signer) {
-	signer, err := createTestRSAKey()
-	require.NoError(t, err)
+func makePolicyWithPublicKeyFunctionary(t *testing.T) (policy.Policy, cryptoutil.Signer) {
+	signer := createTestRSAKey(t)
 	verifier, err := signer.Verifier()
 	require.NoError(t, err)
-	keyID, err := verifier.KeyID()
-	require.NoError(t, err)
-	functionary := policy.Functionary{
-		Type:        "PublicKey",
-		PublicKeyID: keyID,
-	}
-
-	pub, err := verifier.Bytes()
-	require.NoError(t, err)
-
-	pk := policy.PublicKey{
-		KeyID: keyID,
-		Key:   pub,
-	}
-
-	p := makepolicy(functionary, pk, nil)
+	functionary, pk := functionaryFromVerifier(t, verifier)
+	p := makePolicy(functionary, pk, nil)
 	return p, signer
 }
 
-func signPolicyRSA(t *testing.T, p policy.Policy) (dsse.Envelope, cryptoutil.Signer) {
-	signer, err := createTestRSAKey()
+func functionaryFromVerifier(t *testing.T, v cryptoutil.Verifier) (policy.Functionary, policy.PublicKey) {
+	keyID, err := v.KeyID()
 	require.NoError(t, err)
+	keyBytes, err := v.Bytes()
+	require.NoError(t, err)
+	return policy.Functionary{
+			Type:        "PublicKey",
+			PublicKeyID: keyID,
+		},
+		policy.PublicKey{
+			KeyID: keyID,
+			Key:   keyBytes,
+		}
+}
+
+func signPolicyRSA(t *testing.T, p policy.Policy) (dsse.Envelope, cryptoutil.Signer, cryptoutil.Verifier) {
+	signer := createTestRSAKey(t)
+	env := signPolicy(t, p, signer)
+	verifier, err := signer.Verifier()
+	require.NoError(t, err)
+	return env, signer, verifier
+}
+
+func signPolicy(t *testing.T, p policy.Policy, signer cryptoutil.Signer) dsse.Envelope {
 	pBytes, err := json.Marshal(p)
 	require.NoError(t, err)
 	reader := bytes.NewReader(pBytes)
@@ -244,15 +267,12 @@ func signPolicyRSA(t *testing.T, p policy.Policy) (dsse.Envelope, cryptoutil.Sig
 	require.NoError(t, Sign(reader, policy.PolicyPredicate, writer, dsse.SignWithSigners(signer)))
 	env := dsse.Envelope{}
 	require.NoError(t, json.Unmarshal(writer.Bytes(), &env))
-	return env, signer
+	return env
 }
 
-func createTestRSAKey() (cryptoutil.Signer, error) {
+func createTestRSAKey(t *testing.T) cryptoutil.Signer {
 	privKey, err := rsa.GenerateKey(rand.Reader, 512)
-	if err != nil {
-		return nil, err
-	}
-
+	require.NoError(t, err)
 	signer := cryptoutil.NewRSASigner(privKey, crypto.SHA256)
-	return signer, nil
+	return signer
 }
