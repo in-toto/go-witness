@@ -43,7 +43,7 @@ import (
 const (
 	Name             = "slsa"
 	Type             = "https://slsa.dev/provenance/v1.0"
-	RunType          = attestation.PostProductRunType
+	RunType          = attestation.PostPostProductRunType
 	defaultExport    = false
 	BuildType        = "https://witness.dev/slsa-build@v0.1"
 	DefaultBuilderId = "https://witness.dev/witness-default-builder@v0.1"

@@ -30,16 +30,17 @@ import (
 type RunType string
 
 const (
-	PreMaterialRunType RunType = "prematerial"
-	MaterialRunType    RunType = "material"
-	ExecuteRunType     RunType = "execute"
-	ProductRunType     RunType = "product"
-	PostProductRunType RunType = "postproduct"
-	VerifyRunType      RunType = "verify"
+	PreMaterialRunType     RunType = "prematerial"
+	MaterialRunType        RunType = "material"
+	ExecuteRunType         RunType = "execute"
+	ProductRunType         RunType = "product"
+	PostProductRunType     RunType = "postproduct"
+	PostPostProductRunType RunType = "postpostproduct"
+	VerifyRunType          RunType = "verify"
 )
 
 func runTypeOrder() []RunType {
-	return []RunType{PreMaterialRunType, MaterialRunType, ExecuteRunType, ProductRunType, PostProductRunType}
+	return []RunType{PreMaterialRunType, MaterialRunType, ExecuteRunType, ProductRunType, PostProductRunType, PostPostProductRunType}
 }
 
 func verifyTypeOrder() []RunType {
