@@ -4,7 +4,7 @@ go 1.22.5
 
 require (
 	cloud.google.com/go/kms v1.15.9
-	github.com/CycloneDX/cyclonedx-go v0.9.0
+	github.com/CycloneDX/cyclonedx-go v0.9.1
 	github.com/aws/aws-sdk-go-v2/config v1.27.33
 	github.com/aws/aws-sdk-go-v2/service/kms v1.31.3
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
