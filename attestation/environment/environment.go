@@ -58,7 +58,8 @@ type Attestor struct {
 	Username  string            `json:"username"`
 	Variables map[string]string `json:"variables,omitempty"`
 
-	blockList map[string]struct{}
+	blockList     map[string]struct{}
+	obfuscateList map[string]struct{}
 }
 
 type Option func(*Attestor)
@@ -69,9 +70,18 @@ func WithBlockList(blockList map[string]struct{}) Option {
 	}
 }
 
+func WithObfuscateList(obfuscateList map[string]struct{}) Option {
+	return func(a *Attestor) {
+		for key, value := range obfuscateList {
+			a.obfuscateList[key] = value
+		}
+	}
+}
+
 func New(opts ...Option) *Attestor {
 	attestor := &Attestor{
-		blockList: DefaultBlockList(),
+		blockList:     DefaultBlockList(),
+		obfuscateList: DefaultObfuscateList(),
 	}
 
 	for _, opt := range opts {
@@ -110,6 +120,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	FilterEnvironmentArray(os.Environ(), a.blockList, func(key, val, _ string) {
+		a.Variables[key] = val
+	})
+
+	ObfuscateEnvironmentArray(a.Variables, a.obfuscateList, func(key, val, _ string) {
 		a.Variables[key] = val
 	})
 

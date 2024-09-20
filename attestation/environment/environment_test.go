@@ -39,3 +39,35 @@ func TestEnvironment(t *testing.T) {
 		}
 	}
 }
+
+func TestEnvironmentObfuscate(t *testing.T) {
+	attestor := New()
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
+	require.NoError(t, err)
+
+	obfuscateEnvs := map[string]struct{}{"API_TOKEN": {}, "SECRET_TEXT": {}}
+	secretVarValue := "secret var"
+	publicVarValue := "public var"
+	for k := range obfuscateEnvs {
+		t.Setenv(k, secretVarValue)
+	}
+
+	notObfuscateEnvs := map[string]struct{}{"VAR_FOO": {}, "VAR_BAR": {}}
+	for k := range notObfuscateEnvs {
+		t.Setenv(k, publicVarValue)
+	}
+
+	origVars := os.Environ()
+	require.NoError(t, attestor.Attest(ctx))
+	for _, env := range origVars {
+		origKey, _ := splitVariable(env)
+		if _, inObfuscateList := obfuscateEnvs[origKey]; inObfuscateList {
+			require.NotEqual(t, attestor.Variables[origKey], secretVarValue)
+			require.Equal(t, attestor.Variables[origKey], "******")
+		}
+
+		if _, inNotObfuscateList := notObfuscateEnvs[origKey]; inNotObfuscateList {
+			require.Equal(t, attestor.Variables[origKey], publicVarValue)
+		}
+	}
+}
