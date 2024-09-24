@@ -79,6 +79,9 @@ type Tag struct {
 }
 
 type Attestor struct {
+	GitTool        string               `json:"gittool"`
+	GitBinPath     string               `json:"gitbinpath,omitempty"`
+	GitBinHash     string               `json:"gitbinhash,omitempty"`
 	CommitHash     string               `json:"commithash"`
 	Author         string               `json:"author"`
 	AuthorEmail    string               `json:"authoremail"`
@@ -222,11 +225,25 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.TreeHash = commit.TreeHash.String()
 
 	if GitExists() {
+		a.GitTool = "go-git+git-bin"
+
+		a.GitBinPath, err = GitGetBinPath()
+		if err != nil {
+			return err
+		}
+
+		a.GitBinHash, err = GitGetBinHash(ctx)
+		if err != nil {
+			return err
+		}
+
 		a.Status, err = GitGetStatus(ctx.WorkingDir())
 		if err != nil {
 			return err
 		}
 	} else {
+		a.GitTool = "go-git"
+
 		a.Status, err = GoGitGetStatus(repo)
 		if err != nil {
 			return err

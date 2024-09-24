@@ -15,10 +15,13 @@
 package git
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/cryptoutil"
 )
 
 // GitExists checks if the git binary is available.
@@ -33,6 +36,40 @@ func GitExists() bool {
 	}
 }
 
+// GitGetBinPath retrieves the path to the git binary that is used by the attestor.
+func GitGetBinPath() (string, error) {
+	path, err := exec.LookPath("git")
+	if err != nil {
+		return "", err
+	} else {
+		return path, nil
+	}
+}
+
+// GitGetBinHash retrieves a sha256 hash of the git binary that is located on the system.
+// The path is determined based on exec.LookPath().
+func GitGetBinHash(ctx *attestation.AttestationContext) (string, error) {
+	path, err := exec.LookPath("git")
+	if err != nil {
+		return "", err
+	}
+
+	gitBinDigest, err := cryptoutil.CalculateDigestSetFromFile(path, ctx.Hashes())
+	fmt.Printf("%s", gitBinDigest)
+	if err != nil {
+		return "", err
+	}
+
+	digestMap, err := gitBinDigest.ToNameMap()
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("sha256:%s", digestMap["sha256"]), nil
+}
+
+// GitGetStatus retrieves the status of staging and worktree
+// from the git status --porcelain output
 func GitGetStatus(workDir string) (map[string]Status, error) {
 
 	// Execute the git status --porcelain command
