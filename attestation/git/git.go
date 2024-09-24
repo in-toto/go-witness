@@ -221,14 +221,32 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	a.TreeHash = commit.TreeHash.String()
 
+	if GitExists() {
+		a.Status, err = GitGetStatus(ctx.WorkingDir())
+		if err != nil {
+			return err
+		}
+	} else {
+		a.Status, err = GoGitGetStatus(repo)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func GoGitGetStatus(repo *git.Repository) (map[string]Status, error) {
+	var gitStatuses map[string]Status = make(map[string]Status)
+
 	worktree, err := repo.Worktree()
 	if err != nil {
-		return err
+		return map[string]Status{}, err
 	}
 
 	status, err := worktree.Status()
 	if err != nil {
-		return err
+		return map[string]Status{}, err
 	}
 
 	for file, status := range status {
@@ -241,10 +259,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 			Staging:  statusCodeString(status.Staging),
 		}
 
-		a.Status[file] = attestStatus
+		gitStatuses[file] = attestStatus
 	}
 
-	return nil
+	return gitStatuses, nil
 }
 
 func (a *Attestor) Data() *Attestor {
