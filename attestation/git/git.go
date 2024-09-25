@@ -81,7 +81,7 @@ type Tag struct {
 type Attestor struct {
 	GitTool        string               `json:"gittool"`
 	GitBinPath     string               `json:"gitbinpath,omitempty"`
-	GitBinHash     string               `json:"gitbinhash,omitempty"`
+	GitBinHash     cryptoutil.DigestSet `json:"gitbinhash,omitempty"`
 	CommitHash     string               `json:"commithash"`
 	Author         string               `json:"author"`
 	AuthorEmail    string               `json:"authoremail"`

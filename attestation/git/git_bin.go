@@ -15,7 +15,6 @@
 package git
 
 import (
-	"fmt"
 	"os/exec"
 	"strings"
 
@@ -48,24 +47,22 @@ func GitGetBinPath() (string, error) {
 
 // GitGetBinHash retrieves a sha256 hash of the git binary that is located on the system.
 // The path is determined based on exec.LookPath().
-func GitGetBinHash(ctx *attestation.AttestationContext) (string, error) {
+func GitGetBinHash(ctx *attestation.AttestationContext) (cryptoutil.DigestSet, error) {
 	path, err := exec.LookPath("git")
 	if err != nil {
-		return "", err
+		return cryptoutil.DigestSet{}, err
 	}
 
 	gitBinDigest, err := cryptoutil.CalculateDigestSetFromFile(path, ctx.Hashes())
-	fmt.Printf("%s", gitBinDigest)
 	if err != nil {
-		return "", err
+		return cryptoutil.DigestSet{}, err
 	}
 
-	digestMap, err := gitBinDigest.ToNameMap()
 	if err != nil {
-		return "", err
+		return cryptoutil.DigestSet{}, err
 	}
 
-	return fmt.Sprintf("sha256:%s", digestMap["sha256"]), nil
+	return gitBinDigest, nil
 }
 
 // GitGetStatus retrieves the status of staging and worktree

@@ -11,7 +11,7 @@
           "type": "string"
         },
         "gitbinhash": {
-          "type": "string"
+          "$ref": "#/$defs/DigestSet"
         },
         "commithash": {
           "type": "string"
