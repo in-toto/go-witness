@@ -21,9 +21,7 @@ const (
 	RunType = attestation.PostProductRunType
 )
 
-var (
-	_ attestation.Subjecter = &Attestor{}
-)
+var _ attestation.Subjecter = &Attestor{}
 
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
@@ -93,6 +91,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subjects := make(map[string]cryptoutil.DigestSet)
 	hashes := []cryptoutil.DigestValue{{Hash: crypto.SHA256}}
 	toHash := make(map[string]string)
+	toHash[fmt.Sprintf("event:%v", a.Event)] = a.Event
 	repo, err := RepositoryFromPayload(a.Payload)
 	if err != nil {
 		log.Debugf("could not parse repository data from github webhook: %v", err)
