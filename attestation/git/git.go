@@ -79,6 +79,9 @@ type Tag struct {
 }
 
 type Attestor struct {
+	GitTool        string               `json:"gittool"`
+	GitBinPath     string               `json:"gitbinpath,omitempty"`
+	GitBinHash     cryptoutil.DigestSet `json:"gitbinhash,omitempty"`
 	CommitHash     string               `json:"commithash"`
 	Author         string               `json:"author"`
 	AuthorEmail    string               `json:"authoremail"`
@@ -221,14 +224,46 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	a.TreeHash = commit.TreeHash.String()
 
+	if GitExists() {
+		a.GitTool = "go-git+git-bin"
+
+		a.GitBinPath, err = GitGetBinPath()
+		if err != nil {
+			return err
+		}
+
+		a.GitBinHash, err = GitGetBinHash(ctx)
+		if err != nil {
+			return err
+		}
+
+		a.Status, err = GitGetStatus(ctx.WorkingDir())
+		if err != nil {
+			return err
+		}
+	} else {
+		a.GitTool = "go-git"
+
+		a.Status, err = GoGitGetStatus(repo)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func GoGitGetStatus(repo *git.Repository) (map[string]Status, error) {
+	var gitStatuses map[string]Status = make(map[string]Status)
+
 	worktree, err := repo.Worktree()
 	if err != nil {
-		return err
+		return map[string]Status{}, err
 	}
 
 	status, err := worktree.Status()
 	if err != nil {
-		return err
+		return map[string]Status{}, err
 	}
 
 	for file, status := range status {
@@ -241,10 +276,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 			Staging:  statusCodeString(status.Staging),
 		}
 
-		a.Status[file] = attestStatus
+		gitStatuses[file] = attestStatus
 	}
 
-	return nil
+	return gitStatuses, nil
 }
 
 func (a *Attestor) Data() *Attestor {
