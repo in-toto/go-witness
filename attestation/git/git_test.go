@@ -43,6 +43,25 @@ func TestNameTypeRunType(t *testing.T) {
 	require.Equal(t, RunType, attestor.RunType(), "Expected the attestor's run type")
 }
 
+func TestNormaliseRemotes(t *testing.T) {
+	remotes := []string{
+		"github.com/in-toto/go-witness",
+		"github.com/in-toto/go-witness.git",
+		"https://github.com/in-toto/go-witness",
+		"https://github.com/in-toto/go-witness.git",
+		"git@github.com:in-toto/go-witness",
+		"git@github.com:in-toto/go-witness.git",
+	}
+
+	for _, r := range remotes {
+		nr, err := normaliseRemoteURL(r)
+		require.NoError(t, err, "Expected no error from normaliseRemoteURL")
+
+		require.Equal(t, "github.com/in-toto/go-witness", nr, "normalising failed for %s. Expected 'github.com/in-toto/go-witness', got %s", r, nr)
+	}
+
+}
+
 func TestRunWorksWithCommits(t *testing.T) {
 	attestor := New()
 
