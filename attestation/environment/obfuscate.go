@@ -21,20 +21,9 @@ import (
 	"github.com/in-toto/go-witness/log"
 )
 
-// sourced from https://github.com/Puliczek/awesome-list-of-secrets-in-environment-variables/blob/main/raw_list.txt
-func DefaultObfuscateList() map[string]struct{} {
-	return map[string]struct{}{
-		"*_TOKEN":    {},
-		"SECRET_*":   {},
-		"*_API_KEY":  {},
-		"*_PASSWORD": {},
-		"*_JWT":      {},
-	}
-}
-
 // FilterEnvironmentArray expects an array of strings representing environment variables.  Each element of the array is expected to be in the format of "KEY=VALUE".
 // blockList is the list of elements to filter from variables, and for each element of variables that does not appear in the blockList onAllowed will be called.
-func ObfuscateEnvironmentArray(variables map[string]string, obfuscateList map[string]struct{}, onAllowed func(key, val, orig string)) {
+func ObfuscateEnvironmentArray(variables []string, obfuscateList map[string]struct{}, onAllowed func(key, val, orig string)) {
 	obfuscateGlobList := []glob.Glob{}
 
 	for k := range obfuscateList {
@@ -48,8 +37,8 @@ func ObfuscateEnvironmentArray(variables map[string]string, obfuscateList map[st
 		}
 	}
 
-	for key, v := range variables {
-		val := v
+	for _, v := range variables {
+		key, val := splitVariable(v)
 
 		if _, inObfuscateList := obfuscateList[key]; inObfuscateList {
 			val = "******"

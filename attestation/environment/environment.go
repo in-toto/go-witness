@@ -15,12 +15,14 @@
 package environment
 
 import (
+	"fmt"
 	"os"
 	"os/user"
 	"runtime"
 	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
 )
 
@@ -33,8 +35,10 @@ const (
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
-	_ attestation.Attestor = &Attestor{}
-	_ EnvironmentAttestor  = &Attestor{}
+	_                                  attestation.Attestor = &Attestor{}
+	_                                  EnvironmentAttestor  = &Attestor{}
+	defaultBlockSensitiveVarsEnabled                        = false
+	defaultDisableSensitiveVarsDefault                      = false
 )
 
 type EnvironmentAttestor interface {
@@ -47,9 +51,50 @@ type EnvironmentAttestor interface {
 }
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
-		return New()
-	})
+	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor { return New() },
+		registry.BoolConfigOption(
+			"block-sensitive-vars",
+			"Switch from obfuscate to blocking variables which removes them from the output completely.",
+			defaultBlockSensitiveVarsEnabled,
+			func(a attestation.Attestor, blockSensitiveVarsEnabled bool) (attestation.Attestor, error) {
+				envAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
+				}
+
+				WithBlockVarsEnabled(blockSensitiveVarsEnabled)(envAttestor)
+				return envAttestor, nil
+			},
+		),
+		registry.BoolConfigOption(
+			"disable-default-sensitive-vars",
+			"Disable the default list of sensitive vars and only use the items mentioned by --attestor-environment-sensitive-key.",
+			defaultDisableSensitiveVarsDefault,
+			func(a attestation.Attestor, disableSensitiveVarsDefault bool) (attestation.Attestor, error) {
+				envAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
+				}
+
+				WithDisableDefaultSensitiveList(disableSensitiveVarsDefault)(envAttestor)
+				return envAttestor, nil
+			},
+		),
+		registry.StringSliceConfigOption(
+			"sensitive-key",
+			"Add keys to the list of sensitive environment keys.",
+			[]string{},
+			func(a attestation.Attestor, additionalKeys []string) (attestation.Attestor, error) {
+				envAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
+				}
+
+				WithAdditionalKeys(additionalKeys)(envAttestor)
+				return envAttestor, nil
+			},
+		),
+	)
 }
 
 type Attestor struct {
@@ -58,30 +103,42 @@ type Attestor struct {
 	Username  string            `json:"username"`
 	Variables map[string]string `json:"variables,omitempty"`
 
-	blockList     map[string]struct{}
-	obfuscateList map[string]struct{}
+	sensitiveVarsList           map[string]struct{}
+	addSensitiveVarsList        map[string]struct{}
+	blockVarsEnabled            bool
+	disableSensitiveVarsDefault bool
 }
 
 type Option func(*Attestor)
 
-func WithBlockList(blockList map[string]struct{}) Option {
+// WithBlockVarsEnabled will make the blocking (removing) of vars the acting behavior.
+// The default behavior is obfuscation of variables.
+func WithBlockVarsEnabled(blockVarsEnabled bool) Option {
 	return func(a *Attestor) {
-		a.blockList = blockList
+		a.blockVarsEnabled = blockVarsEnabled
 	}
 }
 
-func WithObfuscateList(obfuscateList map[string]struct{}) Option {
+// WithAdditionalKeys add additional keys to final list that is checked for sensitive variables.
+func WithAdditionalKeys(additionalKeys []string) Option {
 	return func(a *Attestor) {
-		for key, value := range obfuscateList {
-			a.obfuscateList[key] = value
+		for _, value := range additionalKeys {
+			a.addSensitiveVarsList[value] = struct{}{}
 		}
+	}
+}
+
+// WithDisableDefaultSensitiveList will disable the default list and only use the additional keys.
+func WithDisableDefaultSensitiveList(disableSensitiveVarsDefault bool) Option {
+	return func(a *Attestor) {
+		a.disableSensitiveVarsDefault = disableSensitiveVarsDefault
 	}
 }
 
 func New(opts ...Option) *Attestor {
 	attestor := &Attestor{
-		blockList:     DefaultBlockList(),
-		obfuscateList: DefaultObfuscateList(),
+		sensitiveVarsList: DefaultSensitiveEnvList(),
+		addSensitiveVarsList: map[string]struct{}{},
 	}
 
 	for _, opt := range opts {
@@ -119,13 +176,26 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		a.Username = user.Username
 	}
 
-	FilterEnvironmentArray(os.Environ(), a.blockList, func(key, val, _ string) {
-		a.Variables[key] = val
-	})
+	// Prepare sensitive keys list.
+	var finalSensitiveKeysList map[string]struct{}
+	if a.disableSensitiveVarsDefault {
+		a.sensitiveVarsList = map[string]struct{}{}
+	}
+	finalSensitiveKeysList = a.sensitiveVarsList
+	for k, v := range a.addSensitiveVarsList {
+		finalSensitiveKeysList[k] = v
+	}
 
-	ObfuscateEnvironmentArray(a.Variables, a.obfuscateList, func(key, val, _ string) {
-		a.Variables[key] = val
-	})
+	// Block or obfuscate
+	if a.blockVarsEnabled {
+		FilterEnvironmentArray(os.Environ(), finalSensitiveKeysList, func(key, val, _ string) {
+			a.Variables[key] = val
+		})
+	} else {
+		ObfuscateEnvironmentArray(os.Environ(), finalSensitiveKeysList, func(key, val, _ string) {
+			a.Variables[key] = val
+		})
+	}
 
 	return nil
 }
