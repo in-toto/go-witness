@@ -22,8 +22,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEnvironment(t *testing.T) {
-	attestor := New()
+// TestFilterVarsEnvironment tests if enabling filter behavior works correctly.
+func TestFilterVarsEnvironment(t *testing.T) {
+
+	attestor := New(WithFilterVarsEnabled(true))
 	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
 	require.NoError(t, err)
 
@@ -32,7 +34,7 @@ func TestEnvironment(t *testing.T) {
 	require.NoError(t, attestor.Attest(ctx))
 	for _, env := range origVars {
 		origKey, _ := splitVariable(env)
-		if _, inBlockList := attestor.blockList[origKey]; inBlockList {
+		if _, inBlockList := attestor.sensitiveVarsList[origKey]; inBlockList {
 			require.NotContains(t, attestor.Variables, origKey)
 		} else {
 			require.Contains(t, attestor.Variables, origKey)
@@ -40,6 +42,7 @@ func TestEnvironment(t *testing.T) {
 	}
 }
 
+// TestEnvironmentObfuscate tests if obfuscate normal behavior works correctly.
 func TestEnvironmentObfuscate(t *testing.T) {
 	attestor := New()
 	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
@@ -67,6 +70,71 @@ func TestEnvironmentObfuscate(t *testing.T) {
 		}
 
 		if _, inNotObfuscateList := notObfuscateEnvs[origKey]; inNotObfuscateList {
+			require.Equal(t, attestor.Variables[origKey], publicVarValue)
+		}
+	}
+}
+
+// TestEnvironmentObfuscateAdditional tests if the default obfuscate with additional keys works correctly.
+func TestEnvironmentObfuscateAdditional(t *testing.T) {
+	attestor := New(WithAdditionalKeys([]string{"MYNAME"}))
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
+	require.NoError(t, err)
+
+	obfuscateEnvs := map[string]struct{}{"API_TOKEN": {}, "MYNAME": {}}
+	secretVarValue := "secret var"
+	publicVarValue := "public var"
+	for k := range obfuscateEnvs {
+		t.Setenv(k, secretVarValue)
+	}
+
+	notObfuscateEnvs := map[string]struct{}{"VAR_FOO": {}, "VAR_BAR": {}}
+	for k := range notObfuscateEnvs {
+		t.Setenv(k, publicVarValue)
+	}
+
+	origVars := os.Environ()
+	require.NoError(t, attestor.Attest(ctx))
+	for _, env := range origVars {
+		origKey, _ := splitVariable(env)
+		if _, inObfuscateList := obfuscateEnvs[origKey]; inObfuscateList {
+			require.NotEqual(t, attestor.Variables[origKey], secretVarValue)
+			require.Equal(t, attestor.Variables[origKey], "******")
+		}
+
+		if _, inNotObfuscateList := notObfuscateEnvs[origKey]; inNotObfuscateList {
+			require.Equal(t, attestor.Variables[origKey], publicVarValue)
+		}
+	}
+}
+
+// TestEnvironmentFilterAdditional tests if enabling filter and adding additional keys works correctly.
+func TestEnvironmentFilterAdditional(t *testing.T) {
+	attestor := New(WithFilterVarsEnabled(true), WithAdditionalKeys([]string{"MYNAME"}))
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
+	require.NoError(t, err)
+
+	filterEnvs := map[string]struct{}{"API_TOKEN": {}, "MYNAME": {}}
+	secretVarValue := "secret var"
+	publicVarValue := "public var"
+	for k := range filterEnvs {
+		t.Setenv(k, secretVarValue)
+	}
+
+	notFilterEnvs := map[string]struct{}{"VAR_FOO": {}, "VAR_BAR": {}}
+	for k := range notFilterEnvs {
+		t.Setenv(k, publicVarValue)
+	}
+
+	origVars := os.Environ()
+	require.NoError(t, attestor.Attest(ctx))
+	for _, env := range origVars {
+		origKey, _ := splitVariable(env)
+		if _, inFilterList := filterEnvs[origKey]; inFilterList {
+			require.NotContains(t, attestor.Variables, origKey)
+		}
+
+		if _, inNotObfuscateList := notFilterEnvs[origKey]; inNotObfuscateList {
 			require.Equal(t, attestor.Variables[origKey], publicVarValue)
 		}
 	}
