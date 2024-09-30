@@ -62,7 +62,7 @@ func init() {
 					return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
 				}
 
-				WithFilterVarsEnabled(filterSensitiveVarsEnabled)(envAttestor)
+				WithFilterVarsEnabled()(envAttestor)
 				return envAttestor, nil
 			},
 		),
@@ -76,7 +76,7 @@ func init() {
 					return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
 				}
 
-				WithDisableDefaultSensitiveList(disableSensitiveVarsDefault)(envAttestor)
+				WithDisableDefaultSensitiveList()(envAttestor)
 				return envAttestor, nil
 			},
 		),
@@ -103,6 +103,7 @@ type Attestor struct {
 	Username  string            `json:"username"`
 	Variables map[string]string `json:"variables,omitempty"`
 
+	osEnviron                   func() []string
 	sensitiveVarsList           map[string]struct{}
 	addSensitiveVarsList        map[string]struct{}
 	filterVarsEnabled           bool
@@ -113,9 +114,9 @@ type Option func(*Attestor)
 
 // WithFilterVarsEnabled will make the filter (removing) of vars the acting behavior.
 // The default behavior is obfuscation of variables.
-func WithFilterVarsEnabled(filterVarsEnabled bool) Option {
+func WithFilterVarsEnabled() Option {
 	return func(a *Attestor) {
-		a.filterVarsEnabled = filterVarsEnabled
+		a.filterVarsEnabled = true
 	}
 }
 
@@ -129,9 +130,16 @@ func WithAdditionalKeys(additionalKeys []string) Option {
 }
 
 // WithDisableDefaultSensitiveList will disable the default list and only use the additional keys.
-func WithDisableDefaultSensitiveList(disableSensitiveVarsDefault bool) Option {
+func WithDisableDefaultSensitiveList() Option {
 	return func(a *Attestor) {
-		a.disableSensitiveVarsDefault = disableSensitiveVarsDefault
+		a.disableSensitiveVarsDefault = true
+	}
+}
+
+// WithCustomEnv will override the default os.Environ() method. This could be used to mock.
+func WithCustomEnv(osEnviron func() []string) Option {
+	return func(a *Attestor) {
+		a.osEnviron = osEnviron
 	}
 }
 
@@ -140,6 +148,8 @@ func New(opts ...Option) *Attestor {
 		sensitiveVarsList:    DefaultSensitiveEnvList(),
 		addSensitiveVarsList: map[string]struct{}{},
 	}
+
+	attestor.osEnviron = os.Environ
 
 	for _, opt := range opts {
 		opt(attestor)
@@ -188,11 +198,11 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	// Filter or obfuscate
 	if a.filterVarsEnabled {
-		FilterEnvironmentArray(os.Environ(), finalSensitiveKeysList, func(key, val, _ string) {
+		FilterEnvironmentArray(a.osEnviron(), finalSensitiveKeysList, func(key, val, _ string) {
 			a.Variables[key] = val
 		})
 	} else {
-		ObfuscateEnvironmentArray(os.Environ(), finalSensitiveKeysList, func(key, val, _ string) {
+		ObfuscateEnvironmentArray(a.osEnviron(), finalSensitiveKeysList, func(key, val, _ string) {
 			a.Variables[key] = val
 		})
 	}
