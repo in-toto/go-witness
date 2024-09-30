@@ -37,7 +37,7 @@ const (
 var (
 	_                                  attestation.Attestor = &Attestor{}
 	_                                  EnvironmentAttestor  = &Attestor{}
-	defaultBlockSensitiveVarsEnabled                        = false
+	defaultFilterSensitiveVarsEnabled                       = false
 	defaultDisableSensitiveVarsDefault                      = false
 )
 
@@ -53,16 +53,16 @@ type EnvironmentAttestor interface {
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor { return New() },
 		registry.BoolConfigOption(
-			"block-sensitive-vars",
-			"Switch from obfuscate to blocking variables which removes them from the output completely.",
-			defaultBlockSensitiveVarsEnabled,
-			func(a attestation.Attestor, blockSensitiveVarsEnabled bool) (attestation.Attestor, error) {
+			"filter-sensitive-vars",
+			"Switch from obfuscate to filtering variables which removes them from the output completely.",
+			defaultFilterSensitiveVarsEnabled,
+			func(a attestation.Attestor, filterSensitiveVarsEnabled bool) (attestation.Attestor, error) {
 				envAttestor, ok := a.(*Attestor)
 				if !ok {
 					return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
 				}
 
-				WithBlockVarsEnabled(blockSensitiveVarsEnabled)(envAttestor)
+				WithFilterVarsEnabled(filterSensitiveVarsEnabled)(envAttestor)
 				return envAttestor, nil
 			},
 		),
@@ -105,17 +105,17 @@ type Attestor struct {
 
 	sensitiveVarsList           map[string]struct{}
 	addSensitiveVarsList        map[string]struct{}
-	blockVarsEnabled            bool
+	filterVarsEnabled           bool
 	disableSensitiveVarsDefault bool
 }
 
 type Option func(*Attestor)
 
-// WithBlockVarsEnabled will make the blocking (removing) of vars the acting behavior.
+// WithFilterVarsEnabled will make the filter (removing) of vars the acting behavior.
 // The default behavior is obfuscation of variables.
-func WithBlockVarsEnabled(blockVarsEnabled bool) Option {
+func WithFilterVarsEnabled(filterVarsEnabled bool) Option {
 	return func(a *Attestor) {
-		a.blockVarsEnabled = blockVarsEnabled
+		a.filterVarsEnabled = filterVarsEnabled
 	}
 }
 
@@ -137,7 +137,7 @@ func WithDisableDefaultSensitiveList(disableSensitiveVarsDefault bool) Option {
 
 func New(opts ...Option) *Attestor {
 	attestor := &Attestor{
-		sensitiveVarsList: DefaultSensitiveEnvList(),
+		sensitiveVarsList:    DefaultSensitiveEnvList(),
 		addSensitiveVarsList: map[string]struct{}{},
 	}
 
@@ -186,8 +186,8 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		finalSensitiveKeysList[k] = v
 	}
 
-	// Block or obfuscate
-	if a.blockVarsEnabled {
+	// Filter or obfuscate
+	if a.filterVarsEnabled {
 		FilterEnvironmentArray(os.Environ(), finalSensitiveKeysList, func(key, val, _ string) {
 			a.Variables[key] = val
 		})

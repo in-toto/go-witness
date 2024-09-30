@@ -111,7 +111,7 @@ func DefaultBlockList() map[string]struct{} {
 // blockList is the list of elements to filter from variables, and for each element of variables that does not appear in the blockList onAllowed will be called.
 func FilterEnvironmentArray(variables []string, blockList map[string]struct{}, onAllowed func(key, val, orig string)) {
 	filterGlobList := []glob.Glob{}
-	
+
 	for k := range blockList {
 		if strings.Contains(k, "*") {
 			filterGlobCompiled, err := glob.Compile(k)
@@ -131,7 +131,6 @@ func FilterEnvironmentArray(variables []string, blockList map[string]struct{}, o
 			filterOut = true
 		}
 
-
 		for _, glob := range filterGlobList {
 			if glob.Match(key) {
 				filterOut = true
@@ -139,7 +138,7 @@ func FilterEnvironmentArray(variables []string, blockList map[string]struct{}, o
 			}
 		}
 
-		if ! filterOut {
+		if !filterOut {
 			onAllowed(key, val, v)
 		}
 	}
