@@ -25,12 +25,16 @@ import (
 // TestFilterVarsEnvironment tests if enabling filter behavior works correctly.
 func TestFilterVarsEnvironment(t *testing.T) {
 
-	attestor := New(WithFilterVarsEnabled(true))
+	customEnv := func() []string {
+		return []string{"AWS_ACCESS_KEY_ID=super secret"}
+	}
+
+	attestor := New(WithFilterVarsEnabled(), WithCustomEnv(customEnv))
+
 	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
 	require.NoError(t, err)
 
-	t.Setenv("AWS_ACCESS_KEY_ID", "super secret")
-	origVars := os.Environ()
+	origVars := customEnv()
 	require.NoError(t, attestor.Attest(ctx))
 	for _, env := range origVars {
 		origKey, _ := splitVariable(env)
@@ -108,9 +112,42 @@ func TestEnvironmentObfuscateAdditional(t *testing.T) {
 	}
 }
 
+// TestEnvironmentCustomKeysAdditional tests if the default list is disabled the additional keys works correctly.
+func TestEnvironmentCustomKeysAdditional(t *testing.T) {
+	attestor := New(WithDisableDefaultSensitiveList(), WithAdditionalKeys([]string{"MYNAME"}))
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
+	require.NoError(t, err)
+
+	obfuscateEnvs := map[string]struct{}{"MYNAME": {}}
+	secretVarValue := "secret var"
+	publicVarValue := "public var"
+	for k := range obfuscateEnvs {
+		t.Setenv(k, secretVarValue)
+	}
+
+	notObfuscateEnvs := map[string]struct{}{"API_TOKEN": {}}
+	for k := range notObfuscateEnvs {
+		t.Setenv(k, publicVarValue)
+	}
+
+	origVars := os.Environ()
+	require.NoError(t, attestor.Attest(ctx))
+	for _, env := range origVars {
+		origKey, _ := splitVariable(env)
+		if _, inObfuscateList := obfuscateEnvs[origKey]; inObfuscateList {
+			require.NotEqual(t, attestor.Variables[origKey], secretVarValue)
+			require.Equal(t, attestor.Variables[origKey], "******")
+		}
+
+		if _, inNotObfuscateList := notObfuscateEnvs[origKey]; inNotObfuscateList {
+			require.Equal(t, attestor.Variables[origKey], publicVarValue)
+		}
+	}
+}
+
 // TestEnvironmentFilterAdditional tests if enabling filter and adding additional keys works correctly.
 func TestEnvironmentFilterAdditional(t *testing.T) {
-	attestor := New(WithFilterVarsEnabled(true), WithAdditionalKeys([]string{"MYNAME"}))
+	attestor := New(WithFilterVarsEnabled(), WithAdditionalKeys([]string{"MYNAME"}))
 	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
 	require.NoError(t, err)
 
