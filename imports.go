@@ -23,6 +23,7 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/gcp-iit"
 	_ "github.com/in-toto/go-witness/attestation/git"
 	_ "github.com/in-toto/go-witness/attestation/github"
+	_ "github.com/in-toto/go-witness/attestation/githubwebhook"
 	_ "github.com/in-toto/go-witness/attestation/gitlab"
 	_ "github.com/in-toto/go-witness/attestation/jenkins"
 	_ "github.com/in-toto/go-witness/attestation/jwt"

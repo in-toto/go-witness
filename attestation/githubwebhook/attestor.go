@@ -112,7 +112,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 			log.Debugf("could not add push event subjects: %v", err)
 		}
 
-	case EventPullRequestReview:
+	case EventPullRequestReview, EventPullRequest:
 		if err := addPullRequestReviewSubjects(a.Payload, toHash, subjects); err != nil {
 			log.Debugf("could not add pull request review subjects: %v", err)
 		}
@@ -131,6 +131,22 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	}
 
 	return subjects
+}
+
+func (a *Attestor) BackRefs() map[string]cryptoutil.DigestSet {
+	pullRequest, _ := PullRequestFromPayload(a.Payload)
+
+	backrefs := make(map[string]cryptoutil.DigestSet)
+	subjectName := fmt.Sprintf("pullrequest:%v", pullRequest.HtmlUrl)
+
+	ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(pullRequest.HtmlUrl), []cryptoutil.DigestValue{{Hash: crypto.SHA256}})
+	if err != nil {
+		log.Debugf("could not calculate digest set for subject %v: %v", subjectName, err)
+	}
+
+	backrefs[subjectName] = ds
+
+	return backrefs
 }
 
 func validateWebhook(body []byte, receivedSig string, secret []byte) error {
@@ -179,6 +195,9 @@ func addPullRequestReviewSubjects(payload map[string]any, toHash map[string]stri
 	toHash[fmt.Sprintf("pullrequestheadref:%v", pullRequest.Head.Ref)] = pullRequest.Head.Ref
 	subjects[fmt.Sprintf("pullrequestheadsha:%v", pullRequest.Head.Sha)] = cryptoutil.DigestSet{
 		cryptoutil.DigestValue{Hash: crypto.SHA1, GitOID: false}: pullRequest.Head.Sha,
+	}
+	subjects[fmt.Sprintf("pullrequestmergecommitsha:%v", pullRequest.MergeCommitSha)] = cryptoutil.DigestSet{
+		cryptoutil.DigestValue{Hash: crypto.SHA1, GitOID: false}: pullRequest.MergeCommitSha,
 	}
 
 	return nil

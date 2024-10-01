@@ -1,9 +1,12 @@
 package githubwebhook
 
-import "fmt"
+import (
+	"fmt"
+)
 
 const (
 	EventPush              = "push"
+	EventPullRequest       = "pull_request"
 	EventPullRequestReview = "pull_request_review"
 )
 
@@ -74,8 +77,9 @@ func SenderFromPayload(payload map[string]any) (Sender, error) {
 // Note that this is an incomplete definition of the type.
 // This is contained in events relating to pull requests.
 type PullRequest struct {
-	HtmlUrl string `json:"html_url"`
-	Head    Head   `json:"head"`
+	HtmlUrl        string `json:"html_url"`
+	Head           Head   `json:"head"`
+	MergeCommitSha string `json:"merge_commit_sha"`
 }
 
 // Head contains information about the head commit of the pull request that the webhook pertains to.
@@ -111,6 +115,14 @@ func PullRequestFromPayload(payload map[string]any) (PullRequest, error) {
 	}
 
 	pullRequest.Head = head
+
+	mergeCommitSha, ok := pullRequestData["merge_commit_sha"].(string)
+	if !ok {
+		return pullRequest, fmt.Errorf("merge commit sha not in pull request data")
+	}
+
+	pullRequest.MergeCommitSha = mergeCommitSha
+
 	return pullRequest, nil
 }
 
