@@ -37,12 +37,12 @@ const (
 )
 
 type ptraceContext struct {
-	parentPid            int
-	mainProgram          string
-	processes            map[int]*ProcessInfo
-	exitCode             int
-	hash                 []cryptoutil.DigestValue
-	environmentBlockList map[string]struct{}
+	parentPid        int
+	mainProgram      string
+	processes        map[int]*ProcessInfo
+	exitCode         int
+	hash             []cryptoutil.DigestValue
+	sensitiveEnvList map[string]struct{}
 }
 
 func enableTracing(c *exec.Cmd) {
@@ -53,11 +53,11 @@ func enableTracing(c *exec.Cmd) {
 
 func (r *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext) ([]ProcessInfo, error) {
 	pctx := &ptraceContext{
-		parentPid:            c.Process.Pid,
-		mainProgram:          c.Path,
-		processes:            make(map[int]*ProcessInfo),
-		hash:                 actx.Hashes(),
-		environmentBlockList: r.environmentBlockList,
+		parentPid:        c.Process.Pid,
+		mainProgram:      c.Path,
+		processes:        make(map[int]*ProcessInfo),
+		hash:             actx.Hashes(),
+		sensitiveEnvList: r.sensitiveEnvList,
 	}
 
 	if err := pctx.runTrace(); err != nil {
@@ -201,7 +201,7 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 		if err == nil {
 			allVars := strings.Split(string(environ), "\x00")
 			filteredEnviron := make([]string, 0)
-			environment.FilterEnvironmentArray(allVars, p.environmentBlockList, func(_, _, varStr string) {
+			environment.FilterEnvironmentArray(allVars, p.sensitiveEnvList, map[string]struct{}{}, func(_, _, varStr string) {
 				filteredEnviron = append(filteredEnviron, varStr)
 			})
 
