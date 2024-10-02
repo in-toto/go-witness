@@ -304,7 +304,7 @@ func TestSearch(t *testing.T) {
 			}
 
 			// Run the search query on the MemorySource
-			got, err := s.Search(tt.searchQuery.ctx, tt.searchQuery.collectionName, tt.searchQuery.subDigest, tt.searchQuery.attestations)
+			got, err := s.Search(tt.searchQuery.ctx, 0, tt.searchQuery.collectionName, tt.searchQuery.subDigest, tt.searchQuery.attestations)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("MemorySource.Search() error = %v, wantErr %v", err, tt.wantErr)
 			}

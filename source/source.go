@@ -31,7 +31,7 @@ type CollectionEnvelope struct {
 }
 
 type Sourcer interface {
-	Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error)
+	Search(ctx context.Context, depth int, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error)
 }
 
 func envelopeToCollectionEnvelope(reference string, env dsse.Envelope) (CollectionEnvelope, error) {

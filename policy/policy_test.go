@@ -417,7 +417,7 @@ func newDummyVerifiedSourcer(verifiedCollections []source.CollectionVerification
 	return &dummyVerifiedSourcer{verifiedCollections}
 }
 
-func (s *dummyVerifiedSourcer) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]source.CollectionVerificationResult, error) {
+func (s *dummyVerifiedSourcer) Search(ctx context.Context, depth int, collectionName string, subjectDigests, attestations []string) ([]source.CollectionVerificationResult, error) {
 	return s.verifiedCollections, nil
 }
 

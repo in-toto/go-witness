@@ -32,7 +32,7 @@ func NewArchvistSource(client *archivista.Client) *ArchivistaSource {
 	}
 }
 
-func (s *ArchivistaSource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
+func (s *ArchivistaSource) Search(ctx context.Context, depth int, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
 	gitoids, err := s.client.SearchGitoids(ctx, archivista.SearchGitoidVariables{
 		CollectionName: collectionName,
 		SubjectDigests: subjectDigests,

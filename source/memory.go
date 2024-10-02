@@ -22,6 +22,7 @@ import (
 	"os"
 
 	"github.com/in-toto/go-witness/dsse"
+	"github.com/in-toto/go-witness/log"
 )
 
 type ErrDuplicateReference string
@@ -103,7 +104,13 @@ func (s *MemorySource) LoadEnvelope(reference string, env dsse.Envelope) error {
 	return nil
 }
 
-func (s *MemorySource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
+func (s *MemorySource) Search(ctx context.Context, depth int, collectionName string, subjectDigests, attestations []string) ([]CollectionEnvelope, error) {
+	if depth > 0 {
+		fmt.Println("skipping memory source search")
+		log.Debug("skipping memory source search: already performed")
+		return []CollectionEnvelope{}, nil
+	}
+
 	matches := make([]CollectionEnvelope, 0)
 	for _, potentialMatchReference := range s.referencesByCollectionName[collectionName] {
 		env, ok := s.envelopesByReference[potentialMatchReference]
@@ -122,20 +129,6 @@ func (s *MemorySource) Search(ctx context.Context, collectionName string, subjec
 		}
 
 		if !subjectMatchFound {
-			continue
-		}
-
-		// make sure all the expected attestations appear in the collection
-		attestationsMatched := true
-		indexAttestations := s.attestationsByReference[potentialMatchReference]
-		for _, checkAttestation := range attestations {
-			if _, ok := indexAttestations[checkAttestation]; !ok {
-				attestationsMatched = false
-				break
-			}
-		}
-
-		if !attestationsMatched {
 			continue
 		}
 

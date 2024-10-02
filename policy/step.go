@@ -184,7 +184,7 @@ func (s Step) validateAttestations(collectionResults []source.CollectionVerifica
 		if passed {
 			result.Passed = append(result.Passed, collection)
 		} else {
-			r := strings.Join(reasons, ",\n - ")
+			r := strings.Join(reasons, "\n - ")
 			reason := fmt.Sprintf("collection validation failed:\n - %s", r)
 			result.Rejected = append(result.Rejected, RejectedCollection{
 				Collection: collection,

@@ -31,7 +31,7 @@ type CollectionVerificationResult struct {
 }
 
 type VerifiedSourcer interface {
-	Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionVerificationResult, error)
+	Search(ctx context.Context, depth int, collectionName string, subjectDigests, attestations []string) ([]CollectionVerificationResult, error)
 }
 
 type VerifiedSource struct {
@@ -43,8 +43,8 @@ func NewVerifiedSource(source Sourcer, verifyOpts ...dsse.VerificationOption) *V
 	return &VerifiedSource{source, verifyOpts}
 }
 
-func (s *VerifiedSource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionVerificationResult, error) {
-	unverified, err := s.source.Search(ctx, collectionName, subjectDigests, attestations)
+func (s *VerifiedSource) Search(ctx context.Context, depth int, collectionName string, subjectDigests, attestations []string) ([]CollectionVerificationResult, error) {
+	unverified, err := s.source.Search(ctx, depth, collectionName, subjectDigests, attestations)
 	if err != nil {
 		return nil, err
 	}
