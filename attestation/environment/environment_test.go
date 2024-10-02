@@ -29,7 +29,10 @@ func TestFilterVarsEnvironment(t *testing.T) {
 		return []string{"AWS_ACCESS_KEY_ID=super secret"}
 	}
 
-	attestor := New(WithFilterVarsEnabled(), WithCustomEnv(customEnv))
+	attestor := New(
+		WithFilterVarsEnabled(),
+		WithCustomEnv(customEnv),
+	)
 
 	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
 	require.NoError(t, err)
@@ -42,6 +45,33 @@ func TestFilterVarsEnvironment(t *testing.T) {
 			require.NotContains(t, attestor.Variables, origKey)
 		} else {
 			require.Contains(t, attestor.Variables, origKey)
+		}
+	}
+}
+
+// TestExcludeVarsEnvironment tests if enabling filter behavior works correctly.
+func TestExcludeVarsEnvironment(t *testing.T) {
+
+	customEnv := func() []string {
+		return []string{"AWS_ACCESS_KEY_ID=super secret"}
+	}
+
+	attestor := New(
+		WithExcludeKeys([]string{"AWS_ACCESS_KEY_ID"}),
+		WithCustomEnv(customEnv),
+	)
+
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
+	require.NoError(t, err)
+
+	origVars := customEnv()
+	require.NoError(t, attestor.Attest(ctx))
+	for _, env := range origVars {
+		origKey, _ := splitVariable(env)
+		if _, inList := attestor.excludeSensitiveVarsList[origKey]; inList {
+			require.Contains(t, attestor.Variables, origKey)
+		} else {
+			require.NotContains(t, attestor.Variables, origKey)
 		}
 	}
 }
