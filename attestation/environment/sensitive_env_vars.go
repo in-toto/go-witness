@@ -21,11 +21,11 @@ func DefaultSensitiveEnvList() map[string]struct{} {
 	return map[string]struct{}{
 
 		// Glob pattern list
-		"*_TOKEN":    {},
-		"SECRET_*":   {},
-		"*_API_KEY":  {},
-		"*_PASSWORD": {},
-		"*_JWT":      {},
+		"*TOKEN*":    {},
+		"*SECRET*":   {},
+		"*API_KEY*":  {},
+		"*PASSWORD*": {},
+		"*JWT*":      {},
 
 		// Explicit list
 		"AWS_ACCESS_KEY_ID":              {},
