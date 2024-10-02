@@ -23,7 +23,7 @@ import (
 
 // FilterEnvironmentArray expects an array of strings representing environment variables.  Each element of the array is expected to be in the format of "KEY=VALUE".
 // blockList is the list of elements to filter from variables, and for each element of variables that does not appear in the blockList onAllowed will be called.
-func ObfuscateEnvironmentArray(variables []string, obfuscateList map[string]struct{}, onAllowed func(key, val, orig string)) {
+func ObfuscateEnvironmentArray(variables []string, obfuscateList map[string]struct{}, excludeKeys map[string]struct{}, onAllowed func(key, val, orig string)) {
 	obfuscateGlobList := []glob.Glob{}
 
 	for k := range obfuscateList {
@@ -40,13 +40,15 @@ func ObfuscateEnvironmentArray(variables []string, obfuscateList map[string]stru
 	for _, v := range variables {
 		key, val := splitVariable(v)
 
-		if _, inObfuscateList := obfuscateList[key]; inObfuscateList {
-			val = "******"
-		}
-
-		for _, glob := range obfuscateGlobList {
-			if glob.Match(key) {
+		if _, inExcludKeys := excludeKeys[key]; !inExcludKeys {
+			if _, inObfuscateList := obfuscateList[key]; inObfuscateList {
 				val = "******"
+			}
+
+			for _, glob := range obfuscateGlobList {
+				if glob.Match(key) {
+					val = "******"
+				}
 			}
 		}
 
