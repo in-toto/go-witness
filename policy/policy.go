@@ -252,9 +252,7 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 			// Verify the functionaries
 			functionaryCheckResults := step.checkFunctionaries(collections, trustBundles)
 			stepResult := step.validateAttestations(functionaryCheckResults.Passed)
-			for _, functionaryReject := range functionaryCheckResults.Rejected {
-				stepResult.Rejected = append(stepResult.Rejected, functionaryReject)
-			}
+			stepResult.Rejected = append(stepResult.Rejected, functionaryCheckResults.Rejected...)
 
 			// We perform many searches against the same step, so we need to merge the relevant fields
 			if resultsByStep[stepName].Step == "" {
@@ -316,13 +314,12 @@ func (step Step) checkFunctionaries(statements []source.CollectionVerificationRe
 			}
 
 			if len(statements[i].ValidFunctionaries) == 0 {
-				result.Rejected = append(result.Rejected, RejectedCollection{Collection: statement, Reason: fmt.Errorf("no verifiers matched with allowed functionaries for step %s", step.Name)})
+				result.Rejected = append(result.Rejected, RejectedCollection{Collection: statements[i], Reason: fmt.Errorf("no verifiers matched with allowed functionaries for step %s", step.Name)})
 			} else {
-				result.Passed = append(result.Passed, statement)
+				result.Passed = append(result.Passed, statements[i])
 			}
 		} else {
-			statements[i].Errors = append(statement.Errors)
-			result.Rejected = append(result.Rejected, RejectedCollection{Collection: statement, Reason: fmt.Errorf("no verifiers present to validate against collection verifiers")})
+			result.Rejected = append(result.Rejected, RejectedCollection{Collection: statements[i], Reason: fmt.Errorf("no verifiers present to validate against collection verifiers")})
 		}
 	}
 
