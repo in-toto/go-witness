@@ -82,13 +82,13 @@ func WithSilent(silent bool) Option {
 
 func WithEnvironmentBlockList(blockList map[string]struct{}) Option {
 	return func(cr *CommandRun) {
-		cr.environmentBlockList = blockList
+		cr.sensitiveEnvList = blockList
 	}
 }
 
 func New(opts ...Option) *CommandRun {
 	cr := &CommandRun{
-		environmentBlockList: environment.DefaultBlockList(),
+		sensitiveEnvList: environment.DefaultSensitiveEnvList(),
 	}
 
 	for _, opt := range opts {
@@ -118,10 +118,10 @@ type CommandRun struct {
 	ExitCode  int           `json:"exitcode"`
 	Processes []ProcessInfo `json:"processes,omitempty"`
 
-	silent               bool
-	materials            map[string]cryptoutil.DigestSet
-	enableTracing        bool
-	environmentBlockList map[string]struct{}
+	silent           bool
+	materials        map[string]cryptoutil.DigestSet
+	enableTracing    bool
+	sensitiveEnvList map[string]struct{}
 }
 
 func (a *CommandRun) Schema() *jsonschema.Schema {
