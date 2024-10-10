@@ -21,7 +21,7 @@ import (
 	"os/exec"
 
 	"github.com/in-toto/go-witness/attestation"
-	"github.com/in-toto/go-witness/attestation/environment"
+	"github.com/in-toto/go-witness/environment"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/invopop/jsonschema"
 )
