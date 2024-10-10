@@ -24,6 +24,7 @@ import (
 
 	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/environment"
 	"github.com/in-toto/go-witness/log"
 )
 
@@ -117,6 +118,7 @@ type AttestationContext struct {
 	materials           map[string]cryptoutil.DigestSet
 	stepName            string
 	mutex               sync.RWMutex
+	environmentCapturer *environment.Capture
 }
 
 type Product struct {
@@ -228,6 +230,8 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) {
 func (ctx *AttestationContext) DirHashGlob() []glob.Glob {
 	return ctx.dirHashGlobCompiled
 }
+
+
 
 func (ctx *AttestationContext) CompletedAttestors() []CompletedAttestor {
 	ctx.mutex.RLock()
