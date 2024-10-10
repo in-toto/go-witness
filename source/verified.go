@@ -64,7 +64,9 @@ func (s *VerifiedSource) Search(ctx context.Context, collectionName string, subj
 
 		passedVerifiers := make([]cryptoutil.Verifier, 0)
 		for _, verifier := range envelopeVerifiers {
-			passedVerifiers = append(passedVerifiers, verifier.Verifier)
+			if verifier.Error == nil {
+				passedVerifiers = append(passedVerifiers, verifier.Verifier)
+			}
 		}
 
 		var Errors []error

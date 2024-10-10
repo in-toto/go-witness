@@ -72,8 +72,6 @@ type CheckedVerifier struct {
 	Error              error
 }
 
-type FailedVerifier struct{}
-
 func (e Envelope) Verify(opts ...VerificationOption) ([]CheckedVerifier, error) {
 	options := &verificationOptions{
 		threshold: 1,
