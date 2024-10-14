@@ -80,8 +80,7 @@ func WithSilent(silent bool) Option {
 }
 
 func New(opts ...Option) *CommandRun {
-	cr := &CommandRun{
-	}
+	cr := &CommandRun{}
 
 	for _, opt := range opts {
 		opt(cr)
@@ -110,9 +109,9 @@ type CommandRun struct {
 	ExitCode  int           `json:"exitcode"`
 	Processes []ProcessInfo `json:"processes,omitempty"`
 
-	silent           bool
-	materials        map[string]cryptoutil.DigestSet
-	enableTracing    bool
+	silent        bool
+	materials     map[string]cryptoutil.DigestSet
+	enableTracing bool
 }
 
 func (a *CommandRun) Schema() *jsonschema.Schema {
