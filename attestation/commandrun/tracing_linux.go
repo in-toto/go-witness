@@ -42,7 +42,7 @@ type ptraceContext struct {
 	processes        map[int]*ProcessInfo
 	exitCode         int
 	hash             []cryptoutil.DigestValue
-	sensitiveEnvList map[string]struct{}
+	environmentCapturer *environment.Capture
 }
 
 func enableTracing(c *exec.Cmd) {
@@ -57,7 +57,7 @@ func (r *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext) ([
 		mainProgram:      c.Path,
 		processes:        make(map[int]*ProcessInfo),
 		hash:             actx.Hashes(),
-		sensitiveEnvList: r.sensitiveEnvList,
+		environmentCapturer: actx.EnvironmentCapturer(),
 	}
 
 	if err := pctx.runTrace(); err != nil {
@@ -200,10 +200,7 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 		environ, err := os.ReadFile(envinLocation)
 		if err == nil {
 			allVars := strings.Split(string(environ), "\x00")
-			filteredEnviron := make([]string, 0)
-			environment.FilterEnvironmentArray(allVars, p.sensitiveEnvList, map[string]struct{}{}, func(_, _, varStr string) {
-				filteredEnviron = append(filteredEnviron, varStr)
-			})
+			filteredEnviron := p.environmentCapturer.Capture(allVars)
 
 			procInfo.Environ = strings.Join(filteredEnviron, " ")
 		}
