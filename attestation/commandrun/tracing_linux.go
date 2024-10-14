@@ -26,8 +26,8 @@ import (
 	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
-	"github.com/in-toto/go-witness/environment"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/environment"
 	"github.com/in-toto/go-witness/log"
 	"golang.org/x/sys/unix"
 )
@@ -200,9 +200,14 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 		environ, err := os.ReadFile(envinLocation)
 		if err == nil {
 			allVars := strings.Split(string(environ), "\x00")
-			filteredEnviron := p.environmentCapturer.Capture(allVars)
 
-			procInfo.Environ = strings.Join(filteredEnviron, " ")
+			env := make([]string, 0)
+			var capturedEnv map[string]string = p.environmentCapturer.Capture(allVars)
+			for k, v := range capturedEnv {
+				env = append(env, fmt.Sprintf("%s=%s", k, v))
+			}
+
+			procInfo.Environ = strings.Join(env, " ")
 		}
 
 		cmdline, err := os.ReadFile(cmdlineLocation)

@@ -231,8 +231,6 @@ func (ctx *AttestationContext) DirHashGlob() []glob.Glob {
 	return ctx.dirHashGlobCompiled
 }
 
-
-
 func (ctx *AttestationContext) CompletedAttestors() []CompletedAttestor {
 	ctx.mutex.RLock()
 	out := make([]CompletedAttestor, len(ctx.completedAttestors))
