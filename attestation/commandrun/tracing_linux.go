@@ -26,7 +26,7 @@ import (
 	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
-	"github.com/in-toto/go-witness/attestation/environment"
+	"github.com/in-toto/go-witness/environment"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 	"golang.org/x/sys/unix"
@@ -37,11 +37,11 @@ const (
 )
 
 type ptraceContext struct {
-	parentPid        int
-	mainProgram      string
-	processes        map[int]*ProcessInfo
-	exitCode         int
-	hash             []cryptoutil.DigestValue
+	parentPid           int
+	mainProgram         string
+	processes           map[int]*ProcessInfo
+	exitCode            int
+	hash                []cryptoutil.DigestValue
 	environmentCapturer *environment.Capture
 }
 
@@ -53,10 +53,10 @@ func enableTracing(c *exec.Cmd) {
 
 func (r *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext) ([]ProcessInfo, error) {
 	pctx := &ptraceContext{
-		parentPid:        c.Process.Pid,
-		mainProgram:      c.Path,
-		processes:        make(map[int]*ProcessInfo),
-		hash:             actx.Hashes(),
+		parentPid:           c.Process.Pid,
+		mainProgram:         c.Path,
+		processes:           make(map[int]*ProcessInfo),
+		hash:                actx.Hashes(),
 		environmentCapturer: actx.EnvironmentCapturer(),
 	}
 
