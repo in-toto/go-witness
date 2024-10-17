@@ -24,6 +24,7 @@ import (
 
 	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/environment"
 	"github.com/in-toto/go-witness/log"
 )
 
@@ -117,6 +118,7 @@ type AttestationContext struct {
 	materials           map[string]cryptoutil.DigestSet
 	stepName            string
 	mutex               sync.RWMutex
+	environmentCapturer *environment.Capture
 }
 
 type Product struct {

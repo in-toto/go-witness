@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/user"
 	"runtime"
-	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/invopop/jsonschema"
@@ -35,6 +34,8 @@ const (
 var (
 	_ attestation.Attestor = &Attestor{}
 	_ EnvironmentAttestor  = &Attestor{}
+	// defaultFilterSensitiveVarsEnabled                       = false
+	// defaultDisableSensitiveVarsDefault                      = false
 )
 
 type EnvironmentAttestor interface {
@@ -47,9 +48,65 @@ type EnvironmentAttestor interface {
 }
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
-		return New()
-	})
+	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor { return New() })
+
+	// registry.BoolConfigOption(
+	// 	"filter-sensitive-vars",
+	// 	"Switch from obfuscate to filtering variables which removes them from the output completely.",
+	// 	defaultFilterSensitiveVarsEnabled,
+	// 	func(a attestation.Attestor, filterSensitiveVarsEnabled bool) (attestation.Attestor, error) {
+	// 		envAttestor, ok := a.(*Attestor)
+	// 		if !ok {
+	// 			return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
+	// 		}
+
+	// 		envCapture.WithFilterVarsEnabled()(envAttestor.capture)
+	// 		return envAttestor, nil
+	// 	},
+	// ),
+	// registry.BoolConfigOption(
+	// 	"disable-default-sensitive-vars",
+	// 	"Disable the default list of sensitive vars and only use the items mentioned by --attestor-environment-sensitive-key.",
+	// 	defaultDisableSensitiveVarsDefault,
+	// 	func(a attestation.Attestor, disableSensitiveVarsDefault bool) (attestation.Attestor, error) {
+	// 		envAttestor, ok := a.(*Attestor)
+	// 		if !ok {
+	// 			return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
+	// 		}
+
+	// 		envCapture.WithDisableDefaultSensitiveList()(envAttestor.capture)
+	// 		return envAttestor, nil
+	// 	},
+	// ),
+	// registry.StringSliceConfigOption(
+	// 	"add-sensitive-key",
+	// 	"Add keys or globs (e.g. '*TEXT') to the list of sensitive environment keys.",
+	// 	[]string{},
+	// 	func(a attestation.Attestor, additionalKeys []string) (attestation.Attestor, error) {
+	// 		envAttestor, ok := a.(*Attestor)
+	// 		if !ok {
+	// 			return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
+	// 		}
+
+	// 		envCapture.WithAdditionalKeys(additionalKeys)(envAttestor.capture)
+	// 		return envAttestor, nil
+	// 	},
+	// ),
+	// registry.StringSliceConfigOption(
+	// 	"exclude-sensitive-key",
+	// 	"Exclude specific keys from the list of sensitive environment keys. Note: This does not support globs.",
+	// 	[]string{},
+	// 	func(a attestation.Attestor, excludeKeys []string) (attestation.Attestor, error) {
+	// 		envAttestor, ok := a.(*Attestor)
+	// 		if !ok {
+	// 			return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
+	// 		}
+
+	// 		envCapture.WithExcludeKeys(excludeKeys)(envAttestor.capture)
+	// 		return envAttestor, nil
+	// 	},
+	// ),
+
 }
 
 type Attestor struct {
@@ -58,21 +115,22 @@ type Attestor struct {
 	Username  string            `json:"username"`
 	Variables map[string]string `json:"variables,omitempty"`
 
-	blockList map[string]struct{}
+	osEnviron func() []string
 }
 
 type Option func(*Attestor)
 
-func WithBlockList(blockList map[string]struct{}) Option {
+// WithCustomEnv will override the default os.Environ() method. This could be used to mock.
+func WithCustomEnv(osEnviron func() []string) Option {
 	return func(a *Attestor) {
-		a.blockList = blockList
+		a.osEnviron = osEnviron
 	}
 }
 
 func New(opts ...Option) *Attestor {
-	attestor := &Attestor{
-		blockList: DefaultBlockList(),
-	}
+	attestor := &Attestor{}
+
+	attestor.osEnviron = os.Environ
 
 	for _, opt := range opts {
 		opt(attestor)
@@ -109,25 +167,11 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		a.Username = user.Username
 	}
 
-	FilterEnvironmentArray(os.Environ(), a.blockList, func(key, val, _ string) {
-		a.Variables[key] = val
-	})
+	a.Variables = ctx.EnvironmentCapturer().Capture(a.osEnviron())
 
 	return nil
 }
 
 func (a *Attestor) Data() *Attestor {
 	return a
-}
-
-// splitVariable splits a string representing an environment variable in the format of
-// "KEY=VAL" and returns the key and val separately.
-func splitVariable(v string) (key, val string) {
-	parts := strings.SplitN(v, "=", 2)
-	key = parts[0]
-	if len(parts) > 1 {
-		val = parts[1]
-	}
-
-	return
 }
