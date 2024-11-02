@@ -16,7 +16,7 @@ package environment
 
 // DefaultSensitiveEnvList return a list of known sensitive environment keys.
 //
-// Eplicit list sourced from https://github.com/Puliczek/awesome-list-of-secrets-in-environment-variables/blob/main/raw_list.txt
+// Explicit list sourced from https://github.com/Puliczek/awesome-list-of-secrets-in-environment-variables/blob/main/raw_list.txt
 func DefaultSensitiveEnvList() map[string]struct{} {
 	return map[string]struct{}{
 
