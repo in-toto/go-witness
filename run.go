@@ -28,13 +28,15 @@ import (
 	"github.com/in-toto/go-witness/timestamp"
 )
 
+// runOptions struct now includes userDefinedSubject for user-defined subjects
 type runOptions struct {
-	stepName        string
-	signers         []cryptoutil.Signer
-	attestors       []attestation.Attestor
-	attestationOpts []attestation.AttestationContextOption
-	timestampers    []timestamp.Timestamper
-	insecure        bool
+	stepName           string
+	signers            []cryptoutil.Signer
+	attestors          []attestation.Attestor
+	attestationOpts    []attestation.AttestationContextOption
+	timestampers       []timestamp.Timestamper
+	insecure           bool
+	userDefinedSubject map[string]cryptoutil.DigestSet // Added user-defined subject field
 }
 
 type RunOption func(ro *runOptions)
@@ -78,6 +80,13 @@ func RunWithSigners(signers ...cryptoutil.Signer) RunOption {
 	}
 }
 
+// RunWithUserDefinedSubject allows users to define a subject for the attestation.
+func RunWithUserDefinedSubject(subject map[string]cryptoutil.DigestSet) RunOption {
+	return func(ro *runOptions) {
+		ro.userDefinedSubject = subject
+	}
+}
+
 // RunResult contains the generated attestation collection as well as the signed DSSE envelope, if one was
 // created.
 type RunResult struct {
@@ -102,7 +111,9 @@ func RunWithExports(stepName string, opts ...RunOption) ([]RunResult, error) {
 	return run(stepName, opts)
 }
 
+// run function processes the attestation creation with provided options.
 func run(stepName string, opts []RunOption) ([]RunResult, error) {
+	// Initialize runOptions with defaults and apply provided RunOptions
 	ro := runOptions{
 		stepName: stepName,
 		insecure: false,
@@ -112,11 +123,12 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 		opt(&ro)
 	}
 
-	result := []RunResult{}
+	var result []RunResult
 	if err := validateRunOpts(ro); err != nil {
 		return result, err
 	}
 
+	// Create attestation context
 	runCtx, err := attestation.NewContext(stepName, ro.attestors, ro.attestationOpts...)
 	if err != nil {
 		return result, fmt.Errorf("failed to create attestation context: %w", err)
@@ -126,6 +138,7 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 		return result, fmt.Errorf("failed to run attestors: %w", err)
 	}
 
+	// Process completed attestors
 	errs := make([]error, 0)
 	for _, r := range runCtx.CompletedAttestors() {
 		if r.Error != nil {
@@ -137,7 +150,14 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 					continue
 				}
 				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
-					envelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
+					// Merge user-defined subjects if provided
+					subjects := subjecter.Subjects()
+					if len(ro.userDefinedSubject) > 0 {
+						for k, v := range ro.userDefinedSubject {
+							subjects[k] = v
+						}
+					}
+					envelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjects, dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
 					if err != nil {
 						return result, fmt.Errorf("failed to sign envelope: %w", err)
 					}
@@ -148,14 +168,24 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 	}
 
 	if len(errs) > 0 {
-		errs := append([]error{errors.New("attestors failed with error messages")}, errs...)
+		errs = append([]error{errors.New("attestors failed with error messages")}, errs...)
 		return result, errors.Join(errs...)
 	}
 
-	var collectionResult RunResult
-	collectionResult.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
+	// Final attestation collection with the user-defined subjects if provided
+	collectionResult := RunResult{
+		Collection: attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors()),
+	}
+
+	// Sign collection if not in insecure mode
 	if !ro.insecure {
-		collectionResult.SignedEnvelope, err = createAndSignEnvelope(collectionResult.Collection, attestation.CollectionType, collectionResult.Collection.Subjects(), dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
+		collectionSubjects := collectionResult.Collection.Subjects()
+		if len(ro.userDefinedSubject) > 0 {
+			for k, v := range ro.userDefinedSubject {
+				collectionSubjects[k] = v
+			}
+		}
+		collectionResult.SignedEnvelope, err = createAndSignEnvelope(collectionResult.Collection, attestation.CollectionType, collectionSubjects, dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
 		if err != nil {
 			return result, fmt.Errorf("failed to sign collection: %w", err)
 		}
@@ -171,7 +201,7 @@ func validateRunOpts(ro runOptions) error {
 	}
 
 	if len(ro.signers) == 0 && !ro.insecure {
-		return fmt.Errorf("at lease one signer is required if not in insecure mode")
+		return fmt.Errorf("at least one signer is required if not in insecure mode")
 	}
 
 	return nil
