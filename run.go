@@ -154,6 +154,7 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 					subjects := subjecter.Subjects()
 					if len(ro.userDefinedSubject) > 0 {
 						for k, v := range ro.userDefinedSubject {
+
 							subjects[k] = v
 						}
 					}
