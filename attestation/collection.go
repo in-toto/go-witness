@@ -17,6 +17,7 @@ package attestation
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/in-toto/go-witness/cryptoutil"
@@ -145,11 +146,20 @@ func (c *Collection) Materials() map[string]cryptoutil.DigestSet {
 
 func (c *Collection) BackRefs() map[string]cryptoutil.DigestSet {
 	backRefs := make(map[string]cryptoutil.DigestSet)
+
+	// Iterate over attestations and add back references from each attestation if it implements BackReffer
 	for _, attestation := range c.Attestations {
 		if backReffer, ok := attestation.Attestation.(BackReffer); ok {
 			for backRef, digest := range backReffer.BackRefs() {
 				backRefs[fmt.Sprintf("%v/%v", attestation.Type, backRef)] = digest
 			}
+		}
+	}
+
+	// Iterate over the collection's subjects and add user-defined subjects as back references
+	for subj, ds := range c.Subjects() {
+		if strings.HasPrefix(subj, "user:") {
+			backRefs[subj] = ds
 		}
 	}
 
