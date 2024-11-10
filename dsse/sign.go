@@ -45,6 +45,12 @@ func SignWithTimestampers(timestampers ...timestamp.Timestamper) SignOption {
 	}
 }
 
+func SignWithUserDefinedSubject(subject map[string]cryptoutil.DigestSet) SignOption {
+	return func(so *SignOptions) {
+		so.UserDefinedSubject = subject
+	}
+}
+
 func Sign(bodyType string, body io.Reader, opts ...SignOption) (Envelope, error) {
 	so := &SignOptions{}
 	env := Envelope{}

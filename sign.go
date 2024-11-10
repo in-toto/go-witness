@@ -1,17 +1,3 @@
-// Copyright 2021 The Witness Contributors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package witness
 
 import (
@@ -24,13 +10,13 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	"github.com/in-toto/go-witness/intoto"
+	"github.com/in-toto/go-witness/log"
 )
 
 // Sign parses the input, conditionally adds a user-defined subject for in-toto attestations, and then signs the DSSE envelope.
 func Sign(r io.Reader, dataType string, w io.Writer, opts ...dsse.SignOption) error {
 	// Create an instance of signOptions with defaults and apply provided SignOptions
 	so := &dsse.SignOptions{}
-
 	for _, opt := range opts {
 		opt(so)
 	}
@@ -39,28 +25,55 @@ func Sign(r io.Reader, dataType string, w io.Writer, opts ...dsse.SignOption) er
 	hasUserDefinedSubject := len(so.UserDefinedSubject) > 0
 
 	// Parse the input payload
-	var payload interface{}
-	if err := json.NewDecoder(r).Decode(&payload); err != nil {
-		return fmt.Errorf("failed to decode input: %w", err)
+	var rawPayload map[string]interface{}
+	if err := json.NewDecoder(r).Decode(&rawPayload); err != nil {
+		return fmt.Errorf("failed to decode input payload: %w", err)
 	}
 
 	// Check if the payload is an in-toto statement
-	if dataType == intoto.PayloadType {
-		// Create the envelope with user-defined subjects for in-toto statements
-		envelope, err := createAndSignEnvelopeWithSubject(payload, dataType, so.UserDefinedSubject, opts...)
+	if rawPayload["_type"] == "https://in-toto.io/Statement/v0.1" {
+		log.Info("payload is in-toto")
+		dataType := intoto.PayloadType
+
+		// Convert rawPayload to a Statement
+		stmt := intoto.Statement{}
+		payloadBytes, err := json.Marshal(rawPayload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal payload to bytes: %w", err)
+		}
+		if err := json.Unmarshal(payloadBytes, &stmt); err != nil {
+			return fmt.Errorf("failed to unmarshal in-toto statement: %w", err)
+		}
+
+		for name, ds := range so.UserDefinedSubject {
+			s, err := intoto.DigestSetToSubject(name, ds)
+			if err != nil {
+				log.Errorf("failed to convert digest set to subject: %v", err)
+			}
+
+			stmt.Subject = append(stmt.Subject, s)
+
+		}
+
+		// Marshal the modified statement
+		finalPayload := stmt
+
+		// Create and sign envelope with subjects
+		envelope, err := createAndSignEnvelopeWithSubject(finalPayload, dataType, so.UserDefinedSubject, opts...)
 		if err != nil {
 			return fmt.Errorf("failed to create and sign envelope: %w", err)
 		}
 
-		// Encode the signed envelope to output writer `w`
+		// Encode the signed envelope to output writer w
 		encoder := json.NewEncoder(w)
 		return encoder.Encode(&envelope)
-	} else if hasUserDefinedSubject {
-		// If the payload is not in-toto and a subject was provided, throw an error
+	}
+
+	// Handle non-in-toto statements
+	if hasUserDefinedSubject {
 		return errors.New("user-defined subject is only allowed for in-toto statements")
 	}
 
-	// For non-in-toto statements without user-defined subject, create the envelope as usual
 	envelope, err := dsse.Sign(dataType, r, opts...)
 	if err != nil {
 		return err
@@ -71,7 +84,7 @@ func Sign(r io.Reader, dataType string, w io.Writer, opts ...dsse.SignOption) er
 }
 
 // Helper function to create and sign a DSSE envelope with a user-defined subject for in-toto attestations
-func createAndSignEnvelopeWithSubject(payload interface{}, dataType string, userDefinedSubject map[string]cryptoutil.DigestSet, opts ...dsse.SignOption) (dsse.Envelope, error) {
+func createAndSignEnvelopeWithSubject(payload interface{}, dataType string, subjects map[string]cryptoutil.DigestSet, opts ...dsse.SignOption) (dsse.Envelope, error) {
 	// Marshal the payload
 	data, err := json.Marshal(&payload)
 	if err != nil {
@@ -79,7 +92,7 @@ func createAndSignEnvelopeWithSubject(payload interface{}, dataType string, user
 	}
 
 	// Create an intoto statement with the user-defined subject
-	stmt, err := intoto.NewStatement(dataType, data, userDefinedSubject)
+	stmt, err := intoto.NewStatement(dataType, data, subjects)
 	if err != nil {
 		return dsse.Envelope{}, fmt.Errorf("failed to create intoto statement: %w", err)
 	}
