@@ -83,25 +83,34 @@ func Sign(r io.Reader, dataType string, w io.Writer, opts ...dsse.SignOption) er
 	return encoder.Encode(&envelope)
 }
 
-// Helper function to create and sign a DSSE envelope with a user-defined subject for in-toto attestations
+// Helper function to create and sign a DSSE envelope without double-wrapping
 func createAndSignEnvelopeWithSubject(payload interface{}, dataType string, subjects map[string]cryptoutil.DigestSet, opts ...dsse.SignOption) (dsse.Envelope, error) {
-	// Marshal the payload
-	data, err := json.Marshal(&payload)
+	var stmt intoto.Statement
+
+	// Check if payload is already an intoto statement
+	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return dsse.Envelope{}, fmt.Errorf("failed to marshal payload: %w", err)
 	}
-
-	// Create an intoto statement with the user-defined subject
-	stmt, err := intoto.NewStatement(dataType, data, subjects)
-	if err != nil {
-		return dsse.Envelope{}, fmt.Errorf("failed to create intoto statement: %w", err)
+	if err := json.Unmarshal(payloadBytes, &stmt); err == nil && stmt.Type == "https://in-toto.io/Statement/v0.1" {
+		// Append user-defined subjects to existing in-toto statement
+		for name, ds := range subjects {
+			s, err := intoto.DigestSetToSubject(name, ds)
+			if err != nil {
+				return dsse.Envelope{}, fmt.Errorf("failed to convert digest set to subject: %w", err)
+			}
+			stmt.Subject = append(stmt.Subject, s)
+		}
+	} else {
+		// Handle error or create new statement if payload is not an in-toto statement
+		return dsse.Envelope{}, errors.New("payload is not a valid in-toto statement")
 	}
 
+	// Marshal the modified statement and sign without re-wrapping
 	stmtJson, err := json.Marshal(&stmt)
 	if err != nil {
 		return dsse.Envelope{}, fmt.Errorf("failed to marshal intoto statement: %w", err)
 	}
 
-	// Sign the envelope with the statement and options
-	return dsse.Sign(intoto.PayloadType, bytes.NewReader(stmtJson), opts...)
+	return dsse.Sign(dataType, bytes.NewReader(stmtJson), opts...)
 }
