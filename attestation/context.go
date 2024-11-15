@@ -99,6 +99,24 @@ func WithDirHashGlob(dirHashGlob []string) AttestationContextOption {
 	}
 }
 
+// WithEnvCapturer sets the configuration for the environment.Capturer inside the AttestationContext.
+func WithEnvCapturer(additionalKeys []string, excludeKeys []string, disableDefaultSensitiveVars bool, filterVarsEnabled bool) AttestationContextOption {
+	return func(ctx *AttestationContext) {
+		opts := []environment.CaptureOption{
+			environment.WithAdditionalKeys(additionalKeys),
+			environment.WithExcludeKeys(excludeKeys),
+		}
+		if disableDefaultSensitiveVars {
+			opts = append(opts, environment.WithDisableDefaultSensitiveList())
+		}
+		if filterVarsEnabled {
+			opts = append(opts, environment.WithFilterVarsEnabled())
+		}
+
+		ctx.environmentCapturer	= environment.New(opts...)
+	}
+}
+
 type CompletedAttestor struct {
 	Attestor  Attestor
 	StartTime time.Time
@@ -106,6 +124,7 @@ type CompletedAttestor struct {
 	Error     error
 }
 
+// AttestationContext is a struct that hold configuration that can be used across all attestors.
 type AttestationContext struct {
 	ctx                 context.Context
 	attestors           []Attestor
@@ -126,6 +145,7 @@ type Product struct {
 	Digest   cryptoutil.DigestSet `json:"digest"`
 }
 
+// NewContext creates a new AttestationContext.
 func NewContext(stepName string, attestors []Attestor, opts ...AttestationContextOption) (*AttestationContext, error) {
 	wd, err := os.Getwd()
 	if err != nil {

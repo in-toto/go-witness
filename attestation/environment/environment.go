@@ -49,64 +49,6 @@ type EnvironmentAttestor interface {
 
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor { return New() })
-
-	// registry.BoolConfigOption(
-	// 	"filter-sensitive-vars",
-	// 	"Switch from obfuscate to filtering variables which removes them from the output completely.",
-	// 	defaultFilterSensitiveVarsEnabled,
-	// 	func(a attestation.Attestor, filterSensitiveVarsEnabled bool) (attestation.Attestor, error) {
-	// 		envAttestor, ok := a.(*Attestor)
-	// 		if !ok {
-	// 			return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
-	// 		}
-
-	// 		envCapture.WithFilterVarsEnabled()(envAttestor.capture)
-	// 		return envAttestor, nil
-	// 	},
-	// ),
-	// registry.BoolConfigOption(
-	// 	"disable-default-sensitive-vars",
-	// 	"Disable the default list of sensitive vars and only use the items mentioned by --attestor-environment-sensitive-key.",
-	// 	defaultDisableSensitiveVarsDefault,
-	// 	func(a attestation.Attestor, disableSensitiveVarsDefault bool) (attestation.Attestor, error) {
-	// 		envAttestor, ok := a.(*Attestor)
-	// 		if !ok {
-	// 			return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
-	// 		}
-
-	// 		envCapture.WithDisableDefaultSensitiveList()(envAttestor.capture)
-	// 		return envAttestor, nil
-	// 	},
-	// ),
-	// registry.StringSliceConfigOption(
-	// 	"add-sensitive-key",
-	// 	"Add keys or globs (e.g. '*TEXT') to the list of sensitive environment keys.",
-	// 	[]string{},
-	// 	func(a attestation.Attestor, additionalKeys []string) (attestation.Attestor, error) {
-	// 		envAttestor, ok := a.(*Attestor)
-	// 		if !ok {
-	// 			return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
-	// 		}
-
-	// 		envCapture.WithAdditionalKeys(additionalKeys)(envAttestor.capture)
-	// 		return envAttestor, nil
-	// 	},
-	// ),
-	// registry.StringSliceConfigOption(
-	// 	"exclude-sensitive-key",
-	// 	"Exclude specific keys from the list of sensitive environment keys. Note: This does not support globs.",
-	// 	[]string{},
-	// 	func(a attestation.Attestor, excludeKeys []string) (attestation.Attestor, error) {
-	// 		envAttestor, ok := a.(*Attestor)
-	// 		if !ok {
-	// 			return a, fmt.Errorf("unexpected attestor type: %T is not a environment attestor", a)
-	// 		}
-
-	// 		envCapture.WithExcludeKeys(excludeKeys)(envAttestor.capture)
-	// 		return envAttestor, nil
-	// 	},
-	// ),
-
 }
 
 type Attestor struct {
