@@ -113,7 +113,7 @@ func WithEnvCapturer(additionalKeys []string, excludeKeys []string, disableDefau
 			opts = append(opts, environment.WithFilterVarsEnabled())
 		}
 
-		ctx.environmentCapturer	= environment.New(opts...)
+		ctx.environmentCapturer = environment.New(opts...)
 	}
 }
 
