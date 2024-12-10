@@ -25,27 +25,34 @@ import (
 	"github.com/in-toto/go-witness/timestamp"
 )
 
-type signOptions struct {
-	signers      []cryptoutil.Signer
-	timestampers []timestamp.Timestamper
+type SignOptions struct {
+	signers            []cryptoutil.Signer
+	timestampers       []timestamp.Timestamper
+	UserDefinedSubject map[string]cryptoutil.DigestSet
 }
 
-type SignOption func(*signOptions)
+type SignOption func(*SignOptions)
 
 func SignWithSigners(signers ...cryptoutil.Signer) SignOption {
-	return func(so *signOptions) {
+	return func(so *SignOptions) {
 		so.signers = signers
 	}
 }
 
 func SignWithTimestampers(timestampers ...timestamp.Timestamper) SignOption {
-	return func(so *signOptions) {
+	return func(so *SignOptions) {
 		so.timestampers = timestampers
 	}
 }
 
+func SignWithUserDefinedSubject(subject map[string]cryptoutil.DigestSet) SignOption {
+	return func(so *SignOptions) {
+		so.UserDefinedSubject = subject
+	}
+}
+
 func Sign(bodyType string, body io.Reader, opts ...SignOption) (Envelope, error) {
-	so := &signOptions{}
+	so := &SignOptions{}
 	env := Envelope{}
 	for _, opt := range opts {
 		opt(so)
