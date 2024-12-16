@@ -6,7 +6,7 @@ toolchain go1.23.2
 
 require (
 	cloud.google.com/go/kms v1.15.9
-	github.com/CycloneDX/cyclonedx-go v0.9.1
+	github.com/CycloneDX/cyclonedx-go v0.9.2
 	github.com/aws/aws-sdk-go-v2/config v1.27.43
 	github.com/aws/aws-sdk-go-v2/service/kms v1.31.3
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
@@ -27,7 +27,7 @@ require (
 	github.com/sigstore/fulcio v1.4.5
 	github.com/spdx/tools-golang v0.5.5
 	github.com/spiffe/go-spiffe/v2 v2.1.7
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	go.step.sm/crypto v0.44.8
 	golang.org/x/mod v0.18.0
 	golang.org/x/sys v0.28.0
