@@ -21,7 +21,6 @@ import (
 	"os/exec"
 
 	"github.com/in-toto/go-witness/attestation"
-	"github.com/in-toto/go-witness/attestation/environment"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/invopop/jsonschema"
 )
@@ -80,16 +79,8 @@ func WithSilent(silent bool) Option {
 	}
 }
 
-func WithEnvironmentBlockList(blockList map[string]struct{}) Option {
-	return func(cr *CommandRun) {
-		cr.environmentBlockList = blockList
-	}
-}
-
 func New(opts ...Option) *CommandRun {
-	cr := &CommandRun{
-		environmentBlockList: environment.DefaultBlockList(),
-	}
+	cr := &CommandRun{}
 
 	for _, opt := range opts {
 		opt(cr)
@@ -118,10 +109,9 @@ type CommandRun struct {
 	ExitCode  int           `json:"exitcode"`
 	Processes []ProcessInfo `json:"processes,omitempty"`
 
-	silent               bool
-	materials            map[string]cryptoutil.DigestSet
-	enableTracing        bool
-	environmentBlockList map[string]struct{}
+	silent        bool
+	materials     map[string]cryptoutil.DigestSet
+	enableTracing bool
 }
 
 func (a *CommandRun) Schema() *jsonschema.Schema {

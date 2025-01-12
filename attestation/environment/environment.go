@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/user"
 	"runtime"
-	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/invopop/jsonschema"
@@ -35,6 +34,8 @@ const (
 var (
 	_ attestation.Attestor = &Attestor{}
 	_ EnvironmentAttestor  = &Attestor{}
+	// defaultFilterSensitiveVarsEnabled                       = false
+	// defaultDisableSensitiveVarsDefault                      = false
 )
 
 type EnvironmentAttestor interface {
@@ -47,9 +48,7 @@ type EnvironmentAttestor interface {
 }
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
-		return New()
-	})
+	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor { return New() })
 }
 
 type Attestor struct {
@@ -58,21 +57,22 @@ type Attestor struct {
 	Username  string            `json:"username"`
 	Variables map[string]string `json:"variables,omitempty"`
 
-	blockList map[string]struct{}
+	osEnviron func() []string
 }
 
 type Option func(*Attestor)
 
-func WithBlockList(blockList map[string]struct{}) Option {
+// WithCustomEnv will override the default os.Environ() method. This could be used to mock.
+func WithCustomEnv(osEnviron func() []string) Option {
 	return func(a *Attestor) {
-		a.blockList = blockList
+		a.osEnviron = osEnviron
 	}
 }
 
 func New(opts ...Option) *Attestor {
-	attestor := &Attestor{
-		blockList: DefaultBlockList(),
-	}
+	attestor := &Attestor{}
+
+	attestor.osEnviron = os.Environ
 
 	for _, opt := range opts {
 		opt(attestor)
@@ -109,25 +109,11 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		a.Username = user.Username
 	}
 
-	FilterEnvironmentArray(os.Environ(), a.blockList, func(key, val, _ string) {
-		a.Variables[key] = val
-	})
+	a.Variables = ctx.EnvironmentCapturer().Capture(a.osEnviron())
 
 	return nil
 }
 
 func (a *Attestor) Data() *Attestor {
 	return a
-}
-
-// splitVariable splits a string representing an environment variable in the format of
-// "KEY=VAL" and returns the key and val separately.
-func splitVariable(v string) (key, val string) {
-	parts := strings.SplitN(v, "=", 2)
-	key = parts[0]
-	if len(parts) > 1 {
-		val = parts[1]
-	}
-
-	return
 }
