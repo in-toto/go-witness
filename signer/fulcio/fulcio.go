@@ -432,10 +432,7 @@ func newClient(fulcioURL string, fulcioPort int, isInsecure bool) (fulciopb.CACl
 	creds := credentials.NewTLS(tlsConfig)
 
 	// Set up the gRPC dial options
-	dialOpts := []grpc.DialOption{
-		grpc.WithAuthority(u.Hostname()),
-	}
-
+	dialOpts := []grpc.DialOption{}
 	if isInsecure {
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else {
