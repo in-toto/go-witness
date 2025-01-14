@@ -10,39 +10,8 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/k8smanifest"
 	"github.com/in-toto/go-witness/cryptoutil"
-	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/require"
 )
-
-// hasPropertyKeyInAttestor searches for a property key in s.Definitions["Attestor"].Properties.
-func hasPropertyKeyInAttestor(s *jsonschema.Schema, key string) bool {
-	// s.Definitions is a map[string]*Schema
-	attestorSchema, ok := s.Definitions["Attestor"]
-	if !ok || attestorSchema == nil || attestorSchema.Properties == nil {
-		return false
-	}
-
-	for pair := attestorSchema.Properties.Oldest(); pair != nil; pair = pair.Next() {
-		if pair.Key == key {
-			return true
-		}
-	}
-	return false
-}
-
-// producter is a basic Product attestor for testing
-type producter struct {
-	name     string
-	runType  attestation.RunType
-	products map[string]attestation.Product
-}
-
-func (p producter) Name() string                                 { return p.name }
-func (p producter) Type() string                                 { return p.name }
-func (p producter) RunType() attestation.RunType                 { return p.runType }
-func (p producter) Schema() *jsonschema.Schema                   { return jsonschema.Reflect(&p) }
-func (p producter) Attest(*attestation.AttestationContext) error { return nil }
-func (p producter) Products() map[string]attestation.Product     { return p.products }
 
 func TestK8smanifest_NoProducts(t *testing.T) {
 	km := k8smanifest.New()
