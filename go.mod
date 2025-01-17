@@ -9,16 +9,19 @@ require (
 	github.com/CycloneDX/cyclonedx-go v0.9.2
 	github.com/aws/aws-sdk-go-v2/config v1.27.43
 	github.com/aws/aws-sdk-go-v2/service/kms v1.31.3
+	github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
 	github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
 	github.com/fkautz/omnitrail-go v0.0.0-20230808061951-37d34c23539d
 	github.com/gabriel-vasile/mimetype v1.4.8
+	github.com/ghodss/yaml v1.0.0
 	github.com/go-git/go-git/v5 v5.13.1
 	github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/in-toto/archivista v0.5.4
 	github.com/in-toto/attestation v1.0.2
 	github.com/invopop/jsonschema v0.12.0
+	github.com/itchyny/gojq v0.12.17
 	github.com/jellydator/ttlcache/v3 v3.2.1
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-homedir v1.1.0
@@ -83,6 +86,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.12.3 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0 // indirect
+	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/letsencrypt/boulder v0.0.0-20240620165639-de9c06129bec // indirect
