@@ -45,9 +45,10 @@ const (
 
 // DocumentRecord represents one canonicalized document from a file.
 type DocumentRecord struct {
-	FileName       string               `json:"filename"`
-	OriginalDigest cryptoutil.DigestSet `json:"originaldigest"`
-	Canonical      json.RawMessage      `json:"canonical"`
+	FileName        string               `json:"filename"`
+	OriginalDigest  cryptoutil.DigestSet `json:"originaldigest"`
+	CanonicalDigest cryptoutil.DigestSet `json:"canonicaldigest"`
+	Canonical       json.RawMessage      `json:"canonical"`
 }
 
 // Attestor handles multiple JSON/YAML files, storing a canonical doc for each.
@@ -299,13 +300,15 @@ func (a *Attestor) handleFile(ctx *attestation.AttestationContext, path string) 
 			canName := fmt.Sprintf("canonical-json:%s#doc%d", path, docIndex)
 			a.subjectDigests[canName] = dsCan
 			log.Debugf("Created subject %q for doc #%d in %s", canName, docIndex, path)
+
 		}
 
 		// Store the doc record
 		a.Documents = append(a.Documents, DocumentRecord{
-			FileName:       path,
-			OriginalDigest: origDigest,
-			Canonical:      canon,
+			FileName:        path,
+			OriginalDigest:  origDigest,
+			Canonical:       canon,
+			CanonicalDigest: dsCan,
 		})
 
 		// If queries exist, run them
