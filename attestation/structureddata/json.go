@@ -36,41 +36,31 @@ import (
 	"github.com/invopop/jsonschema"
 )
 
+// Name, Type, and RunType define the attestor identity and lifecycle phase.
 const (
-	// Name is the short name for this attestor.
-	Name = "structureddata"
-
-	// Type is the formal type URI for this attestor.
-	Type = "https://witness.dev/attestations/structureddata/v0.1"
-
-	// RunType indicates when this attestor runs in the pipeline.
+	Name    = "structureddata"
+	Type    = "https://witness.dev/attestations/structureddata/v0.1"
 	RunType = attestation.PostProductRunType
 )
 
 // DocumentRecord represents one canonicalized document from a file.
 type DocumentRecord struct {
-	// FileName is the product file from which this document came.
-	FileName string `json:"filename"`
-
-	// OriginalDigest holds the digest(s) of the entire file, e.g. sha256.
+	FileName       string               `json:"filename"`
 	OriginalDigest cryptoutil.DigestSet `json:"originalDigest"`
-
-	// Canonical is the canonical JSON for this document, stored as raw bytes
-	// so Rego or other tools can parse it directly without double-encoding.
-	Canonical json.RawMessage `json:"canonical"`
+	Canonical      json.RawMessage      `json:"canonical"`
 }
 
-// Attestor processes multiple JSON/YAML files and stores their canonical forms.
-// If the YAML has multiple documents in one file, we store each doc separately.
+// Attestor handles multiple JSON/YAML files, storing a canonical doc for each.
 type Attestor struct {
-	// Documents holds the canonical doc records for *all* files processed.
+	// Documents holds the final doc records, each referencing a canonical doc.
 	Documents []DocumentRecord `json:"documents"`
 
-	// SubjectQueries is a map of user-defined subjectName => jq expression
-	// for generating extra subject digests from the canonical form.
+	// SubjectQueries is a user-supplied map of subjectName => jq expression
+	// that extracts additional subject digests from the canonical doc.
 	SubjectQueries map[string]string `json:"subjectqueries,omitempty"`
 
-	// internal map for computed digests (including queries)
+	// subjectDigests accumulates all computed subject digests (file-level,
+	// canonical docs, and query results).
 	subjectDigests map[string]cryptoutil.DigestSet
 }
 
@@ -105,30 +95,28 @@ func init() {
 	)
 }
 
-// New returns an Attestor with empty slices/maps.
+// New creates a default Attestor instance.
 func New() *Attestor {
 	return &Attestor{
-		Documents:      []DocumentRecord{},
+		Documents:      make([]DocumentRecord, 0),
 		SubjectQueries: make(map[string]string),
 		subjectDigests: make(map[string]cryptoutil.DigestSet),
 	}
 }
 
-// ParseSubjectQueries handles user-supplied "subjectName=jqExpr" pairs.
+// ParseSubjectQueries parses "subjectName=jqExpr" pairs, allowing '=' inside the jq expression.
 func ParseSubjectQueries(sqStr string) (map[string]string, error) {
 	out := make(map[string]string)
 	s := strings.TrimSpace(sqStr)
 	if s == "" {
 		return out, nil
 	}
-
 	pairs := strings.Split(s, ";")
 	for _, pair := range pairs {
 		pair = strings.TrimSpace(pair)
 		if pair == "" {
 			continue
 		}
-		// Switch to SplitN if you want to allow '=' inside the jq expression
 		parts := strings.SplitN(pair, "=", 2)
 		if len(parts) < 2 {
 			return nil, fmt.Errorf("invalid subject-queries pair %q (missing '=')", pair)
@@ -138,33 +126,32 @@ func ParseSubjectQueries(sqStr string) (map[string]string, error) {
 		if name == "" || expr == "" {
 			return nil, fmt.Errorf("invalid subject-queries pair %q (empty name or expression)", pair)
 		}
-		// If a user repeats the same name, we'll let the last definition "win"
 		out[name] = expr
 	}
 	return out, nil
 }
 
-// Name returns the short name.
+// Name returns the short name ("structureddata").
 func (a *Attestor) Name() string {
 	return Name
 }
 
-// Type returns the URI type.
+// Type returns the attestor's URI type.
 func (a *Attestor) Type() string {
 	return Type
 }
 
-// RunType indicates when this attestor is used.
+// RunType indicates which pipeline stage this attestor executes in.
 func (a *Attestor) RunType() attestation.RunType {
 	return RunType
 }
 
-// Schema returns the JSON Schema for this attestor.
+// Schema provides a JSON Schema describing this attestor.
 func (a *Attestor) Schema() *jsonschema.Schema {
 	return jsonschema.Reflect(a)
 }
 
-// Attest processes each JSON/YAML product found. If none is found, it returns an error.
+// Attest processes each product file, handling YAML/JSON docs.
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	prods := ctx.Products()
 	if len(prods) == 0 {
@@ -176,7 +163,6 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		if isJSONorYAML(path) {
 			found = true
 			if err := a.handleFile(ctx, path); err != nil {
-				// Log the error, continue to next file
 				log.Debugf("%s attestor skipping file %s due to error: %v", Name, path, err)
 				continue
 			}
@@ -189,8 +175,83 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	return nil
 }
 
-// handleFile reads the file, calculates original digest, then attempts
-// to parse YAML→JSON, canonicalize, store doc records, and run queries.
+// Subjects returns all known subject digests from this attestor.
+func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
+	return a.subjectDigests
+}
+
+// isJSONorYAML checks if a file name ends with .json, .yaml, or .yml.
+func isJSONorYAML(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".json" || ext == ".yaml" || ext == ".yml"
+}
+
+// convertKeys recursively converts map[interface{}]interface{} to map[string]interface{},
+// so json.Marshal(...) won't fail on "unsupported type: map[interface{}]interface{}".
+func convertKeys(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[interface{}]interface{}:
+		m2 := make(map[string]interface{})
+		for key, val := range v {
+			kStr := fmt.Sprintf("%v", key)
+			m2[kStr] = convertKeys(val)
+		}
+		return m2
+	case []interface{}:
+		for i := range v {
+			v[i] = convertKeys(v[i])
+		}
+		return v
+	default:
+		return v
+	}
+}
+
+// splitYAMLDocs decodes multiple YAML documents. If none are found, it falls back to raw JSON check.
+func splitYAMLDocs(content []byte) ([][]byte, error) {
+	var out [][]byte
+
+	dec := yaml.NewDecoder(strings.NewReader(string(content)))
+	docIndex := 0
+	for {
+		var raw interface{}
+		err := dec.Decode(&raw)
+		if err != nil {
+			// If EOF or empty doc, break
+			if strings.Contains(strings.ToLower(err.Error()), "eof") ||
+				strings.Contains(strings.ToLower(err.Error()), "document is empty") {
+				log.Debugf("splitYAMLDocs: stopping decode on docIndex=%d (EOF or empty doc)", docIndex)
+				break
+			}
+			// Log a warning and break from the decode loop, preserving prior docs
+			log.Warnf("splitYAMLDocs: error decoding docIndex=%d: %v", docIndex, err)
+			break
+		}
+		// Convert YAML maps to JSON-friendly maps
+		raw = convertKeys(raw)
+
+		j, err := json.Marshal(raw)
+		if err != nil {
+			log.Debugf("splitYAMLDocs: could not marshal docIndex=%d to JSON: %v", docIndex, err)
+			continue
+		}
+		log.Debugf("splitYAMLDocs: docIndex=%d => %s", docIndex, string(j))
+		out = append(out, j)
+		docIndex++
+	}
+
+	// If no docs were parsed, maybe it's raw JSON
+	if len(out) == 0 && json.Valid(content) {
+		log.Debugf("splitYAMLDocs: no YAML docs but valid JSON. Using entire file as one doc.")
+		out = append(out, content)
+	} else if len(out) == 0 {
+		log.Warnf("splitYAMLDocs: no valid YAML or JSON found.")
+	}
+
+	return out, nil
+}
+
+// handleFile reads a single file, splits docs, canonicalizes, and stores subjects.
 func (a *Attestor) handleFile(ctx *attestation.AttestationContext, path string) error {
 	fullPath := filepath.Join(ctx.WorkingDir(), path)
 	content, err := os.ReadFile(fullPath)
@@ -198,58 +259,62 @@ func (a *Attestor) handleFile(ctx *attestation.AttestationContext, path string) 
 		return fmt.Errorf("could not read file %s: %w", path, err)
 	}
 
-	// Always compute & store original file digest, even if we fail on canonicalizing
+	// Original-file digest
 	origDigest, err := cryptoutil.CalculateDigestSetFromBytes(content, ctx.Hashes())
 	if err != nil || len(origDigest) == 0 {
-		log.Debugf("unable to compute digest for original file %s: %v", path, err)
-	} else {
-		// Example subject name: "original-file:<path>"
-		subName := fmt.Sprintf("original-file:%s", path)
-		a.subjectDigests[subName] = origDigest
+		log.Warnf("unable to compute digest for original file %s: %v", path, err)
 	}
+	subName := fmt.Sprintf("original-file:%s", path)
+	a.subjectDigests[subName] = origDigest
 
-	// Attempt to parse multiple YAML documents from the same file
 	docs, err := splitYAMLDocs(content)
 	if err != nil {
-		return fmt.Errorf("splitting YAML docs: %w", err)
+		log.Warnf("splitting YAML docs for %s: %v", path, err)
 	}
+	log.Debugf("handleFile for %s -> splitYAMLDocs => %d doc(s)", path, len(docs))
+
 	if len(docs) == 0 {
-		return fmt.Errorf("no valid YAML/JSON documents found in %s", path)
+		log.Warnf("no valid YAML/JSON documents found in %s, skipping doc", path)
+		return nil
 	}
 
+	// Process each doc, skipping only the failing ones
 	for docIndex, doc := range docs {
-		// doc is a single YAML/JSON doc
+		log.Debugf("handleFile: docIndex=%d for %s => %s", docIndex, path, string(doc))
+
+		// Canonicalize
 		canon, err := jsoncanonicalizer.Transform(doc)
 		if err != nil {
-			// skip this doc, log error
 			log.Debugf("cannot canonicalize doc #%d in %s: %v", docIndex, path, err)
 			continue
 		}
 
-		// store the doc record
-		record := DocumentRecord{
+		// Hash the canonical doc
+		dsCan, hashErr := cryptoutil.CalculateDigestSetFromBytes(canon, ctx.Hashes())
+		if hashErr != nil {
+			log.Debugf("CalculateDigestSetFromBytes error doc #%d in %s: %v", docIndex, path, hashErr)
+		}
+
+		if hashErr == nil && len(dsCan) > 0 {
+			canName := fmt.Sprintf("canonical-json:%s#doc%d", path, docIndex)
+			a.subjectDigests[canName] = dsCan
+			log.Debugf("Created subject %q for doc #%d in %s", canName, docIndex, path)
+		}
+
+		// Store the doc record
+		a.Documents = append(a.Documents, DocumentRecord{
 			FileName:       path,
 			OriginalDigest: origDigest,
 			Canonical:      canon,
-		}
-		a.Documents = append(a.Documents, record)
+		})
 
-		// Also store the canonical doc's digest
-		dsCan, e := cryptoutil.CalculateDigestSetFromBytes(canon, ctx.Hashes())
-		if e == nil && len(dsCan) > 0 {
-			subName := fmt.Sprintf("canonical-json:%s#doc%d", path, docIndex)
-			a.subjectDigests[subName] = dsCan
-		} else {
-			log.Debugf("could not compute canonical doc digest for doc #%d in %s: %v", docIndex, path, e)
-		}
-
-		// run subject queries on that canonical doc
+		// If queries exist, run them
 		var root interface{}
 		if e := json.Unmarshal(canon, &root); e != nil {
-			log.Debugf("could not re-unmarshal canonical doc #%d in %s: %v", docIndex, path, e)
+			log.Debugf("json.Unmarshal error doc #%d in %s: %v", docIndex, path, e)
 			continue
 		}
-		// For each query, parse & run. If parse fails, we warn but move on to next query.
+
 		for subjName, jqExpr := range a.SubjectQueries {
 			a.runOneJQ(path, docIndex, subjName, jqExpr, root, ctx)
 		}
@@ -257,14 +322,12 @@ func (a *Attestor) handleFile(ctx *attestation.AttestationContext, path string) 
 	return nil
 }
 
-// runOneJQ runs one jq expression on the doc root, storing additional subject digests.
-// We do not return early if there's a parse error or runtime error—we keep going for
-// each query & each doc.
+// runOneJQ applies a single jq expression to a doc, creating additional subject digests.
 func (a *Attestor) runOneJQ(filePath string, docIndex int, subjectName, jqExpr string, root interface{}, ctx *attestation.AttestationContext) {
 	q, err := gojq.Parse(jqExpr)
 	if err != nil {
-		// We log a warning (or debug) but do not return => keep trying other queries
-		log.Warnf("invalid jq expression %q for subject %q (file=%s docIndex=%d): %v", jqExpr, subjectName, filePath, docIndex, err)
+		log.Warnf("invalid jq expression %q for subject %q (file=%s docIndex=%d): %v",
+			jqExpr, subjectName, filePath, docIndex, err)
 		return
 	}
 
@@ -273,80 +336,29 @@ func (a *Attestor) runOneJQ(filePath string, docIndex int, subjectName, jqExpr s
 	for {
 		v, ok := iter.Next()
 		if !ok {
-			break // done
+			break
 		}
-		if e, isErr := v.(error); isErr {
-			log.Debugf("jq runtime error for subject %q (file=%s docIndex=%d) : %v", subjectName, filePath, docIndex, e)
+		if runtimeErr, isErr := v.(error); isErr {
+			log.Debugf("jq runtime error for subject %q (file=%s docIndex=%d): %v",
+				subjectName, filePath, docIndex, runtimeErr)
 			continue
 		}
 
 		b, _ := json.Marshal(v)
 		if string(b) == "null" {
-			// no subject derived
-			log.Debugf("jq query result is null, skipping. subject=%q file=%s docIndex=%d", subjectName, filePath, docIndex)
+			// skip null results
 			continue
 		}
 
 		ds, e := cryptoutil.CalculateDigestSetFromBytes(b, ctx.Hashes())
 		if e != nil || len(ds) == 0 {
-			log.Debugf("digest error or empty subject for %q (file=%s docIndex=%d): %v", subjectName, filePath, docIndex, e)
+			log.Debugf("digest error or empty subject for %q (file=%s docIndex=%d): %v",
+				subjectName, filePath, docIndex, e)
 			continue
 		}
 
-		// subKey includes doc index + iteration index
 		subKey := fmt.Sprintf("%s:%s#doc%d#%d", filePath, subjectName, docIndex, idx)
 		a.subjectDigests[subKey] = ds
 		idx++
 	}
-}
-
-// Subjects returns all known subject digests from this attestor.
-func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
-	return a.subjectDigests
-}
-
-// isJSONorYAML returns true if the file extension is .json or .yaml/.yml
-func isJSONorYAML(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".json" || ext == ".yaml" || ext == ".yml"
-}
-
-// splitYAMLDocs decodes multiple YAML documents (or JSON) into separate JSON byte slices.
-// If the content is valid JSON but not valid YAML, we treat the entire file as one doc.
-func splitYAMLDocs(content []byte) ([][]byte, error) {
-	var out [][]byte
-
-	// Use YAML's decoder to handle multiple documents
-	dec := yaml.NewDecoder(strings.NewReader(string(content)))
-	for {
-		var raw interface{}
-		err := dec.Decode(&raw)
-		if err != nil {
-			// If EOF or an empty doc, break
-			if strings.Contains(strings.ToLower(err.Error()), "eof") ||
-				strings.Contains(strings.ToLower(err.Error()), "document is empty") {
-				break
-			}
-			// Otherwise, just log and continue to next doc
-			log.Debugf("error decoding YAML doc: %v", err)
-			continue
-		}
-
-		// Marshal each doc as JSON
-		j, err := json.Marshal(raw)
-		if err != nil {
-			log.Debugf("could not marshal YAML doc to JSON: %v", err)
-			continue
-		}
-		out = append(out, j)
-	}
-
-	// If we didn't parse any doc, maybe it's raw JSON
-	if len(out) == 0 {
-		if json.Valid(content) {
-			out = append(out, content)
-		}
-	}
-
-	return out, nil
 }
