@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -17,6 +14,7 @@ import (
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/internal/jsoncanonicalizer"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
@@ -306,7 +304,13 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 	}
 
 	a.removeEphemeralFields(finalObj)
-	canonStr, err := toCanonicalJSON(finalObj)
+
+	canonStr, err := json.Marshal(finalObj)
+	if err != nil {
+		return nil, RecordedObject{}, fmt.Errorf("marshal error: %w", err)
+	}
+
+	cannonicalized, err := jsoncanonicalizer.Transform(canonStr)
 	if err != nil {
 		return nil, RecordedObject{}, fmt.Errorf("canonicalization error: %w", err)
 	}
@@ -339,7 +343,7 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 		Kind:          kindVal,
 		Name:          nameVal,
 		Data:          finalObj,
-		CanonicalJSON: canonStr,
+		CanonicalJSON: string(cannonicalized),
 		SubjectKey:    subjectKey,
 	}
 
@@ -416,70 +420,4 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		return true
 	})
 	return out
-}
-
-// toCanonicalJSON performs stable JSON encoding
-func toCanonicalJSON(v interface{}) (string, error) {
-	var sb strings.Builder
-	if err := encodeCanonical(v, &sb); err != nil {
-		return "", err
-	}
-	return sb.String(), nil
-}
-
-func encodeCanonical(val interface{}, sb *strings.Builder) error {
-	switch x := val.(type) {
-	case nil:
-		sb.WriteString("null")
-	case bool:
-		if x {
-			sb.WriteString("true")
-		} else {
-			sb.WriteString("false")
-		}
-	case int:
-		sb.WriteString(strconv.Itoa(x))
-	case int64:
-		sb.WriteString(strconv.FormatInt(x, 10))
-	case float64:
-		if math.Trunc(x) == x {
-			sb.WriteString(strconv.FormatInt(int64(x), 10))
-		} else {
-			sb.WriteString(strconv.FormatFloat(x, 'g', -1, 64))
-		}
-	case string:
-		sb.WriteString(strconv.Quote(x))
-	case []interface{}:
-		sb.WriteByte('[')
-		for i, elem := range x {
-			if i > 0 {
-				sb.WriteByte(',')
-			}
-			if err := encodeCanonical(elem, sb); err != nil {
-				return err
-			}
-		}
-		sb.WriteByte(']')
-	case map[string]interface{}:
-		keys := make([]string, 0, len(x))
-		for kk := range x {
-			keys = append(keys, kk)
-		}
-		sort.Strings(keys)
-		sb.WriteByte('{')
-		for i, kk := range keys {
-			if i > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteString(strconv.Quote(kk))
-			sb.WriteByte(':')
-			if err := encodeCanonical(x[kk], sb); err != nil {
-				return err
-			}
-		}
-		sb.WriteByte('}')
-	default:
-		return fmt.Errorf("unsupported type %T in canonical encoding", x)
-	}
-	return nil
 }

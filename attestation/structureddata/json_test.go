@@ -1,4 +1,4 @@
-package jsonattestor_test
+package structureddata_test
 
 import (
 	"crypto"
@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/in-toto/go-witness/attestation"
-	"github.com/in-toto/go-witness/attestation/jsonattestor"
+	"github.com/in-toto/go-witness/attestation/structureddata"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/require"
@@ -28,7 +28,7 @@ func (t testProducter) Products() map[string]attestation.Product {
 	return t.products
 }
 
-func TestJSONAttestor_NoQueries(t *testing.T) {
+func Teststructureddata_NoQueries(t *testing.T) {
 	tmpDir := t.TempDir()
 	sample := `{"k":1}`
 	path := filepath.Join(tmpDir, "f.json")
@@ -43,7 +43,7 @@ func TestJSONAttestor_NoQueries(t *testing.T) {
 		},
 	}
 
-	jAtt := jsonattestor.New()
+	jAtt := structureddata.New()
 
 	ctx, err := attestation.NewContext(
 		"test-no-queries",
@@ -60,7 +60,7 @@ func TestJSONAttestor_NoQueries(t *testing.T) {
 	require.Contains(t, subs, "canonical-json")
 }
 
-func TestJSONAttestor_SingleQuery(t *testing.T) {
+func Teststructureddata_SingleQuery(t *testing.T) {
 	tmpDir := t.TempDir()
 	sample := `{"foo":"bar"}`
 	path := filepath.Join(tmpDir, "one.json")
@@ -75,7 +75,7 @@ func TestJSONAttestor_SingleQuery(t *testing.T) {
 		},
 	}
 
-	jAtt := jsonattestor.New()
+	jAtt := structureddata.New()
 	jAtt.SubjectQueries["mySubject"] = ".foo"
 
 	ctx, err := attestation.NewContext(
@@ -94,7 +94,7 @@ func TestJSONAttestor_SingleQuery(t *testing.T) {
 	require.Contains(t, subs, "mySubject#0")
 }
 
-func TestJSONAttestor_MultipleResults(t *testing.T) {
+func Teststructureddata_MultipleResults(t *testing.T) {
 	tmpDir := t.TempDir()
 	sample := `{"nums":[1,2,3]}`
 	path := filepath.Join(tmpDir, "arr.json")
@@ -109,7 +109,7 @@ func TestJSONAttestor_MultipleResults(t *testing.T) {
 		},
 	}
 
-	jAtt := jsonattestor.New()
+	jAtt := structureddata.New()
 	jAtt.SubjectQueries["arr"] = ".nums[]"
 
 	ctx, err := attestation.NewContext(
@@ -130,7 +130,7 @@ func TestJSONAttestor_MultipleResults(t *testing.T) {
 	require.Contains(t, subs, "arr#2")
 }
 
-func TestJSONAttestor_ObjectResult(t *testing.T) {
+func Teststructureddata_ObjectResult(t *testing.T) {
 	tmpDir := t.TempDir()
 	sample := `{"x":{"k":"v"}}`
 	path := filepath.Join(tmpDir, "obj.json")
@@ -145,7 +145,7 @@ func TestJSONAttestor_ObjectResult(t *testing.T) {
 		},
 	}
 
-	jAtt := jsonattestor.New()
+	jAtt := structureddata.New()
 	jAtt.SubjectQueries["obj"] = ".x"
 
 	ctx, err := attestation.NewContext(
@@ -164,7 +164,7 @@ func TestJSONAttestor_ObjectResult(t *testing.T) {
 	require.Contains(t, subs, "obj#0")
 }
 
-func TestJSONAttestor_BadQuery(t *testing.T) {
+func Teststructureddata_BadQuery(t *testing.T) {
 	tmpDir := t.TempDir()
 	sample := `{"x":10}`
 	path := filepath.Join(tmpDir, "bad.json")
@@ -179,7 +179,7 @@ func TestJSONAttestor_BadQuery(t *testing.T) {
 		},
 	}
 
-	jAtt := jsonattestor.New()
+	jAtt := structureddata.New()
 	jAtt.SubjectQueries["bad"] = ".x("
 
 	ctx, err := attestation.NewContext(
@@ -315,7 +315,7 @@ func TestParseSubjectQueries(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := jsonattestor.ParseSubjectQueries(tc.input)
+			got, err := structureddata.ParseSubjectQueries(tc.input)
 			if tc.wantErr {
 				require.Error(t, err)
 				if tc.errContains != "" {

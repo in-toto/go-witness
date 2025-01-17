@@ -9,7 +9,6 @@ require (
 	github.com/CycloneDX/cyclonedx-go v0.9.2
 	github.com/aws/aws-sdk-go-v2/config v1.27.43
 	github.com/aws/aws-sdk-go-v2/service/kms v1.31.3
-	github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
 	github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
@@ -37,6 +36,7 @@ require (
 	google.golang.org/api v0.177.0
 	google.golang.org/grpc v1.66.3
 	gopkg.in/go-jose/go-jose.v2 v2.6.3
+	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.30.8
 )
 
@@ -163,7 +163,6 @@ require (
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/sigstore/rekor => github.com/testifysec/rekor v0.4.0-dsse-intermediates-2
