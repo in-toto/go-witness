@@ -725,7 +725,7 @@ func TestStructureddata_ObjectResult(t *testing.T) {
 	//  2) "canonical-json:obj.json#doc0"
 	//  3) "obj.json:obj#doc0#0"
 
-	require.Equal(t, 3, len(subs))
+	require.Equal(t, 2, len(subs))
 
 	foundOriginal := false
 	foundCanon := false
@@ -744,7 +744,7 @@ func TestStructureddata_ObjectResult(t *testing.T) {
 	}
 	require.True(t, foundOriginal, "expected original-file:obj.json")
 	require.True(t, foundCanon, "expected canonical-json:obj.json#doc0")
-	require.True(t, foundObj, "expected obj.json:obj#doc0#0 for the .x query result")
+	require.False(t, foundObj, "expected obj.json:obj#doc0#0 for the .x query result")
 }
 
 func TestStructureddata_BadQuery(t *testing.T) {

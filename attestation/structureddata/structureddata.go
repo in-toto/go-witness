@@ -326,6 +326,9 @@ func (a *Attestor) handleFile(ctx *attestation.AttestationContext, path string) 
 }
 
 // runOneJQ applies a single jq expression to a doc, creating additional subject digests.
+// runOneJQ applies a single jq expression to a doc, creating additional subject digests.
+// The jq expression must evaluate to a string or a number (converted to string). All
+// other result types are skipped with a warning.
 func (a *Attestor) runOneJQ(filePath string, docIndex int, subjectName, jqExpr string, root interface{}, ctx *attestation.AttestationContext) {
 	q, err := gojq.Parse(jqExpr)
 	if err != nil {
@@ -339,6 +342,7 @@ func (a *Attestor) runOneJQ(filePath string, docIndex int, subjectName, jqExpr s
 	for {
 		v, ok := iter.Next()
 		if !ok {
+			// No more results.
 			break
 		}
 		if runtimeErr, isErr := v.(error); isErr {
@@ -346,17 +350,29 @@ func (a *Attestor) runOneJQ(filePath string, docIndex int, subjectName, jqExpr s
 				subjectName, filePath, docIndex, runtimeErr)
 			continue
 		}
-
-		b, _ := json.Marshal(v)
-		if string(b) == "null" {
-			// skip null results
+		if v == nil {
+			// Skip null results.
 			continue
 		}
 
-		ds, e := cryptoutil.CalculateDigestSetFromBytes(b, ctx.Hashes())
-		if e != nil || len(ds) == 0 {
+		var valStr string
+		switch tv := v.(type) {
+		case string:
+			valStr = tv
+		case float64, int, int32, int64:
+			// Convert numbers to string form. (float64 is how gojq typically represents numbers.)
+			valStr = fmt.Sprintf("%v", tv)
+		default:
+			log.Warnf("jq expression for subject %q (file=%s docIndex=%d) returned unsupported type (%T); skipping",
+				subjectName, filePath, docIndex, tv)
+			continue
+		}
+
+		// Now compute the digest from the string value.
+		ds, digestErr := cryptoutil.CalculateDigestSetFromBytes([]byte(valStr), ctx.Hashes())
+		if digestErr != nil || len(ds) == 0 {
 			log.Debugf("digest error or empty subject for %q (file=%s docIndex=%d): %v",
-				subjectName, filePath, docIndex, e)
+				subjectName, filePath, docIndex, digestErr)
 			continue
 		}
 
