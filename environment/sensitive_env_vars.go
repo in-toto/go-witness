@@ -1,4 +1,4 @@
-// Copyright 2021 The Witness Contributors
+// Copyright 2024 The Witness Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,9 +14,22 @@
 
 package environment
 
-// sourced from https://github.com/Puliczek/awesome-list-of-secrets-in-environment-variables/blob/main/raw_list.txt
-func DefaultBlockList() map[string]struct{} {
+// DefaultSensitiveEnvList return a list of known sensitive environment keys.
+//
+// Explicit list sourced from https://github.com/Puliczek/awesome-list-of-secrets-in-environment-variables/blob/main/raw_list.txt
+func DefaultSensitiveEnvList() map[string]struct{} {
 	return map[string]struct{}{
+
+		// Glob pattern list
+		"*TOKEN*":      {},
+		"*SECRET*":     {},
+		"*API_KEY*":    {},
+		"*PASSWORD*":   {},
+		"*JWT*":        {},
+		"*sshKey*":     {},
+		"*passphrase*": {},
+
+		// Explicit list
 		"AWS_ACCESS_KEY_ID":              {},
 		"AWS_SECRET_ACCESS_KEY":          {},
 		"AMAZON_AWS_ACCESS_KEY_ID":       {},
@@ -97,18 +110,5 @@ func DefaultBlockList() map[string]struct{} {
 		"VULTR_SECRET":                   {},
 		"ACTIONS_RUNTIME_TOKEN":          {},
 		"ACTIONS_ID_TOKEN_REQUEST_TOKEN": {},
-	}
-}
-
-// FilterEnvironmentArray expects an array of strings representing environment variables.  Each element of the array is expected to be in the format of "KEY=VALUE".
-// blockList is the list of elements to filter from variables, and for each element of variables that does not appear in the blockList onAllowed will be called.
-func FilterEnvironmentArray(variables []string, blockList map[string]struct{}, onAllowed func(key, val, orig string)) {
-	for _, v := range variables {
-		key, val := splitVariable(v)
-		if _, inBlockList := blockList[key]; inBlockList {
-			continue
-		}
-
-		onAllowed(key, val, v)
 	}
 }
