@@ -199,8 +199,19 @@ func TestSigner(t *testing.T) {
 	require.NotNil(t, signer)
 	provider = New(WithFulcioURL("https://test"), WithToken(token))
 	_, err = provider.Signer(ctx)
+
+	// A bad url is getting system-specific dns error messages
+	// This checks for one of those messages
+	dnsErrChecker := func(err error) bool {
+		if strings.Contains(err.Error(), "zero addresses") ||
+			strings.Contains(err.Error(), "record lookup error") {
+			return true
+		}
+		return false
+	}
+
 	//this should be a tranport err since we cant actually test on 443 which is the default
-	require.ErrorContains(t, err, "lookup test")
+	require.True(t, dnsErrChecker(err))
 
 	// Test signer with token read from file
 	// NOTE: this function could be refactored to accept a fileSystem or io.Reader so reading the file can be mocked,
