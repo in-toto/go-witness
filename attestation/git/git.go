@@ -17,6 +17,7 @@ package git
 import (
 	"crypto"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -25,7 +26,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 	"github.com/invopop/jsonschema"
+	giturl "github.com/whilp/git-urls"
 )
 
 const (
@@ -156,7 +159,14 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	for _, remote := range remotes {
-		a.Remotes = append(a.Remotes, remote.Config().URLs...)
+		for _, u := range remote.Config().URLs {
+			nu, err := normaliseRemoteURL(u)
+			if err != nil {
+				log.Debug(err.Error())
+			}
+
+			a.Remotes = append(a.Remotes, nu)
+		}
 	}
 
 	refs, err := repo.References()
@@ -326,6 +336,16 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		subjects[subjectName] = ds
 	}
 
+	// add remotes
+	for _, remote := range a.Remotes {
+		subjectName = fmt.Sprintf("remote:%v", remote)
+		ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(remote), hashes)
+		if err != nil {
+			return nil
+		}
+		subjects[subjectName] = ds
+	}
+
 	// add refname short
 	subjectName = fmt.Sprintf("refnameshort:%v", a.RefNameShort)
 	ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(a.RefNameShort), hashes)
@@ -370,4 +390,17 @@ func statusCodeString(statusCode git.StatusCode) string {
 	default:
 		return string(statusCode)
 	}
+}
+
+func normaliseRemoteURL(url string) (string, error) {
+	rurl, err := giturl.Parse(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse remote url: %w", err)
+	}
+
+	if strings.HasSuffix(rurl.Path, ".git") {
+		rurl.Path = strings.TrimSuffix(rurl.Path, ".git")
+	}
+
+	return path.Join(rurl.Host, rurl.Path), nil
 }
