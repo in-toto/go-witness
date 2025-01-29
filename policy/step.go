@@ -40,9 +40,17 @@ type Functionary struct {
 }
 
 // +kubebuilder:object:generate=true
+type AiPolicy struct {
+	Name   string `json:"name"`
+	Prompt string `json:"prompt"`
+	Model  string `json:"model,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
 type Attestation struct {
 	Type         string       `json:"type"`
 	RegoPolicies []RegoPolicy `json:"regopolicies"`
+	AiPolicies   []AiPolicy   `json:"aipolicies"`
 }
 
 // +kubebuilder:object:generate=true
