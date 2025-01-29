@@ -16,15 +16,20 @@ package golang
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/hashicorp/go-version"
 	"os"
+	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
 )
 
@@ -45,10 +50,57 @@ var (
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
-	})
+	},
+		registry.StringSliceConfigOption(
+			"exclude-packages",
+			fmt.Sprintf("Packages to exclude from checking for unit test coverage."),
+			[]string{},
+			func(a attestation.Attestor, packages []string) (attestation.Attestor, error) {
+				goAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a maven attestor", a)
+				}
+
+				WithExcludePackages(packages)(goAttestor)
+				return goAttestor, nil
+			},
+		),
+		registry.StringConfigOption(
+			"binary-path",
+			fmt.Sprintf("The path to the go binary used to run the step (default uses `go` in $PATH)."),
+			"",
+			func(a attestation.Attestor, path string) (attestation.Attestor, error) {
+				goAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a maven attestor", a)
+				}
+
+				WithBinaryPath(path)(goAttestor)
+				return goAttestor, nil
+			},
+		),
+	)
+}
+
+type Option func(*Attestor)
+
+func WithBinaryPath(path string) Option {
+	return func(a *Attestor) {
+		a.binaryPath = path
+	}
+}
+
+func WithExcludePackages(packages []string) Option {
+	return func(a *Attestor) {
+		a.ExcludedPackages = packages
+	}
 }
 
 type Attestor struct {
+	binaryPath          string
+	GoVersion           string               `json:"goVersion"`
+	CoverageEnabled     bool                 `json:"coverageEnabled"`
+	ExcludedPackages    []string             `json:"excludePackages"`
 	OutputFile          string               `json:"outputFile"`
 	PercentageCoverage  float64              `json:"percentageCoverage"`
 	Pass                bool                 `json:"pass"`
@@ -102,10 +154,44 @@ func (a *Attestor) Schema() *jsonschema.Schema {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
+	if err := a.checkGoVersion(); err != nil {
+		log.Errorf("(attestation/golang) error getting go tool version: %w", err)
+		return err
+	}
 	if err := a.getCandidate(ctx); err != nil {
 		log.Debugf("(attestation/golang) error getting candidate: %w", err)
 		return err
 	}
+
+	return nil
+}
+
+func (a *Attestor) checkGoVersion() error {
+	var ver string
+	var err error
+	if a.binaryPath != "" {
+		ver, err = runGoVersion(a.binaryPath)
+	} else {
+		ver, err = runGoVersion("go")
+	}
+	if err != nil {
+		return err
+	}
+
+	minSupported := "1.24rc2"
+	rv, err := version.NewVersion(minSupported)
+	if err != nil {
+		return fmt.Errorf("(attestation/golang) failed to parse version %s: %w", minSupported, err)
+	}
+	cv, err := version.NewVersion(ver)
+	if err != nil {
+		return fmt.Errorf("(attestation/golang) failed to parse version %s: %w", ver, err)
+	}
+	if cv.LessThan(rv) {
+		return fmt.Errorf("(attestation/golang) version of go found (%s) is less than minimum supported version for attestor (%s)", ver, minSupported)
+	}
+
+	a.GoVersion = ver
 
 	return nil
 }
@@ -141,10 +227,9 @@ func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 		scanner := bufio.NewScanner(f)
 
 		a.Packages = map[string]Package{}
+		a.CoverageEnabled = false
 		var cancel bool
 
-		totalPass := true
-		totalCoverage := 0.0
 		for scanner.Scan() {
 			line := scanner.Bytes()
 
@@ -180,22 +265,17 @@ func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 					}
 				}
 
-				percent := parseJsonBlock(&test.Element, output)
-				if percent != nil {
-					log.Debugf("(attestation/golang) unexpected percentage %f found in output %s for test %s", *percent, output.Output, output.Test)
+				var tmpPercent float64 = 0
+				parseJsonBlock(&test.Element, &tmpPercent, output)
+				if tmpPercent != 0 {
+					log.Debugf("(attestation/golang) unexpected percentage %f found in output %s for test %s", tmpPercent, output.Output, output.Test)
 				}
 
 				pack.Tests[output.Test] = test
 			} else {
-				percent := parseJsonBlock(&pack.Element, output)
-				if percent != nil {
-					pack.PercentageCoverage = *percent
-					totalCoverage += *percent
-				}
-
-				// NOTE: we only need to check the total package's test for a pass/fail
-				if !pack.Pass {
-					totalPass = false
+				foundPercent := parseJsonBlock(&pack.Element, &pack.PercentageCoverage, output)
+				if foundPercent {
+					a.CoverageEnabled = foundPercent
 				}
 			}
 
@@ -204,6 +284,32 @@ func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 
 		if cancel {
 			continue
+		}
+
+		if len(a.ExcludedPackages) > 0 {
+			for _, name := range a.ExcludedPackages {
+				if pack, ok := a.Packages[name]; ok {
+					if len(pack.Tests) > 0 {
+						log.Warnf("(attestation/golang) package %s containing tests excluded from attestation", name)
+					}
+					delete(a.Packages, name)
+				} else {
+					log.Warnf("(attestation/golang) excluded package %s not found in test results", name)
+				}
+			}
+		}
+
+		totalPass := true
+		totalCoverage := 0.0
+		for _, p := range a.Packages {
+			if p.PercentageCoverage != 0 {
+				totalCoverage += p.PercentageCoverage
+			}
+
+			// NOTE: we only need to check the total package's test for a pass/fail
+			if !p.Pass {
+				totalPass = false
+			}
 		}
 
 		// NOTE: to get the average we need to divide by the number of packages
@@ -221,29 +327,29 @@ func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 	return fmt.Errorf("no golang file found")
 }
 
-func parseJsonBlock(elem *Element, output GoOutput) *float64 {
+func parseJsonBlock(elem *Element, percent *float64, output GoOutput) bool {
 	switch output.Action {
 	case "output":
 		if output.Output == "" {
 			log.Debugf("(attestation/golang) empty output found for element %s", elem.Name)
-			return nil
-		} else if strings.HasSuffix(output.Output, "% of statements\n") {
-			percentage := parsePercentFromOutput(output.Output)
+			return false
+		} else if strings.HasSuffix(output.Output, "% of statements\n") && *percent == 0 {
+			*percent = parsePercentFromOutput(output.Output)
 			elem.Outputs = append(elem.Outputs, output.Output)
-			return &percentage
+			return true
+		} else {
+			elem.Outputs = append(elem.Outputs, output.Output)
 		}
-
-		elem.Outputs = append(elem.Outputs, output.Output)
 	case "pass":
 		elem.Pass = true
 	case "fail":
 		elem.Pass = false
 	default:
 		log.Debugf("(attestation/golang) ignoring action %s", output.Action)
-		return nil
+		return false
 	}
 
-	return nil
+	return false
 }
 
 func parsePercentFromOutput(output string) float64 {
@@ -268,4 +374,23 @@ func parsePercentFromOutput(output string) float64 {
 	}
 
 	return percentage
+}
+
+func runGoVersion(path string) (string, error) {
+	cmd := exec.Command(path, "version")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+
+	// Regex to extract only the Go version (e.g., "1.24rc2" or "1.23.1")
+	re := regexp.MustCompile(`go(\d+\.\d+(\.\d+)?(rc\d+)?)`)
+	match := re.FindStringSubmatch(out.String())
+	if len(match) > 1 {
+		return match[1], nil
+	}
+
+	return "", fmt.Errorf("(attestation/golang) failed to extract go version from output: %s", out.String())
 }

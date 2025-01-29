@@ -81,6 +81,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.12.3 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0 // indirect
+	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/letsencrypt/boulder v0.0.0-20240620165639-de9c06129bec // indirect
