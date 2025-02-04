@@ -26,6 +26,7 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/gitlab"
 	_ "github.com/in-toto/go-witness/attestation/jenkins"
 	_ "github.com/in-toto/go-witness/attestation/jwt"
+	_ "github.com/in-toto/go-witness/attestation/k8smanifest"
 	_ "github.com/in-toto/go-witness/attestation/link"
 	_ "github.com/in-toto/go-witness/attestation/material"
 	_ "github.com/in-toto/go-witness/attestation/maven"

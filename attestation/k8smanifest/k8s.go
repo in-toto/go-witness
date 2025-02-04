@@ -25,6 +25,11 @@ import (
 	"sync"
 
 	"gopkg.in/yaml.v3"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
@@ -32,6 +37,7 @@ import (
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
+	"k8s.io/client-go/kubernetes/scheme"
 )
 
 // Name is the identifier for this attestor.
@@ -72,6 +78,13 @@ type RecordedObject struct {
 	CanonicalJSON  string               `json:"canonicalJSON"`
 	SubjectKey     string               `json:"subjectKey"`
 	ComputedDigest cryptoutil.DigestSet `json:"computedDigest"`
+	RecordedImages []RecordedImage      `json:"recordedImages"`
+}
+
+// Recorded image stores the details of images found in kubernetes manifests
+type RecordedImage struct {
+	Reference string `json:"reference"`
+	Digest    string `json:"digest"`
 }
 
 // Attestor implements the Witness Attestor interface for Kubernetes manifests.
@@ -296,6 +309,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 				log.Debugf("Failed to unmarshal doc to JSON from %s: %v", path, e)
 				continue
 			}
+
 			docMap, ok := rawDoc.(map[string]interface{})
 			if !ok || docMap == nil {
 				continue
@@ -355,6 +369,15 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 		return nil, RecordedObject{}, fmt.Errorf("marshal error: %w", err)
 	}
 
+	decode := scheme.Codecs.UniversalDeserializer().Decode
+
+	obj, gvk, err := decode(cleanBytes, nil, nil)
+	if err != nil {
+		err := fmt.Errorf("Failed to decode file %s. Continuing: %s", filePath, err.Error())
+		log.Debugf("(attestation/k8smanifest) %w", err)
+		return nil, RecordedObject{}, err
+	}
+
 	// canonical JSON
 	canon, err := jsoncanonicalizer.Transform(cleanBytes)
 	if err != nil {
@@ -362,15 +385,18 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 	}
 
 	kindVal := "UnknownKind"
-	if kv, ok := finalObj["kind"].(string); ok && kv != "" {
-		kindVal = kv
+	if len(gvk.Kind) > 0 {
+		kindVal = gvk.Kind
 	}
+
 	nameVal := "unknown"
 	if md, ok := finalObj["metadata"].(map[string]interface{}); ok && md != nil {
 		if nm, ok := md["name"].(string); ok && nm != "" {
 			nameVal = nm
 		}
 	}
+
+	recordedImages := recordImages(obj, gvk)
 
 	baseKey := fmt.Sprintf("k8smanifest:%s:%s:%s", filePath, kindVal, nameVal)
 	subjectKey := baseKey
@@ -385,11 +411,12 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 	}
 
 	rec := RecordedObject{
-		FilePath:      filePath,
-		Kind:          kindVal,
-		Name:          nameVal,
-		CanonicalJSON: string(canon),
-		SubjectKey:    subjectKey,
+		FilePath:       filePath,
+		Kind:           kindVal,
+		Name:           nameVal,
+		CanonicalJSON:  string(canon),
+		SubjectKey:     subjectKey,
+		RecordedImages: recordedImages,
 	}
 
 	// Return canonical bytes for hashing, and the RecordedObject skeleton
@@ -537,4 +564,57 @@ func convertKeys(value interface{}) interface{} {
 	default:
 		return v
 	}
+}
+
+func recordImages(obj runtime.Object, gvk *schema.GroupVersionKind) []RecordedImage {
+	recordedImages := []RecordedImage{}
+	switch gvk.Kind {
+	case "Pod":
+		for _, c := range obj.(*corev1.Pod).Spec.Containers {
+			recordedImages = append(recordedImages, newRecordedImage(c.Image))
+		}
+	case "Deployment":
+		for _, c := range obj.(*appsv1.Deployment).Spec.Template.Spec.Containers {
+			recordedImages = append(recordedImages, newRecordedImage(c.Image))
+		}
+	case "ReplicaSet":
+		for _, c := range obj.(*appsv1.ReplicaSet).Spec.Template.Spec.Containers {
+			recordedImages = append(recordedImages, newRecordedImage(c.Image))
+		}
+	case "StatefulSet":
+		for _, c := range obj.(*appsv1.StatefulSet).Spec.Template.Spec.Containers {
+			recordedImages = append(recordedImages, newRecordedImage(c.Image))
+		}
+	case "DaemonSet":
+		for _, c := range obj.(*appsv1.DaemonSet).Spec.Template.Spec.Containers {
+			recordedImages = append(recordedImages, newRecordedImage(c.Image))
+		}
+	case "Job":
+		for _, c := range obj.(*batchv1.Job).Spec.Template.Spec.Containers {
+			recordedImages = append(recordedImages, newRecordedImage(c.Image))
+		}
+	case "CronJob":
+		for _, c := range obj.(*batchv1.CronJob).Spec.JobTemplate.Spec.Template.Spec.Containers {
+			recordedImages = append(recordedImages, newRecordedImage(c.Image))
+		}
+	default:
+		log.Debugf("(attestation/k8smanifest) Manifest of kind %s cannot be parsed to find images", gvk.Kind)
+	}
+
+	return recordedImages
+}
+
+func newRecordedImage(image string) RecordedImage {
+	rc := RecordedImage{
+		Reference: image,
+	}
+
+	dig, err := DigestForRef(rc.Reference)
+	if err == nil && dig != "" {
+		rc.Digest = dig
+	} else {
+		log.Debug("(attestation/k8smanifest) failed to get digest for reference %s", rc.Reference)
+	}
+
+	return rc
 }
