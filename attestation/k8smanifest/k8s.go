@@ -1,0 +1,540 @@
+// Copyright 2025 The Witness Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package k8smanifest
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/internal/jsoncanonicalizer"
+	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/registry"
+	"github.com/invopop/jsonschema"
+)
+
+// Name is the identifier for this attestor.
+const Name = "k8smanifest"
+
+// Type is the URI identifying the predicate type.
+const Type = "https://witness.dev/attestations/k8smanifest/v0.2"
+
+// RunType is the run stage at which this attestor is executed.
+const RunType = attestation.PostProductRunType
+
+// Default ephemeral fields to remove.
+var defaultEphemeralFields = []string{
+	"metadata.resourceVersion",
+	"metadata.uid",
+	"metadata.creationTimestamp",
+	"metadata.managedFields",
+	"metadata.generation",
+	"status",
+}
+
+// Default ephemeral annotations to remove.
+var defaultEphemeralAnnotations = []string{
+	"kubectl.kubernetes.io/last-applied-configuration",
+	"deployment.kubernetes.io/revision",
+	"witness.dev/content-hash",
+	"cosign.sigstore.dev/message",
+	"cosign.sigstore.dev/signature",
+	"cosign.sigstore.dev/bundle",
+}
+
+// RecordedObject stores ephemeral-cleaned doc details.
+type RecordedObject struct {
+	FilePath       string               `json:"filePath"`
+	Kind           string               `json:"kind"`
+	Name           string               `json:"name"`
+	Data           json.RawMessage      `json:"data"`
+	CanonicalJSON  string               `json:"canonicalJSON"`
+	SubjectKey     string               `json:"subjectKey"`
+	ComputedDigest cryptoutil.DigestSet `json:"computedDigest"`
+}
+
+// Attestor implements the Witness Attestor interface for Kubernetes manifests.
+type Attestor struct {
+	ServerSideDryRun  bool     `json:"server_side_dry_run,omitempty"`
+	KubeconfigPath    string   `json:"kubeconfig,omitempty"`
+	IgnoreFields      []string `json:"IgnoreFields,omitempty" jsonschema:"title=IgnoreFields"`
+	IgnoreAnnotations []string `json:"IgnoreAnnotations,omitempty"`
+	ephemeralFields   []string
+	ephemeralAnn      []string
+	RecordedDocs      []RecordedObject `json:"recorded_docs,omitempty"`
+	subjectDigests    sync.Map
+}
+
+var (
+	_ attestation.Attestor  = &Attestor{}
+	_ attestation.Subjecter = &Attestor{}
+)
+
+func init() {
+	attestation.RegisterAttestation(
+		Name,
+		Type,
+		RunType,
+		func() attestation.Attestor {
+			return New()
+		},
+		registry.BoolConfigOption(
+			"server-side-dry-run",
+			"Perform a server-side dry-run to normalize resource defaults before hashing",
+			false,
+			func(a attestation.Attestor, val bool) (attestation.Attestor, error) {
+				km, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithServerSideDryRun(val)(km)
+				return km, nil
+			},
+		),
+		registry.StringConfigOption(
+			"kubeconfig",
+			"Path to the kubeconfig file (used during server-side dry-run)",
+			"",
+			func(a attestation.Attestor, val string) (attestation.Attestor, error) {
+				km, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithKubeconfigPath(val)(km)
+				return km, nil
+			},
+		),
+		registry.StringSliceConfigOption(
+			"ignore-fields",
+			"Additional ephemeral fields to remove (dot-separated), e.g., metadata.annotations.myorg",
+			nil,
+			func(a attestation.Attestor, fields []string) (attestation.Attestor, error) {
+				km, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithExtraIgnoreFields(fields...)(km)
+				return km, nil
+			},
+		),
+		registry.StringSliceConfigOption(
+			"ignore-annotations",
+			"Additional ephemeral annotations to remove, e.g. witness.dev/another-ephemeral",
+			nil,
+			func(a attestation.Attestor, ann []string) (attestation.Attestor, error) {
+				km, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithExtraIgnoreAnnotations(ann...)(km)
+				return km, nil
+			},
+		),
+	)
+}
+
+// New returns a default Attestor
+func New() *Attestor {
+	return &Attestor{
+		ServerSideDryRun:  false,
+		KubeconfigPath:    "",
+		IgnoreFields:      []string{},
+		IgnoreAnnotations: []string{},
+
+		ephemeralFields: defaultEphemeralFields,
+		ephemeralAnn:    defaultEphemeralAnnotations,
+
+		RecordedDocs: []RecordedObject{},
+	}
+}
+
+// WithServerSideDryRun sets the server-side dry-run option.
+func WithServerSideDryRun(dryRun bool) func(*Attestor) {
+	return func(a *Attestor) {
+		a.ServerSideDryRun = dryRun
+	}
+}
+
+// WithKubeconfigPath sets the kubeconfig path used in server-side dry-run.
+func WithKubeconfigPath(path string) func(*Attestor) {
+	return func(a *Attestor) {
+		a.KubeconfigPath = path
+	}
+}
+
+// WithExtraIgnoreFields appends additional ephemeral fields to ignore.
+func WithExtraIgnoreFields(fields ...string) func(*Attestor) {
+	return func(a *Attestor) {
+		a.IgnoreFields = append(a.IgnoreFields, fields...)
+		a.ephemeralFields = append(defaultEphemeralFields, a.IgnoreFields...)
+	}
+}
+
+// WithExtraIgnoreAnnotations appends additional ephemeral annotations to ignore.
+func WithExtraIgnoreAnnotations(anns ...string) func(*Attestor) {
+	return func(a *Attestor) {
+		a.IgnoreAnnotations = append(a.IgnoreAnnotations, anns...)
+		a.ephemeralAnn = append(defaultEphemeralAnnotations, a.IgnoreAnnotations...)
+	}
+}
+
+// Name satisfies the Attestor interface.
+func (a *Attestor) Name() string {
+	return Name
+}
+
+// Type satisfies the Attestor interface.
+func (a *Attestor) Type() string {
+	return Type
+}
+
+// RunType satisfies the Attestor interface.
+func (a *Attestor) RunType() attestation.RunType {
+	return RunType
+}
+
+// Schema provides a JSON schema for this attestor.
+func (a *Attestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(a)
+}
+
+// Attest processes any YAML/JSON products, canonicalizes them, removes ephemeral fields, etc.
+func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
+	products := ctx.Products()
+
+	// skip if no products
+	if len(products) == 0 {
+		log.Warn("no products found, skipping k8smanifest attestor")
+		return nil
+	}
+
+	// skip if no .yaml/.yml/.json found
+	hasYamlOrJSON := false
+	for path := range products {
+		if isJSONorYAML(path) {
+			hasYamlOrJSON = true
+			break
+		}
+	}
+	if !hasYamlOrJSON {
+		log.Warn("did not find any .json, .yaml or .yml file among products, skipping k8smanifest attestor")
+		return nil
+	}
+
+	parsedAnything := false
+	for path := range products {
+		if !isJSONorYAML(path) {
+			continue
+		}
+		fullPath := filepath.Join(ctx.WorkingDir(), path)
+		content, err := os.ReadFile(fullPath)
+		if err != nil {
+			log.Debugf("failed reading file %s: %v", fullPath, err)
+			continue
+		}
+
+		// Decide whether to parse as JSON or split as YAML
+		ext := strings.ToLower(filepath.Ext(path))
+		var docs [][]byte
+		if ext == ".json" {
+			// If it's valid JSON, handle it
+			if !json.Valid(content) {
+				log.Debugf("invalid JSON found in %s, skipping", path)
+				continue
+			}
+			var top interface{}
+			if err := json.Unmarshal(content, &top); err != nil {
+				log.Debugf("cannot unmarshal top-level JSON in %s: %v", path, err)
+				continue
+			}
+			switch arr := top.(type) {
+			case []interface{}:
+				// each array entry is a doc
+				for _, el := range arr {
+					elBytes, e := json.Marshal(el)
+					if e == nil {
+						docs = append(docs, elBytes)
+					}
+				}
+			default:
+				// single doc
+				docs = append(docs, content)
+			}
+		} else {
+			// YAML path
+			docs, err = splitYAMLDocs(content)
+			if err != nil {
+				log.Debugf("Failed to split YAML docs for %s: %v", path, err)
+				continue
+			}
+		}
+
+		for _, doc := range docs {
+			var rawDoc interface{}
+			if e := json.Unmarshal(doc, &rawDoc); e != nil {
+				log.Debugf("Failed to unmarshal doc to JSON from %s: %v", path, e)
+				continue
+			}
+			docMap, ok := rawDoc.(map[string]interface{})
+			if !ok || docMap == nil {
+				continue
+			}
+
+			// processDoc does ephemeral removal & canonicalization
+			canonBytes, recorded, err := a.processDoc(docMap, path)
+			if err != nil {
+				log.Debugf("error processing doc in %s: %v", path, err)
+				continue
+			}
+
+			// Calculate digest from canonical form
+			ds, err := cryptoutil.CalculateDigestSetFromBytes(canonBytes, ctx.Hashes())
+			if err != nil {
+				log.Debugf("failed hashing doc in %s: %v", path, err)
+				continue
+			}
+
+			// IMPORTANT FIX: use the ephemeral-removed JSON (cleanBytes) in recorded.Data
+			// instead of the original raw 'doc'.
+			recorded.Data = canonBytes
+			recorded.ComputedDigest = ds
+			a.RecordedDocs = append(a.RecordedDocs, recorded)
+			a.subjectDigests.Store(recorded.SubjectKey, ds)
+
+			parsedAnything = true
+		}
+	}
+
+	if !parsedAnything {
+		log.Warn("did not parse any valid yaml or json docs in k8smanifest attestor, skipping")
+	}
+
+	return nil
+}
+
+// processDoc strips ephemeral fields, optionally does a server-side dry-run,
+// then returns canonical JSON bytes plus a RecordedObject (without final digest).
+func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]byte, RecordedObject, error) {
+	finalObj := doc
+	if a.ServerSideDryRun {
+		dryObj, err := a.runDryRun(doc)
+		if err == nil {
+			finalObj = dryObj
+		} else {
+			log.Debugf("server-side dry-run error for %s: %v", filePath, err)
+		}
+	}
+
+	// remove ephemeral fields/annotations
+	a.removeEphemeralFields(finalObj)
+
+	// ephemeral-cleaned JSON
+	cleanBytes, err := json.Marshal(finalObj)
+	if err != nil {
+		return nil, RecordedObject{}, fmt.Errorf("marshal error: %w", err)
+	}
+
+	// canonical JSON
+	canon, err := jsoncanonicalizer.Transform(cleanBytes)
+	if err != nil {
+		return nil, RecordedObject{}, fmt.Errorf("canonicalization error: %w", err)
+	}
+
+	kindVal := "UnknownKind"
+	if kv, ok := finalObj["kind"].(string); ok && kv != "" {
+		kindVal = kv
+	}
+	nameVal := "unknown"
+	if md, ok := finalObj["metadata"].(map[string]interface{}); ok && md != nil {
+		if nm, ok := md["name"].(string); ok && nm != "" {
+			nameVal = nm
+		}
+	}
+
+	baseKey := fmt.Sprintf("k8smanifest:%s:%s:%s", filePath, kindVal, nameVal)
+	subjectKey := baseKey
+	suffix := 1
+	for {
+		_, loaded := a.subjectDigests.Load(subjectKey)
+		if !loaded {
+			break
+		}
+		suffix++
+		subjectKey = fmt.Sprintf("%s#%d", baseKey, suffix)
+	}
+
+	rec := RecordedObject{
+		FilePath:      filePath,
+		Kind:          kindVal,
+		Name:          nameVal,
+		CanonicalJSON: string(canon),
+		SubjectKey:    subjectKey,
+	}
+
+	// Return canonical bytes for hashing, and the RecordedObject skeleton
+	return canon, rec, nil
+}
+
+// runDryRun executes kubectl apply --dry-run=server -o json -f -
+// to generate server-defaulted resource content.
+func (a *Attestor) runDryRun(doc map[string]interface{}) (map[string]interface{}, error) {
+	y, err := yaml.Marshal(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	args := []string{"apply", "--dry-run=server", "-o", "json", "-f", "-"}
+	if a.KubeconfigPath != "" {
+		args = append(args, "--kubeconfig", a.KubeconfigPath)
+	}
+
+	cmd := exec.Command("kubectl", args...)
+	cmd.Stdin = bytes.NewReader(y)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("kubectl dry-run error: %s (output=%q)", err, string(out))
+	}
+
+	var outMap map[string]interface{}
+	if e := json.Unmarshal(out, &outMap); e != nil {
+		return nil, fmt.Errorf("unmarshal after dry-run: %w", e)
+	}
+	return outMap, nil
+}
+
+// removeEphemeralFields removes ephemeral fields & ephemeral annotations from the doc.
+func (a *Attestor) removeEphemeralFields(obj map[string]interface{}) {
+	for _, ef := range a.ephemeralFields {
+		removeNested(obj, ef)
+	}
+	removeEphemeralAnnotations(obj, a.ephemeralAnn)
+}
+
+// removeNested handles dot-separated paths, e.g. "metadata.name" or "status.something".
+func removeNested(obj map[string]interface{}, path string) {
+	parts := strings.Split(path, ".")
+	cur := obj
+	for i := 0; i < len(parts)-1; i++ {
+		sub, ok := cur[parts[i]].(map[string]interface{})
+		if !ok {
+			return
+		}
+		cur = sub
+	}
+	delete(cur, parts[len(parts)-1])
+}
+
+// removeEphemeralAnnotations removes ephemeral annotation keys from metadata.annotations.
+func removeEphemeralAnnotations(obj map[string]interface{}, ephemeralKeys []string) {
+	md, _ := obj["metadata"].(map[string]interface{})
+	if md == nil {
+		return
+	}
+	ann, _ := md["annotations"].(map[string]interface{})
+	if ann == nil {
+		return
+	}
+	for _, k := range ephemeralKeys {
+		delete(ann, k)
+	}
+}
+
+// isJSONorYAML checks if a file name ends with .json, .yaml, or .yml.
+func isJSONorYAML(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".json" || ext == ".yaml" || ext == ".yml"
+}
+
+// Subjects returns computed subject digests
+func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
+	out := make(map[string]cryptoutil.DigestSet)
+	a.subjectDigests.Range(func(k, v interface{}) bool {
+		key := k.(string)
+		ds := v.(cryptoutil.DigestSet)
+		out[key] = ds
+		return true
+	})
+	return out
+}
+
+// splitYAMLDocs decodes multiple YAML documents. If none are found, it falls back to raw JSON check.
+// This is copied from the structured data attestor, with minimal changes.
+func splitYAMLDocs(content []byte) ([][]byte, error) {
+	var out [][]byte
+	dec := yaml.NewDecoder(bytes.NewReader(content))
+	docIndex := 0
+	for {
+		var raw interface{}
+		err := dec.Decode(&raw)
+		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "eof") ||
+				strings.Contains(strings.ToLower(err.Error()), "document is empty") {
+				log.Debugf("splitYAMLDocs: stopping decode on docIndex=%d (EOF or empty doc)", docIndex)
+				break
+			}
+			// Log a warning and break from the decode loop, preserving prior docs
+			log.Warnf("splitYAMLDocs: error decoding docIndex=%d: %v", docIndex, err)
+			break
+		}
+		raw = convertKeys(raw)
+		j, err := json.Marshal(raw)
+		if err != nil {
+			log.Debugf("splitYAMLDocs: could not marshal docIndex=%d to JSON: %v", docIndex, err)
+			continue
+		}
+		log.Debugf("splitYAMLDocs: docIndex=%d => %s", docIndex, string(j))
+		out = append(out, j)
+		docIndex++
+	}
+	// If no docs were parsed, maybe it's raw JSON
+	if len(out) == 0 && json.Valid(content) {
+		log.Debugf("splitYAMLDocs: no YAML docs but valid JSON. Using entire file as one doc.")
+		out = append(out, content)
+	} else if len(out) == 0 {
+		log.Warnf("splitYAMLDocs: no valid YAML or JSON found.")
+	}
+	return out, nil
+}
+
+// convertKeys recursively converts map[interface{}]interface{} to map[string]interface{},
+// so json.Marshal(...) won't fail on "unsupported type: map[interface{}]interface{}".
+func convertKeys(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[interface{}]interface{}:
+		m2 := make(map[string]interface{})
+		for key, val := range v {
+			kStr := fmt.Sprintf("%v", key)
+			m2[kStr] = convertKeys(val)
+		}
+		return m2
+	case []interface{}:
+		for i := range v {
+			v[i] = convertKeys(v[i])
+		}
+		return v
+	default:
+		return v
+	}
+}
