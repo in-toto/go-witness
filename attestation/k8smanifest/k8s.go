@@ -24,20 +24,20 @@ import (
 	"strings"
 	"sync"
 
-	"gopkg.in/yaml.v3"
-	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/internal/jsoncanonicalizer"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
+	"gopkg.in/yaml.v3"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // Name is the identifier for this attestor.
@@ -81,6 +81,10 @@ type RecordedObject struct {
 	RecordedImages []RecordedImage      `json:"recordedImages"`
 }
 
+type ClusterInfo struct {
+	Server string `json:"server"`
+}
+
 // Recorded image stores the details of images found in kubernetes manifests
 type RecordedImage struct {
 	Reference string `json:"reference"`
@@ -90,13 +94,16 @@ type RecordedImage struct {
 // Attestor implements the Witness Attestor interface for Kubernetes manifests.
 type Attestor struct {
 	ServerSideDryRun  bool     `json:"server_side_dry_run,omitempty"`
+	RecordClusterInfo bool     `json:"record_cluster_info,omitempty"`
 	KubeconfigPath    string   `json:"kubeconfig,omitempty"`
+	KubeContext       string   `json:kubeContext,omitempty"`
 	IgnoreFields      []string `json:"IgnoreFields,omitempty" jsonschema:"title=IgnoreFields"`
 	IgnoreAnnotations []string `json:"IgnoreAnnotations,omitempty"`
 	ephemeralFields   []string
 	ephemeralAnn      []string
 	RecordedDocs      []RecordedObject `json:"recorded_docs,omitempty"`
 	subjectDigests    sync.Map
+	ClusterInfo       ClusterInfo `json:"clusterInfo"`
 }
 
 var (
@@ -128,13 +135,39 @@ func init() {
 		registry.StringConfigOption(
 			"kubeconfig",
 			"Path to the kubeconfig file (used during server-side dry-run)",
-			"",
+			clientcmd.RecommendedHomeFile,
 			func(a attestation.Attestor, val string) (attestation.Attestor, error) {
 				km, ok := a.(*Attestor)
 				if !ok {
 					return a, fmt.Errorf("invalid attestor type: %T", a)
 				}
 				WithKubeconfigPath(val)(km)
+				return km, nil
+			},
+		),
+		registry.StringConfigOption(
+			"context",
+			"The kubernetes context that this step applies to (if not set in the kubeconfig)",
+			"",
+			func(a attestation.Attestor, val string) (attestation.Attestor, error) {
+				km, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithKubeContext(val)(km)
+				return km, nil
+			},
+		),
+		registry.BoolConfigOption(
+			"record-cluster-information",
+			"Record information about the cluster that the client has a connection to",
+			true,
+			func(a attestation.Attestor, val bool) (attestation.Attestor, error) {
+				km, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithRecordClusterInfo(val)(km)
 				return km, nil
 			},
 		),
@@ -196,6 +229,20 @@ func WithKubeconfigPath(path string) func(*Attestor) {
 	}
 }
 
+// WithKubeContext sets the kubeconfig path used in server-side dry-run.
+func WithKubeContext(context string) func(*Attestor) {
+	return func(a *Attestor) {
+		a.KubeContext = context
+	}
+}
+
+// WithRecordClusterInfo sets the cluster information recording option.
+func WithRecordClusterInfo(record bool) func(*Attestor) {
+	return func(a *Attestor) {
+		a.RecordClusterInfo = record
+	}
+}
+
 // WithExtraIgnoreFields appends additional ephemeral fields to ignore.
 func WithExtraIgnoreFields(fields ...string) func(*Attestor) {
 	return func(a *Attestor) {
@@ -240,6 +287,13 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	if len(products) == 0 {
 		log.Warn("no products found, skipping k8smanifest attestor")
 		return nil
+	}
+
+	if a.RecordClusterInfo {
+		err := a.runRecordClusterInfo()
+		if err != nil {
+			return err
+		}
 	}
 
 	// skip if no .yaml/.yml/.json found
@@ -421,6 +475,32 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 
 	// Return canonical bytes for hashing, and the RecordedObject skeleton
 	return canon, rec, nil
+}
+
+func (a *Attestor) runRecordClusterInfo() error {
+	log.Info("(attestation/k8smanifest) recording cluster information")
+	config, err := clientcmd.LoadFromFile(a.KubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	cc := a.KubeContext
+	if cc == "" && config.CurrentContext != "" {
+		cc = config.CurrentContext
+	}
+
+	if cc == "" {
+		return fmt.Errorf("kubernetes context not set")
+	}
+
+	log.Debugf("(attestation/k8smanifest) checking cluster information for context '%s'", cc)
+
+	if cluster, ok := config.Clusters[cc]; ok {
+		a.ClusterInfo.Server = cluster.Server
+		return nil
+	}
+
+	return fmt.Errorf("unable to find context '%s' in kubernetes config at path '%s'")
 }
 
 // runDryRun executes kubectl apply --dry-run=server -o json -f -
