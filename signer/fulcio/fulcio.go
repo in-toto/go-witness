@@ -432,17 +432,15 @@ func newClient(fulcioURL string, fulcioPort int, isInsecure bool) (fulciopb.CACl
 	creds := credentials.NewTLS(tlsConfig)
 
 	// Set up the gRPC dial options
-	dialOpts := []grpc.DialOption{
-		grpc.WithAuthority(u.Hostname()),
-	}
-
+	dialOpts := []grpc.DialOption{}
 	if isInsecure {
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else {
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
 	}
 
-	conn, err := grpc.NewClient(net.JoinHostPort(u.Hostname(), strconv.Itoa(fulcioPort)), dialOpts...)
+	// `passthrough` is used due to the default DNS resolver not properly recognizing no_proxy
+	conn, err := grpc.NewClient("passthrough:///"+net.JoinHostPort(u.Hostname(), strconv.Itoa(fulcioPort)), dialOpts...)
 	if err != nil {
 		return nil, err
 	}
