@@ -301,8 +301,10 @@ github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 h1:n661drycOFuPLCN
 github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
 github.com/sigstore/fulcio v1.4.5 h1:WWNnrOknD0DbruuZWCbN+86WRROpEl3Xts+WT2Ek1yc=
 github.com/sigstore/fulcio v1.4.5/go.mod h1:oz3Qwlma8dWcSS/IENR/6SjbW4ipN0cxpRVfgdsjMU8=
-github.com/sigstore/sigstore v1.8.12 h1:S8xMVZbE2z9ZBuQUEG737pxdLjnbOIcFi5v9UFfkJFc=
-github.com/sigstore/sigstore v1.8.12/go.mod h1:+PYQAa8rfw0QdPpBcT+Gl3egKD9c+TUgAlF12H3Nmjo=
+github.com/sigstore/protobuf-specs v0.4.0 h1:yoZbdh0kZYKOSiVbYyA8J3f2wLh5aUk2SQB7LgAfIdU=
+github.com/sigstore/protobuf-specs v0.4.0/go.mod h1:FKW5NYhnnFQ/Vb9RKtQk91iYd0MKJ9AxyqInEwU6+OI=
+github.com/sigstore/sigstore v1.8.14 h1:JqDkQ7PQCiCOerPRSkYr57Rj9sZO59fOcXDxvLsbNQw=
+github.com/sigstore/sigstore v1.8.14/go.mod h1:2lXojNsjZjkqu1//FWxq7qUcPB8Lq1KsR5hc+GkcC/4=
 github.com/sirupsen/logrus v1.7.0/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
@@ -530,8 +532,8 @@ google.golang.org/protobuf v1.22.0/go.mod h1:EGpADcykh3NcUnDUJcl1+ZksZNG86OlYog2
 google.golang.org/protobuf v1.23.0/go.mod h1:EGpADcykh3NcUnDUJcl1+ZksZNG86OlYog2l/sGQquU=
 google.golang.org/protobuf v1.23.1-0.20200526195155-81db48ad09cc/go.mod h1:EGpADcykh3NcUnDUJcl1+ZksZNG86OlYog2l/sGQquU=
 google.golang.org/protobuf v1.25.0/go.mod h1:9JNX74DMeImyA3h4bdi1ymwjUzf21/xIlbajtzgsN7c=
-google.golang.org/protobuf v1.34.2 h1:6xV6lTsCfpGD21XK49h7MhtcApnLqkfYgPcdHftf6hg=
-google.golang.org/protobuf v1.34.2/go.mod h1:qYOHts0dSfpeUzUFpOMr/WGzszTmLH+DiWniOlNbLDw=
+google.golang.org/protobuf v1.36.4 h1:6A3ZDJHn/eNqc1i+IdefRzy/9PokBTPvcqMySR7NNIM=
+google.golang.org/protobuf v1.36.4/go.mod h1:9fA7Ob0pmnwhb644+1+CVWFRbNajQ6iRojtC/QF5bRE=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
