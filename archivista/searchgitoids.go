@@ -37,33 +37,63 @@ type SearchGitoidVariables struct {
 	ExcludeGitoids []string `json:"excludeGitoids"`
 }
 
-func (c *Client) SearchGitoids(ctx context.Context, vars SearchGitoidVariables) ([]string, error) {
-	const query = `query ($subjectDigests: [String!], $attestations: [String!], $collectionName: String!, $excludeGitoids: [String!]) {
-  dsses(
-    where: {
-			gitoidSha256NotIn: $excludeGitoids,
-			hasStatementWith: {
-				hasAttestationCollectionsWith: {
-					name: $collectionName,
-					hasAttestationsWith: {
-						typeIn: $attestations
-					}
-				},
-				hasSubjectsWith: {
-					hasSubjectDigestsWith: {
-						valueIn: $subjectDigests
-					}
-				}
-			}
+const queryWithAttestations = `query ($subjectDigests: [String!], $attestations: [String!], $collectionName: String!, $excludeGitoids: [String!]) {
+	dsses(
+	  where: {
+			  gitoidSha256NotIn: $excludeGitoids,
+			  hasStatementWith: {
+				  hasAttestationCollectionsWith: {
+					  name: $collectionName,
+					  hasAttestationsWith: {
+						  typeIn: $attestations
+					  }
+				  },
+				  hasSubjectsWith: {
+					  hasSubjectDigestsWith: {
+						  valueIn: $subjectDigests
+					  }
+				  }
+			  }
+		  }
+	) {
+	  edges {
+		node {
+		  gitoidSha256
 		}
-  ) {
-    edges {
-      node {
-        gitoidSha256
-      }
-    }
-  }
-}`
+	  }
+	}
+  }`
+
+const queryWithSubjectOnly = `query ($subjectDigests: [String!], $collectionName: String!, $excludeGitoids: [String!]) {
+	dsses(
+	  where: {
+			  gitoidSha256NotIn: $excludeGitoids,
+			  hasStatementWith: {
+				  hasAttestationCollectionsWith: {
+					  name: $collectionName,
+				  },
+				  hasSubjectsWith: {
+					  hasSubjectDigestsWith: {
+						  valueIn: $subjectDigests
+					  }
+				  }
+			  }
+		  }
+	) {
+	  edges {
+		node {
+		  gitoidSha256
+		}
+	  }
+	}
+  }`
+
+func (c *Client) SearchGitoids(ctx context.Context, vars SearchGitoidVariables) ([]string, error) {
+	query := queryWithAttestations
+
+	if len(vars.Attestations) == 0 {
+		query = queryWithSubjectOnly
+	}
 
 	response, err := archivistaapi.GraphQlQuery[searchGitoidResponse](ctx, c.url, query, vars)
 	if err != nil {

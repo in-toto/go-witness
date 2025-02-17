@@ -18,21 +18,29 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	attestationv1 "github.com/in-toto/attestation/go/v1"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/internal/policy_v2"
+	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/signer"
 	"github.com/in-toto/go-witness/signer/kms"
 	"github.com/in-toto/go-witness/source"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const PolicyPredicate = "https://witness.testifysec.com/policy/v0.1"
+type PolicyPredicate string
+
+const WitnessPolicyPredicate PolicyPredicate = "https://witness.testifysec.com/policy/v0.1"
+const IntotoPolicyPredicate PolicyPredicate = "https://witness.in-toto.io/policy/v0.1"
 
 // +kubebuilder:object:generate=true
 type Policy struct {
@@ -41,6 +49,7 @@ type Policy struct {
 	TimestampAuthorities map[string]Root      `json:"timestampauthorities,omitempty"`
 	PublicKeys           map[string]PublicKey `json:"publickeys,omitempty"`
 	Steps                map[string]Step      `json:"steps"`
+	Layout               *policy_v2.Layout
 }
 
 // +kubebuilder:object:generate=true
@@ -229,6 +238,14 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 		return false, nil, err
 	}
 
+	if p.Layout == nil {
+		return p.verifyV1(ctx, vo, trustBundles)
+	}
+
+	return p.verifyV2(ctx, vo, trustBundles)
+}
+
+func (p Policy) verifyV1(ctx context.Context, vo *verifyOptions, trustBundles map[string]TrustBundle) (bool, map[string]StepResult, error) {
 	attestationsByStep := make(map[string][]string)
 	for name, step := range p.Steps {
 		for _, attestation := range step.Attestations {
@@ -275,7 +292,7 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 		}
 	}
 
-	resultsByStep, err = p.verifyArtifacts(resultsByStep)
+	resultsByStep, err := p.verifyArtifacts(resultsByStep)
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to verify artifacts: %w", err)
 	}
@@ -289,6 +306,176 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 	}
 
 	return pass, resultsByStep, nil
+}
+
+func (p Policy) verifyV2(ctx context.Context, vo *verifyOptions, trustBundles map[string]TrustBundle) (bool, map[string]StepResult, error) {
+	// TODO: Add parameters to verifyOptions
+	// if len(parameters) > 0 {
+	// 	log.Info("Substituting parameters...")
+	// 	layout, err = substituteParameters(layout, parameters)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	log.Info("Done.")
+	// }
+
+	// Search for attestations by subjects only
+	// TODO: Add support for search depth
+	log.Info("loading attestations as claims...")
+	verifiedClaims := map[string]map[string]*attestationv1.Statement{}
+	for _, step := range p.Layout.Steps {
+		stepAttestations, err := vo.verifiedSource.Search(ctx, step.Name, vo.subjectDigests, nil)
+		if err != nil {
+			return false, nil, err
+		}
+
+		log.Infof("loading %d claims for %s...", len(stepAttestations), step.Name)
+		for _, attestation := range stepAttestations {
+			if verifiedClaims[step.Name] == nil {
+				verifiedClaims[step.Name] = make(map[string]*attestationv1.Statement)
+			}
+
+			statement := &attestationv1.Statement{}
+			// Use attestation.Envelope.Payload instead of attestation.Statement to start migrating towards upstream protobufs
+			if err := protojson.Unmarshal(attestation.Envelope.Payload, statement); err != nil {
+				return false, nil, fmt.Errorf("unable to load statement payload: %w", err)
+			}
+
+			if len(attestation.Verifiers) == 0 {
+				log.Infof("no valid functionaries found for attestation")
+			}
+
+			for _, ak := range attestation.Verifiers {
+				keyId, err := ak.KeyID()
+				if err != nil {
+					return false, nil, err
+				}
+				verifiedClaims[step.Name][keyId] = statement
+			}
+			log.Infof("loaded %d claims for %s\n", len(verifiedClaims[step.Name]), step.Name)
+			for _, err := range attestation.Errors {
+				log.Infof("error: %s", err)
+			}
+			for _, warning := range attestation.Warnings {
+				log.Infof("warning: %s", warning)
+			}
+		}
+	}
+
+	env, err := policy_v2.GetCELEnv()
+	if err != nil {
+		return false, nil, err
+	}
+
+	resultsByStep := make(map[string]StepResult)
+	for _, step := range p.Layout.Steps {
+		stepStatements, ok := verifiedClaims[step.Name]
+		if !ok {
+			return false, nil, fmt.Errorf("no claims found for step %s", step.Name)
+		}
+
+		if step.Threshold == 0 {
+			step.Threshold = 1
+		}
+
+		trustedStatements := policy_v2.GetPredicates(stepStatements, step.Functionaries)
+		if len(trustedStatements) < step.Threshold {
+			return false, nil, fmt.Errorf("threshold not met for step %s", step.Name)
+		}
+
+		// TODO: reduce statements if they're identical to avoid checking all of
+		// them
+		// See in-toto 1.0
+
+		acceptedPredicates := 0
+		failedChecks := []error{}
+		for functionary, statement := range trustedStatements {
+			log.Infof("Verifying claim for step '%s' of type '%s' by '%s'...", step.Name, step.ExpectedPredicateType, functionary)
+			failed := false
+
+			// Check the predicate type matches the expected value in the layout
+			if step.ExpectedPredicateType != statement.PredicateType {
+				failed = true
+				failedChecks = append(failedChecks, fmt.Errorf("for step %s, statement with unexpected predicate type %s found", step.Name, statement.PredicateType))
+			}
+
+			// Check materials and products
+			if err := policy_v2.ApplyArtifactRules(statement, step.ExpectedMaterials, step.ExpectedProducts, verifiedClaims); err != nil {
+				failed = true
+				failedChecks = append(failedChecks, fmt.Errorf("for step %s, claim by %s failed artifact rules: %w", step.Name, functionary, err))
+			}
+
+			input, err := policy_v2.GetActivation(statement)
+			if err != nil {
+				return false, nil, err
+			}
+
+			// Check attribute rules
+			if err := policy_v2.ApplyAttributeRules(env, input, step.ExpectedAttributes); err != nil {
+				failed = true
+				failedChecks = append(failedChecks, fmt.Errorf("for step %s, claim by %s failed attribute rules: %w", step.Name, functionary, err))
+			}
+
+			// Examine collector claims in attestation collection
+			if step.ExpectedPredicateType == attestation.CollectionType {
+				log.Infof("Verifying attestors for collection of step '%s'", step.Name)
+				collectionBytes, err := json.Marshal(statement.Predicate)
+				if err != nil {
+					return false, nil, err
+				}
+
+				collection := &attestation.Collection{}
+				if err := json.Unmarshal(collectionBytes, collection); err != nil {
+					return false, nil, err
+				}
+				log.Infof("Unmarshaled collection for step '%s'", step.Name)
+
+				// TODO: assumes only one of each attestor type
+				subAttestors := make(map[string]attestation.CollectionAttestation, len(collection.Attestations))
+				for _, subAttestor := range collection.Attestations {
+					subAttestors[subAttestor.Type] = subAttestor
+				}
+
+				env, err := policy_v2.GetCollectionCELEnv()
+				if err != nil {
+					return false, nil, err
+				}
+
+				for _, attestorConstraint := range step.ExpectedAttestors {
+					attestor, ok := subAttestors[attestorConstraint.AttestorType]
+					if !ok {
+						failed = true
+						failedChecks = append(failedChecks, fmt.Errorf("for step %s, attestor of type %s not found in collection", step.Name, attestorConstraint.AttestorType))
+						continue
+					}
+
+					input, err := policy_v2.GetCollectionActivation(&attestor)
+					if err != nil {
+						return false, nil, err
+					}
+
+					if err := policy_v2.ApplyAttributeRules(env, input, attestorConstraint.ExpectedAttributes); err != nil {
+						failed = true
+						failedChecks = append(failedChecks, fmt.Errorf("for step %s, claim by %s failed attribute rules for attestor %s: %w", step.Name, functionary, attestorConstraint.AttestorType, err))
+					}
+				}
+			}
+
+			if failed {
+				log.Infof("Claim for step %s of type %s by %s failed.", step.Name, step.ExpectedPredicateType, functionary)
+			} else {
+				acceptedPredicates += 1
+				log.Info("Done.")
+			}
+		}
+		if acceptedPredicates < step.Threshold {
+			return false, nil, errors.Join(failedChecks...)
+		}
+	}
+
+	log.Info("Verification successful!")
+
+	return true, resultsByStep, nil
 }
 
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for

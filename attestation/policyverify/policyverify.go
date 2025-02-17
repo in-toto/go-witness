@@ -17,6 +17,7 @@ package policyverify
 import (
 	"crypto"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	ipolicy "github.com/in-toto/go-witness/internal/policy"
+	verifier "github.com/in-toto/go-witness/internal/policy_v2"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/policy"
 	"github.com/in-toto/go-witness/signer"
@@ -32,6 +34,8 @@ import (
 	"github.com/in-toto/go-witness/source"
 	"github.com/in-toto/go-witness/timestamp"
 	"github.com/invopop/jsonschema"
+	"github.com/stretchr/testify/assert/yaml"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -153,8 +157,40 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	log.Info("policy signature verified")
 
 	pol := policy.Policy{}
-	if err := json.Unmarshal(a.policyEnvelope.Payload, &pol); err != nil {
-		return fmt.Errorf("failed to unmarshal policy from envelope: %w", err)
+	if a.policyEnvelope.PayloadType == string(policy.WitnessPolicyPredicate) {
+		if err := json.Unmarshal(a.policyEnvelope.Payload, &pol); err != nil {
+			return fmt.Errorf("failed to unmarshal witness policy from envelope: %w", err)
+		}
+	} else if a.policyEnvelope.PayloadType == string(policy.IntotoPolicyPredicate) {
+		layout := &verifier.Layout{}
+		if err := yaml.Unmarshal(a.policyEnvelope.Payload, layout); err != nil {
+			return fmt.Errorf("failed to unmarshal in-toto policy from envelope: %w", err)
+		}
+		var expiresTime metav1.Time
+		err := expiresTime.UnmarshalText([]byte(layout.Expires))
+		if err != nil {
+			return fmt.Errorf("failed to parse layout expiration time: %w", err)
+		}
+		pol.Expires = expiresTime
+		pol.Layout = layout
+
+		// This is a hack to use PublicKeys from the layout
+		// We're ignoring keyType, scheme, and keyIDHashAlgorithms
+		pubkeys := make(map[string]policy.PublicKey)
+		for name, key := range layout.Functionaries {
+			decodedKey, err := base64.StdEncoding.DecodeString(key.KeyVal.Public)
+			if err != nil {
+				return fmt.Errorf("failed to decode public key: %w", err)
+			}
+			pubkeys[name] = policy.PublicKey{
+				KeyID: key.KeyID,
+				Key:   decodedKey,
+			}
+			log.Debugf("adding public key %s from functionary", name)
+		}
+		pol.PublicKeys = pubkeys
+
+		// TODO: Add trust bundles, timestamp authorities, Sigstore DSSE extensions to attestation-verifier Functionaries
 	}
 
 	pubKeysById, err := pol.PublicKeyVerifiers(a.kmsProviderOptions)
@@ -214,7 +250,6 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	return nil
 }
-
 func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyEnvelope dsse.Envelope, stepResults map[string]policy.StepResult, accepted bool) (slsa.VerificationSummary, error) {
 	inputAttestations := make([]slsa.ResourceDescriptor, 0, len(stepResults))
 	for _, step := range stepResults {
@@ -248,7 +283,7 @@ func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyE
 		},
 		TimeVerified: time.Now(),
 		Policy: slsa.ResourceDescriptor{
-			URI:    policy.PolicyPredicate,
+			URI:    policyEnvelope.PayloadType,
 			Digest: policyDigest,
 		},
 		InputAttestations:  inputAttestations,
