@@ -330,7 +330,7 @@ func signPolicy(t *testing.T, p policy.Policy, signer cryptoutil.Signer) dsse.En
 	reader := bytes.NewReader(pBytes)
 	outBytes := []byte{}
 	writer := bytes.NewBuffer(outBytes)
-	require.NoError(t, Sign(reader, policy.PolicyPredicate, writer, dsse.SignWithSigners(signer)))
+	require.NoError(t, Sign(reader, string(policy.WitnessPolicyPredicate), writer, dsse.SignWithSigners(signer)))
 	env := dsse.Envelope{}
 	require.NoError(t, json.Unmarshal(writer.Bytes(), &env))
 	return env

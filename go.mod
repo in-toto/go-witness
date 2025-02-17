@@ -16,8 +16,10 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/go-git/go-git/v5 v5.13.2
 	github.com/go-jose/go-jose/v3 v3.0.3
+	github.com/google/cel-go v0.23.2
 	github.com/in-toto/archivista v0.5.4
-	github.com/in-toto/attestation v1.0.2
+	github.com/in-toto/attestation v1.1.1
+	github.com/in-toto/in-toto-golang v0.9.0
 	github.com/invopop/jsonschema v0.12.0
 	github.com/jellydator/ttlcache/v3 v3.2.1
 	github.com/mattn/go-isatty v0.0.20
@@ -25,6 +27,7 @@ require (
 	github.com/open-policy-agent/opa v0.68.0
 	github.com/owenrumney/go-sarif v1.1.1
 	github.com/sigstore/fulcio v1.4.5
+	github.com/sirupsen/logrus v1.9.3
 	github.com/spdx/tools-golang v0.5.5
 	github.com/spiffe/go-spiffe/v2 v2.1.7
 	github.com/stretchr/testify v1.10.0
@@ -32,20 +35,22 @@ require (
 	golang.org/x/mod v0.19.0
 	golang.org/x/sys v0.29.0
 	google.golang.org/api v0.177.0
-	google.golang.org/grpc v1.66.3
+	google.golang.org/grpc v1.67.1
 	gopkg.in/go-jose/go-jose.v2 v2.6.3
 	k8s.io/apimachinery v0.30.10
 )
 
 require (
+	cel.dev/expr v0.19.1 // indirect
 	cloud.google.com/go/auth v0.3.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.2 // indirect
-	cloud.google.com/go/compute/metadata v0.3.0 // indirect
+	cloud.google.com/go/compute/metadata v0.5.0 // indirect
 	cloud.google.com/go/iam v1.1.7 // indirect
 	dario.cat/mergo v1.0.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/agnivade/levenshtein v1.1.1 // indirect
 	github.com/anchore/go-struct-converter v0.0.0-20221118182256-c68fdcfa2092 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.32.2 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.41 // indirect
@@ -101,10 +106,12 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.9.0 // indirect
 	github.com/segmentio/ksuid v1.0.4 // indirect
+	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/sigstore/protobuf-specs v0.4.0 // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.3.0 // indirect
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966 // indirect
+	github.com/spf13/pflag v1.0.6 // indirect
+	github.com/stoewer/go-strcase v1.2.0 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.1 // indirect
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
@@ -119,8 +126,8 @@ require (
 	golang.org/x/oauth2 v0.25.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240701130421-f6361c86f094 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240701130421-f6361c86f094 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20241021214115-324edc3d5d38 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241021214115-324edc3d5d38 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/klog/v2 v2.120.1 // indirect
 	k8s.io/utils v0.0.0-20240423183400-0849a56e8f22 // indirect
@@ -157,10 +164,10 @@ require (
 	golang.org/x/term v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/genproto v0.0.0-20240401170217-c3f982113cda // indirect
-	google.golang.org/protobuf v1.36.4
+	google.golang.org/protobuf v1.36.5
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 replace github.com/sigstore/rekor => github.com/testifysec/rekor v0.4.0-dsse-intermediates-2

@@ -20,6 +20,7 @@ import (
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
+	"github.com/in-toto/go-witness/log"
 )
 
 type CollectionVerificationResult struct {
@@ -44,15 +45,18 @@ func NewVerifiedSource(source Sourcer, verifyOpts ...dsse.VerificationOption) *V
 }
 
 func (s *VerifiedSource) Search(ctx context.Context, collectionName string, subjectDigests, attestations []string) ([]CollectionVerificationResult, error) {
+	log.Debugf("searching for verified attestations for step %s", collectionName)
 	unverified, err := s.source.Search(ctx, collectionName, subjectDigests, attestations)
 	if err != nil {
 		return nil, err
 	}
+	log.Debugf("found %d unverified attestations", len(unverified))
 
 	results := make([]CollectionVerificationResult, 0)
 	for _, toVerify := range unverified {
 		envelopeVerifiers, err := toVerify.Envelope.Verify(s.verifyOpts...)
 		if err != nil {
+			log.Debugf("failed to verify envelope: %v", err)
 			results = append(results,
 				CollectionVerificationResult{
 					Errors:             []error{fmt.Errorf("failed to verify envelope: %w", err)},
@@ -65,12 +69,14 @@ func (s *VerifiedSource) Search(ctx context.Context, collectionName string, subj
 		passedVerifiers := make([]cryptoutil.Verifier, 0)
 		for _, verifier := range envelopeVerifiers {
 			if verifier.Error == nil {
+				log.Debug("verified envelope with keyID")
 				passedVerifiers = append(passedVerifiers, verifier.Verifier)
 			}
 		}
 
 		var Errors []error
 		if len(passedVerifiers) == 0 {
+			log.Debug("no verifiers passed")
 			Errors = append(Errors, fmt.Errorf("no verifiers passed"))
 		}
 
