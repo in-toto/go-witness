@@ -17,7 +17,6 @@ package policyverify
 import (
 	"crypto"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -26,7 +25,7 @@ import (
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
 	ipolicy "github.com/in-toto/go-witness/internal/policy"
-	verifier "github.com/in-toto/go-witness/internal/policy_v2"
+	"github.com/in-toto/go-witness/internal/policy_v2"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/policy"
 	"github.com/in-toto/go-witness/signer"
@@ -34,8 +33,7 @@ import (
 	"github.com/in-toto/go-witness/source"
 	"github.com/in-toto/go-witness/timestamp"
 	"github.com/invopop/jsonschema"
-	"github.com/stretchr/testify/assert/yaml"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -156,89 +154,84 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	log.Info("policy signature verified")
 
-	pol := policy.Policy{}
+	var pol policy.Policy
+	var verifiedSource *source.VerifiedSource
+
 	if a.policyEnvelope.PayloadType == string(policy.WitnessPolicyPredicate) {
-		if err := json.Unmarshal(a.policyEnvelope.Payload, &pol); err != nil {
+		v1 := &policy.PolicyV1{}
+		if err := json.Unmarshal(a.policyEnvelope.Payload, &v1); err != nil {
 			return fmt.Errorf("failed to unmarshal witness policy from envelope: %w", err)
 		}
+		pol = v1
+
+		pubKeysById, err := v1.PublicKeyVerifiers(a.kmsProviderOptions)
+		if err != nil {
+			return fmt.Errorf("failed to get public keys from policy: %w", err)
+		}
+
+		pubkeys := make([]cryptoutil.Verifier, 0)
+		for _, pubkey := range pubKeysById {
+			pubkeys = append(pubkeys, pubkey)
+		}
+
+		trustBundlesById, err := v1.TrustBundles()
+		if err != nil {
+			return fmt.Errorf("failed to load policy trust bundles: %w", err)
+		}
+
+		roots := make([]*x509.Certificate, 0)
+		intermediates := make([]*x509.Certificate, 0)
+		for _, trustBundle := range trustBundlesById {
+			roots = append(roots, trustBundle.Root)
+			intermediates = append(intermediates, trustBundle.Intermediates...)
+		}
+
+		timestampAuthoritiesById, err := v1.TimestampAuthorityTrustBundles()
+		if err != nil {
+			return fmt.Errorf("failed to load policy timestamp authorities: %w", err)
+		}
+
+		timestampVerifiers := make([]timestamp.TimestampVerifier, 0)
+		for _, timestampAuthority := range timestampAuthoritiesById {
+			certs := []*x509.Certificate{timestampAuthority.Root}
+			certs = append(certs, timestampAuthority.Intermediates...)
+			timestampVerifiers = append(timestampVerifiers, timestamp.NewVerifier(timestamp.VerifyWithCerts(certs)))
+		}
+
+		verifiedSource = source.NewVerifiedSource(
+			a.collectionSource,
+			dsse.VerifyWithVerifiers(pubkeys...),
+			dsse.VerifyWithRoots(roots...),
+			dsse.VerifyWithIntermediates(intermediates...),
+			dsse.VerifyWithTimestampVerifiers(timestampVerifiers...),
+		)
 	} else if a.policyEnvelope.PayloadType == string(policy.IntotoPolicyPredicate) {
-		layout := &verifier.Layout{}
+		layout := &policy_v2.PolicyV2{}
 		if err := yaml.Unmarshal(a.policyEnvelope.Payload, layout); err != nil {
 			return fmt.Errorf("failed to unmarshal in-toto policy from envelope: %w", err)
 		}
-		var expiresTime metav1.Time
-		err := expiresTime.UnmarshalText([]byte(layout.Expires))
+		pol = layout
+
+		verifiersById, err := layout.GetVerifiers()
 		if err != nil {
-			return fmt.Errorf("failed to parse layout expiration time: %w", err)
+			return fmt.Errorf("failed to get verifiers from in-toto policy: %w", err)
 		}
-		pol.Expires = expiresTime
-		pol.Layout = layout
 
-		// This is a hack to use PublicKeys from the layout
-		// We're ignoring keyType, scheme, and keyIDHashAlgorithms
-		pubkeys := make(map[string]policy.PublicKey)
-		for name, key := range layout.Functionaries {
-			decodedKey, err := base64.StdEncoding.DecodeString(key.KeyVal.Public)
-			if err != nil {
-				return fmt.Errorf("failed to decode public key: %w", err)
-			}
-			pubkeys[name] = policy.PublicKey{
-				KeyID: key.KeyID,
-				Key:   decodedKey,
-			}
-			log.Debugf("adding public key %s from functionary", name)
+		verifiers := make([]cryptoutil.Verifier, 0)
+		for _, verifier := range verifiersById {
+			verifiers = append(verifiers, verifier)
 		}
-		pol.PublicKeys = pubkeys
 
-		// TODO: Add trust bundles, timestamp authorities, Sigstore DSSE extensions to attestation-verifier Functionaries
+		verifiedSource = source.NewVerifiedSource(
+			a.collectionSource,
+			dsse.VerifyWithVerifiers(verifiers...),
+		)
 	}
 
-	pubKeysById, err := pol.PublicKeyVerifiers(a.kmsProviderOptions)
+	accepted, stepResults, err := pol.Verify(ctx.Context(), policy.WithSubjectDigests(a.subjectDigests), policy.WithVerifiedSource(verifiedSource))
 	if err != nil {
-		return fmt.Errorf("failed to get public keys from policy: %w", err)
-	}
-
-	pubkeys := make([]cryptoutil.Verifier, 0)
-	for _, pubkey := range pubKeysById {
-		pubkeys = append(pubkeys, pubkey)
-	}
-
-	trustBundlesById, err := pol.TrustBundles()
-	if err != nil {
-		return fmt.Errorf("failed to load policy trust bundles: %w", err)
-	}
-
-	roots := make([]*x509.Certificate, 0)
-	intermediates := make([]*x509.Certificate, 0)
-	for _, trustBundle := range trustBundlesById {
-		roots = append(roots, trustBundle.Root)
-		intermediates = append(intermediates, intermediates...)
-	}
-
-	timestampAuthoritiesById, err := pol.TimestampAuthorityTrustBundles()
-	if err != nil {
-		return fmt.Errorf("failed to load policy timestamp authorities: %w", err)
-	}
-
-	timestampVerifiers := make([]timestamp.TimestampVerifier, 0)
-	for _, timestampAuthority := range timestampAuthoritiesById {
-		certs := []*x509.Certificate{timestampAuthority.Root}
-		certs = append(certs, timestampAuthority.Intermediates...)
-		timestampVerifiers = append(timestampVerifiers, timestamp.NewVerifier(timestamp.VerifyWithCerts(certs)))
-	}
-
-	verifiedSource := source.NewVerifiedSource(
-		a.collectionSource,
-		dsse.VerifyWithVerifiers(pubkeys...),
-		dsse.VerifyWithRoots(roots...),
-		dsse.VerifyWithIntermediates(intermediates...),
-		dsse.VerifyWithTimestampVerifiers(timestampVerifiers...),
-	)
-
-	accepted, stepResults, policyErr := pol.Verify(ctx.Context(), policy.WithSubjectDigests(a.subjectDigests), policy.WithVerifiedSource(verifiedSource))
-	if policyErr != nil {
 		// TODO: log stepResults
-		return fmt.Errorf("failed to verify policy: %w", policyErr)
+		return fmt.Errorf("failed to verify policy: %w", err)
 	}
 
 	a.stepResults = stepResults
@@ -250,6 +243,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	return nil
 }
+
 func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyEnvelope dsse.Envelope, stepResults map[string]policy.StepResult, accepted bool) (slsa.VerificationSummary, error) {
 	inputAttestations := make([]slsa.ResourceDescriptor, 0, len(stepResults))
 	for _, step := range stepResults {

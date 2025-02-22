@@ -32,6 +32,7 @@ type verificationOptions struct {
 	verifiers          []cryptoutil.Verifier
 	threshold          int
 	timestampVerifiers []timestamp.TimestampVerifier
+	functionaries      map[string]Functionary
 }
 
 type VerificationOption func(*verificationOptions)
@@ -63,6 +64,12 @@ func VerifyWithThreshold(threshold int) VerificationOption {
 func VerifyWithTimestampVerifiers(verifiers ...timestamp.TimestampVerifier) VerificationOption {
 	return func(vo *verificationOptions) {
 		vo.timestampVerifiers = verifiers
+	}
+}
+
+func VerifyWithFunctionaries(functionaries map[string]Functionary) VerificationOption {
+	return func(vo *verificationOptions) {
+		vo.functionaries = functionaries
 	}
 }
 

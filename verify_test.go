@@ -257,7 +257,7 @@ func TestBackRefs(t *testing.T) {
 	require.NoError(t, err, fmt.Sprintf("failed with results: %+v", results))
 }
 
-func makePolicy(functionary policy.Functionary, publicKey policy.PublicKey, roots map[string]policy.Root) policy.Policy {
+func makePolicy(functionary policy.Functionary, publicKey policy.PublicKey, roots map[string]policy.Root) policy.PolicyV1 {
 	step01 := policy.Step{
 		Name:          "step01",
 		Functionaries: []policy.Functionary{functionary},
@@ -271,7 +271,7 @@ func makePolicy(functionary policy.Functionary, publicKey policy.PublicKey, root
 		ArtifactsFrom: []string{"step01"},
 	}
 
-	p := policy.Policy{
+	p := policy.PolicyV1{
 		Expires:    metav1.Time{Time: time.Now().Add(1 * time.Hour)},
 		PublicKeys: map[string]policy.PublicKey{},
 		Steps:      map[string]policy.Step{},

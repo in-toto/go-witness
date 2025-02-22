@@ -93,7 +93,7 @@ deny[msg] {
 	msg := "exitcode not 0"
 }`)
 
-	policy := Policy{
+	policy := PolicyV1{
 		Expires: metav1.NewTime(time.Now().Add(1 * time.Hour)),
 		PublicKeys: map[string]PublicKey{
 			keyID: {
@@ -204,7 +204,7 @@ func TestArtifacts(t *testing.T) {
 	keyID, err := verifier.KeyID()
 	require.NoError(t, err)
 
-	policy := Policy{
+	policy := PolicyV1{
 		Expires: metav1.NewTime(time.Now().Add(1 * time.Hour)),
 		PublicKeys: map[string]PublicKey{
 			keyID: {
@@ -476,7 +476,7 @@ func TestPubKeyVerifiers(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			p := Policy{PublicKeys: map[string]PublicKey{}}
+			p := PolicyV1{PublicKeys: map[string]PublicKey{}}
 			for _, v := range testCase.testVerifiers {
 				p.PublicKeys[v.keyID] = PublicKey{
 					KeyID: v.keyID,
