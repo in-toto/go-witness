@@ -3,21 +3,10 @@ package policy_v2
 import (
 	"os"
 
+	"github.com/in-toto/go-witness/dsse"
 	"gopkg.in/yaml.v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-// copied from go-sslib to use yaml tags
-type Functionary struct {
-	KeyIDHashAlgorithms []string `yaml:"keyIDHashAlgorithms"`
-	KeyType             string   `yaml:"keyType"`
-	KeyVal              KeyVal   `yaml:"keyVal"`
-	Scheme              string   `yaml:"scheme"`
-	KeyID               string   `yaml:"keyID"`
-}
-
-type KeyVal struct {
-	Public string `yaml:"public"`
-}
 
 type Constraint struct {
 	Rule           string `yaml:"rule"`
@@ -63,21 +52,21 @@ type Inspection struct {
 	ExpectedAttributes []Constraint `yaml:"expectedAttributes"`
 }
 
-type Layout struct {
-	Expires       string                 `yaml:"expires"`
-	Functionaries map[string]Functionary `yaml:"functionaries"`
-	Steps         []*Step                `yaml:"steps"`
-	Subjects      []*Subject             `yaml:"subjects"`
-	Inspections   []*Inspection          `yaml:"inspections"`
+type PolicyV2 struct {
+	Expires       metav1.Time                 `yaml:"expires"`
+	Functionaries map[string]dsse.Functionary `yaml:"functionaries"`
+	Steps         []*Step                     `yaml:"steps"`
+	Subjects      []*Subject                  `yaml:"subjects"`
+	Inspections   []*Inspection               `yaml:"inspections"`
 }
 
-func LoadLayout(path string) (*Layout, error) {
+func LoadLayout(path string) (*PolicyV2, error) {
 	layoutBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	layout := &Layout{}
+	layout := &PolicyV2{}
 	if err := yaml.Unmarshal(layoutBytes, layout); err != nil {
 		return nil, err
 	}
