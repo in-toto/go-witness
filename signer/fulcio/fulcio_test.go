@@ -51,7 +51,7 @@ func setupFulcioTestService(t *testing.T) (*dummyCAClientService, string) {
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
 	}
-	client, err := newClient(context.Background(), "https://localhost", lis.Addr().(*net.TCPAddr).Port, true)
+	client, err := newClient("https://localhost", lis.Addr().(*net.TCPAddr).Port, true)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -65,18 +65,16 @@ func setupFulcioTestService(t *testing.T) (*dummyCAClientService, string) {
 }
 
 func TestNewClient(t *testing.T) {
-	ctx := context.Background()
-
 	// test when fulcioURL is empty
-	_, err := newClient(ctx, "", 0, false)
+	_, err := newClient("", 0, false)
 	require.Error(t, err)
 
 	// test when fulcioURL is invalid
-	_, err = newClient(ctx, "://", 0, false)
+	_, err = newClient("://", 0, false)
 	require.Error(t, err)
 
 	// test when connection to Fulcio succeeds
-	client, err := newClient(ctx, "https://fulcio.url", 0, false)
+	client, err := newClient("https://fulcio.url", 0, false)
 	require.NoError(t, err)
 	require.NotNil(t, client)
 }

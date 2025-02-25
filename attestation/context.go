@@ -22,7 +22,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/environment"
 	"github.com/in-toto/go-witness/log"
 )
 
@@ -83,6 +85,38 @@ func WithWorkingDir(workingDir string) AttestationContextOption {
 	}
 }
 
+func WithDirHashGlob(dirHashGlob []string) AttestationContextOption {
+	return func(ctx *AttestationContext) {
+		if len(dirHashGlob) > 0 {
+			ctx.dirHashGlob = dirHashGlob
+
+			ctx.dirHashGlobCompiled = make([]glob.Glob, len(ctx.dirHashGlob))
+			for i, dirHashGlobItem := range dirHashGlob {
+				dirHashGlobItemCompiled, _ := glob.Compile(dirHashGlobItem)
+				ctx.dirHashGlobCompiled[i] = dirHashGlobItemCompiled
+			}
+		}
+	}
+}
+
+// WithEnvCapturer sets the configuration for the environment.Capturer inside the AttestationContext.
+func WithEnvCapturer(additionalKeys []string, excludeKeys []string, disableDefaultSensitiveVars bool, filterVarsEnabled bool) AttestationContextOption {
+	return func(ctx *AttestationContext) {
+		opts := []environment.CaptureOption{
+			environment.WithAdditionalKeys(additionalKeys),
+			environment.WithExcludeKeys(excludeKeys),
+		}
+		if disableDefaultSensitiveVars {
+			opts = append(opts, environment.WithDisableDefaultSensitiveList())
+		}
+		if filterVarsEnabled {
+			opts = append(opts, environment.WithFilterVarsEnabled())
+		}
+
+		ctx.environmentCapturer = environment.New(opts...)
+	}
+}
+
 type CompletedAttestor struct {
 	Attestor  Attestor
 	StartTime time.Time
@@ -90,16 +124,20 @@ type CompletedAttestor struct {
 	Error     error
 }
 
+// AttestationContext is a struct that hold configuration that can be used across all attestors.
 type AttestationContext struct {
-	ctx                context.Context
-	attestors          []Attestor
-	workingDir         string
-	hashes             []cryptoutil.DigestValue
-	completedAttestors []CompletedAttestor
-	products           map[string]Product
-	materials          map[string]cryptoutil.DigestSet
-	stepName           string
-	mutex              sync.RWMutex
+	ctx                 context.Context
+	attestors           []Attestor
+	workingDir          string
+	dirHashGlob         []string
+	dirHashGlobCompiled []glob.Glob
+	hashes              []cryptoutil.DigestValue
+	completedAttestors  []CompletedAttestor
+	products            map[string]Product
+	materials           map[string]cryptoutil.DigestSet
+	stepName            string
+	mutex               sync.RWMutex
+	environmentCapturer *environment.Capture
 }
 
 type Product struct {
@@ -107,6 +145,7 @@ type Product struct {
 	Digest   cryptoutil.DigestSet `json:"digest"`
 }
 
+// NewContext creates a new AttestationContext.
 func NewContext(stepName string, attestors []Attestor, opts ...AttestationContextOption) (*AttestationContext, error) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -206,6 +245,10 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) {
 	}
 
 	log.Infof("Finished %v attestor... (%vs)", attestor.Name(), time.Since(startTime).Seconds())
+}
+
+func (ctx *AttestationContext) DirHashGlob() []glob.Glob {
+	return ctx.dirHashGlobCompiled
 }
 
 func (ctx *AttestationContext) CompletedAttestors() []CompletedAttestor {

@@ -18,9 +18,8 @@ linters:
   - errcheck
   - gofmt
   - goimports
-output:
-  uniq-by-line: false
 issues:
+  uniq-by-line: false
   exclude-rules:
   # the following section is due to the legacy cert fields being deprecated
   - path: policy/constraints.go

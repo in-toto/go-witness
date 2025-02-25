@@ -31,6 +31,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/commandrun"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/intoto"
+	"github.com/in-toto/go-witness/signer"
 	"github.com/in-toto/go-witness/source"
 	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/assert"
@@ -483,7 +484,7 @@ func TestPubKeyVerifiers(t *testing.T) {
 				}
 			}
 
-			verifiers, err := p.PublicKeyVerifiers()
+			verifiers, err := p.PublicKeyVerifiers(map[string][]func(signer.SignerProvider) (signer.SignerProvider, error){})
 			if testCase.expectedErr == nil {
 				assert.NoError(t, err)
 				assert.Len(t, verifiers, testCase.expectedLen)
@@ -587,11 +588,20 @@ func TestCheckFunctionaries(t *testing.T) {
 		fmt.Println("running test case: ", testCase.name)
 		result := testCase.step.checkFunctionaries(testCase.statements, testCase.trustBundles)
 		resultCheckFields := []source.CollectionVerificationResult{}
-		for _, r := range result {
+		for _, r := range result.Passed {
 			o := source.CollectionVerificationResult{
 				Errors:             r.Errors,
 				Warnings:           r.Warnings,
 				ValidFunctionaries: r.ValidFunctionaries,
+			}
+			resultCheckFields = append(resultCheckFields, o)
+		}
+
+		for _, r := range result.Rejected {
+			o := source.CollectionVerificationResult{
+				Errors:             r.Collection.Errors,
+				Warnings:           r.Collection.Warnings,
+				ValidFunctionaries: r.Collection.ValidFunctionaries,
 			}
 			resultCheckFields = append(resultCheckFields, o)
 		}
