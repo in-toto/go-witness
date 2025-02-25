@@ -115,6 +115,11 @@ func TestAttest(t *testing.T) {
 	gl.Data().JWT.Claims["sha"] = "abc123"
 	gl.Data().PipelineUrl = "https://github.com/testifysec/swf/actions/runs/7879307166"
 
+	// Setup Jenkins
+	jks := attestors.NewTestJenkinsAttestor()
+	jks.Data().JenkinsUrl = "https://localhost:8000/"
+	jks.Data().PipelineUrl = "https://github.com/testifysec/swf/actions/runs/7879307166"
+
 	// Setup Materials
 	m := attestors.NewTestMaterialAttestor()
 
@@ -135,6 +140,7 @@ func TestAttest(t *testing.T) {
 	}{
 		{"github", []attestation.Attestor{e, g, gh, m, c, p, o}, testGHProvJSON},
 		{"gitlab", []attestation.Attestor{e, g, gl, m, c, p, o}, testGLProvJSON},
+		{"jenkins", []attestation.Attestor{e, g, jks, m, c, p, o}, testJKSProvJSON},
 	}
 
 	for _, test := range tests {
@@ -302,6 +308,46 @@ const testGLProvJSON = `{
   "run_details": {
     "builder": {
       "id": "https://witness.dev/witness-gitlab-component-builder@v0.1"
+    },
+    "metadata": {
+      "invocation_id": "https://github.com/testifysec/swf/actions/runs/7879307166",
+      "started_on": {
+        "seconds": 1711199861,
+        "nanos": 560152000
+      },
+      "finished_on": {
+        "seconds": 1711199861,
+        "nanos": 560152000
+      }
+    }
+  }
+}`
+
+const testJKSProvJSON = `{
+  "build_definition": {
+    "build_type": "https://witness.dev/slsa-build@v0.1",
+    "external_parameters": {
+      "command": "touch test.txt"
+    },
+    "internal_parameters": {
+      "env": {
+        "SHELL": "/bin/zsh",
+        "TERM": "xterm-256color",
+        "TERM_PROGRAM": "iTerm.app"
+      }
+    },
+    "resolved_dependencies": [
+      {
+        "name": "git@github.com:in-toto/witness.git",
+        "digest": {
+          "sha1": "abc123"
+        }
+      }
+    ]
+  },
+  "run_details": {
+    "builder": {
+      "id": "https://witness.dev/witness-jenkins-component-builder@v0.1"
     },
     "metadata": {
       "invocation_id": "https://github.com/testifysec/swf/actions/runs/7879307166",

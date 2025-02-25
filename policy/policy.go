@@ -25,6 +25,7 @@ import (
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/signer"
 	"github.com/in-toto/go-witness/signer/kms"
 	"github.com/in-toto/go-witness/source"
 
@@ -55,7 +56,7 @@ type PublicKey struct {
 }
 
 // PublicKeyVerifiers returns verifiers for each of the policy's embedded public keys grouped by the key's ID
-func (p Policy) PublicKeyVerifiers() (map[string]cryptoutil.Verifier, error) {
+func (p Policy) PublicKeyVerifiers(ko map[string][]func(signer.SignerProvider) (signer.SignerProvider, error)) (map[string]cryptoutil.Verifier, error) {
 	verifiers := make(map[string]cryptoutil.Verifier)
 	var err error
 
@@ -63,10 +64,31 @@ func (p Policy) PublicKeyVerifiers() (map[string]cryptoutil.Verifier, error) {
 		var verifier cryptoutil.Verifier
 		for _, prefix := range kms.SupportedProviders() {
 			if strings.HasPrefix(key.KeyID, prefix) {
-				verifier, err = kms.New(kms.WithRef(key.KeyID), kms.WithHash("SHA256")).Verifier(context.TODO())
-				if err != nil {
-					return nil, fmt.Errorf("KMS Key ID recognized but not valid: %w", err)
+				ksp := kms.New(kms.WithRef(key.KeyID), kms.WithHash("SHA256"))
+				var vp signer.SignerProvider
+				for _, opt := range ksp.Options {
+					pn := opt.ProviderName()
+					for _, setter := range ko[pn] {
+						vp, err = setter(ksp)
+						if err != nil {
+							continue
+						}
+					}
 				}
+
+				if vp != nil {
+					var ok bool
+					ksp, ok = vp.(*kms.KMSSignerProvider)
+					if !ok {
+						return nil, fmt.Errorf("provided verifier provider is not a KMS verifier provider")
+					}
+				}
+
+				verifier, err = ksp.Verifier(context.TODO())
+				if err != nil {
+					return nil, fmt.Errorf("failed to create kms verifier: %w", err)
+				}
+
 			}
 		}
 
@@ -228,9 +250,9 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 			}
 
 			// Verify the functionaries
-			collections = step.checkFunctionaries(collections, trustBundles)
-
-			stepResult := step.validateAttestations(collections)
+			functionaryCheckResults := step.checkFunctionaries(collections, trustBundles)
+			stepResult := step.validateAttestations(functionaryCheckResults.Passed)
+			stepResult.Rejected = append(stepResult.Rejected, functionaryCheckResults.Rejected...)
 
 			// We perform many searches against the same step, so we need to merge the relevant fields
 			if resultsByStep[stepName].Step == "" {
@@ -271,11 +293,12 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for
 // the step the statement corresponds to
-func (step Step) checkFunctionaries(statements []source.CollectionVerificationResult, trustBundles map[string]TrustBundle) []source.CollectionVerificationResult {
+func (step Step) checkFunctionaries(statements []source.CollectionVerificationResult, trustBundles map[string]TrustBundle) StepResult {
+	result := StepResult{Step: step.Name}
 	for i, statement := range statements {
 		// Check that the statement contains a predicate type that we accept
 		if statement.Statement.PredicateType != attestation.CollectionType {
-			statements[i].Errors = append(statement.Errors, fmt.Errorf("predicate type %v is not a collection predicate type", statement.Statement.PredicateType))
+			result.Rejected = append(result.Rejected, RejectedCollection{Collection: statement, Reason: fmt.Errorf("predicate type %v is not a collection predicate type", statement.Statement.PredicateType)})
 		}
 
 		if len(statement.Verifiers) > 0 {
@@ -289,12 +312,18 @@ func (step Step) checkFunctionaries(statements []source.CollectionVerificationRe
 					}
 				}
 			}
+
+			if len(statements[i].ValidFunctionaries) == 0 {
+				result.Rejected = append(result.Rejected, RejectedCollection{Collection: statements[i], Reason: fmt.Errorf("no verifiers matched with allowed functionaries for step %s", step.Name)})
+			} else {
+				result.Passed = append(result.Passed, statements[i])
+			}
 		} else {
-			statements[i].Errors = append(statement.Errors, fmt.Errorf("no verifiers present to validate against collection verifiers"))
+			result.Rejected = append(result.Rejected, RejectedCollection{Collection: statements[i], Reason: fmt.Errorf("no verifiers present to validate against collection verifiers")})
 		}
 	}
 
-	return statements
+	return result
 }
 
 // verifyArtifacts will check the artifacts (materials+products) of the step referred to by `ArtifactsFrom` against the
