@@ -17,7 +17,6 @@ package git
 import (
 	"crypto"
 	"fmt"
-	giturl "github.com/whilp/git-urls"
 	"strings"
 	"time"
 
@@ -26,7 +25,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
-	"github.com/in-toto/go-witness/log"
 	"github.com/invopop/jsonschema"
 )
 
@@ -81,6 +79,9 @@ type Tag struct {
 }
 
 type Attestor struct {
+	GitTool        string               `json:"gittool"`
+	GitBinPath     string               `json:"gitbinpath,omitempty"`
+	GitBinHash     cryptoutil.DigestSet `json:"gitbinhash,omitempty"`
 	CommitHash     string               `json:"commithash"`
 	Author         string               `json:"author"`
 	AuthorEmail    string               `json:"authoremail"`
@@ -155,15 +156,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	for _, remote := range remotes {
-		for _, u := range remote.Config().URLs {
-			rurl, err := giturl.Parse(u)
-			if err != nil {
-				log.Debugf("failed to parse remote url: %w", err)
-			}
-
-			//NOTE: Not added the scheme to the remote so far, can add it if needed
-			a.Remotes = append(a.Remotes, fmt.Sprintf("%s/%s", rurl.Host, rurl.Path))
-		}
+		a.Remotes = append(a.Remotes, remote.Config().URLs...)
 	}
 
 	refs, err := repo.References()
@@ -231,14 +224,46 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	a.TreeHash = commit.TreeHash.String()
 
+	if GitExists() {
+		a.GitTool = "go-git+git-bin"
+
+		a.GitBinPath, err = GitGetBinPath()
+		if err != nil {
+			return err
+		}
+
+		a.GitBinHash, err = GitGetBinHash(ctx)
+		if err != nil {
+			return err
+		}
+
+		a.Status, err = GitGetStatus(ctx.WorkingDir())
+		if err != nil {
+			return err
+		}
+	} else {
+		a.GitTool = "go-git"
+
+		a.Status, err = GoGitGetStatus(repo)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func GoGitGetStatus(repo *git.Repository) (map[string]Status, error) {
+	var gitStatuses map[string]Status = make(map[string]Status)
+
 	worktree, err := repo.Worktree()
 	if err != nil {
-		return err
+		return map[string]Status{}, err
 	}
 
 	status, err := worktree.Status()
 	if err != nil {
-		return err
+		return map[string]Status{}, err
 	}
 
 	for file, status := range status {
@@ -251,10 +276,10 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 			Staging:  statusCodeString(status.Staging),
 		}
 
-		a.Status[file] = attestStatus
+		gitStatuses[file] = attestStatus
 	}
 
-	return nil
+	return gitStatuses, nil
 }
 
 func (a *Attestor) Data() *Attestor {
@@ -295,16 +320,6 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	for _, parentHash := range a.ParentHashes {
 		subjectName = fmt.Sprintf("parenthash:%v", parentHash)
 		ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(parentHash), hashes)
-		if err != nil {
-			return nil
-		}
-		subjects[subjectName] = ds
-	}
-
-	// add remotes
-	for _, remote := range a.Remotes {
-		subjectName = fmt.Sprintf("remote:%v", remote)
-		ds, err = cryptoutil.CalculateDigestSetFromBytes([]byte(remote), hashes)
 		if err != nil {
 			return nil
 		}
