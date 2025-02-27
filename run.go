@@ -58,8 +58,9 @@ func RunWithTimestampers(ts ...timestamp.Timestamper) RunOption {
 }
 
 type RunResult struct {
-	Collection     attestation.Collection
-	SignedEnvelope dsse.Envelope
+	Collection        attestation.Collection
+	SignedEnvelope    dsse.Envelope
+	UnsignedStatement []byte
 }
 
 func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResult, error) {
@@ -105,6 +106,11 @@ func Run(stepName string, signer cryptoutil.Signer, opts ...RunOption) (RunResul
 		if err != nil {
 			return result, fmt.Errorf("failed to sign collection: %w", err)
 		}
+	} else {
+		result.UnsignedStatement, err = prepareStatement(result.Collection)
+		if err != nil {
+			return result, fmt.Errorf("failed to prepare statement json: %w", err)
+		}
 	}
 
 	return result, nil
@@ -119,20 +125,29 @@ func validateRunOpts(ro runOptions) error {
 }
 
 func SignCollection(collection attestation.Collection, opts ...dsse.SignOption) (dsse.Envelope, error) {
-	data, err := json.Marshal(&collection)
-	if err != nil {
-		return dsse.Envelope{}, err
-	}
-
-	stmt, err := intoto.NewStatement(attestation.CollectionType, data, collection.Subjects())
-	if err != nil {
-		return dsse.Envelope{}, err
-	}
-
-	stmtJson, err := json.Marshal(&stmt)
+	stmtJson, err := prepareStatement(collection)
 	if err != nil {
 		return dsse.Envelope{}, err
 	}
 
 	return dsse.Sign(intoto.PayloadType, bytes.NewReader(stmtJson), opts...)
+}
+
+func prepareStatement(collection attestation.Collection) ([]byte, error) {
+	data, err := json.Marshal(&collection)
+	if err != nil {
+		return nil, err
+	}
+
+	stmt, err := intoto.NewStatement(attestation.CollectionType, data, collection.Subjects())
+	if err != nil {
+		return nil, err
+	}
+
+	stmtJson, err := json.Marshal(&stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	return stmtJson, nil
 }
