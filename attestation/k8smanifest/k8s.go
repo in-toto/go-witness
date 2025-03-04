@@ -87,8 +87,8 @@ type ClusterInfo struct {
 
 // Recorded image stores the details of images found in kubernetes manifests
 type RecordedImage struct {
-	Reference string `json:"reference"`
-	Digest    string `json:"digest"`
+	Reference string            `json:"reference"`
+	Digest    map[string]string `json:"digest"`
 }
 
 // Attestor implements the Witness Attestor interface for Kubernetes manifests.
@@ -687,11 +687,16 @@ func recordImages(obj runtime.Object, gvk *schema.GroupVersionKind) []RecordedIm
 func newRecordedImage(image string) RecordedImage {
 	rc := RecordedImage{
 		Reference: image,
+		Digest:    make(map[string]string),
 	}
 
 	dig, err := DigestForRef(rc.Reference)
 	if err == nil && dig != "" {
-		rc.Digest = dig
+		if spl := strings.Split(dig, ":"); len(spl) == 2 {
+			rc.Digest[spl[0]] = spl[1]
+		} else {
+			log.Debug("(attestation/k8smanifest) unrecognised structure for digest '%s'", rc.Reference)
+		}
 	} else {
 		log.Debug("(attestation/k8smanifest) failed to get digest for reference %s", rc.Reference)
 	}
