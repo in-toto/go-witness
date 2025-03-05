@@ -155,7 +155,7 @@ func (a *Attestor) setDockerCandidate(met *docker.BuildInfo) error {
 		a.Materials = []Material{}
 		for _, material := range met.Provenance.Materials {
 			a.Materials = append(a.Materials, Material{URI: material.URI, Digest: cryptoutil.DigestSet{
-				cryptoutil.DigestValue{crypto.SHA256, false}: material.Digest.Sha256,
+				cryptoutil.DigestValue{crypto.SHA256, false, false}: material.Digest.Sha256,
 			}})
 		}
 	}
