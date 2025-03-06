@@ -677,6 +677,17 @@ func recordImages(obj runtime.Object, gvk *schema.GroupVersionKind) []RecordedIm
 		for _, c := range obj.(*batchv1.CronJob).Spec.JobTemplate.Spec.Template.Spec.Containers {
 			recordedImages = append(recordedImages, newRecordedImage(c.Image))
 		}
+		// NOTE: there are likely a bunch of other list types that we should support here
+	case "List":
+		for _, i := range obj.(*corev1.List).Items {
+			var pod corev1.Pod
+			if err := json.Unmarshal(i.Raw, &pod); err == nil {
+				for _, c := range pod.Spec.Containers {
+					log.Info("recording image", c.Image)
+					recordedImages = append(recordedImages, newRecordedImage(c.Image))
+				}
+			}
+		}
 	default:
 		log.Debugf("(attestation/k8smanifest) Manifest of kind %s cannot be parsed to find images", gvk.Kind)
 	}
