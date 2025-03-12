@@ -201,12 +201,11 @@ func (ctx *AttestationContext) RunAttestors() error {
 		log.Infof("Starting %s attestors stage...", k.String())
 
 		var wg sync.WaitGroup
-		ch := make(chan int, len(attestors))
 
 		for _, att := range attestors[k] {
 			wg.Add(1)
 			go func(att Attestor) {
-				defer func() { wg.Done(); <-ch }()
+				defer wg.Done()
 				ctx.runAttestor(att)
 			}(att)
 		}

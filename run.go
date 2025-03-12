@@ -35,6 +35,7 @@ type runOptions struct {
 	attestationOpts []attestation.AttestationContextOption
 	timestampers    []timestamp.Timestamper
 	insecure        bool
+	ignoreErrors    bool
 }
 
 type RunOption func(ro *runOptions)
@@ -44,6 +45,13 @@ type RunOption func(ro *runOptions)
 func RunWithInsecure(insecure bool) RunOption {
 	return func(ro *runOptions) {
 		ro.insecure = insecure
+	}
+}
+
+// RunWithIgnoreErrors will ignore any errors that occur during the execution of the attestors
+func RunWithIgnoreErrors(ignoreErrors bool) RunOption {
+	return func(ro *runOptions) {
+		ro.ignoreErrors = ignoreErrors
 	}
 }
 
@@ -104,8 +112,9 @@ func RunWithExports(stepName string, opts ...RunOption) ([]RunResult, error) {
 
 func run(stepName string, opts []RunOption) ([]RunResult, error) {
 	ro := runOptions{
-		stepName: stepName,
-		insecure: false,
+		stepName:     stepName,
+		insecure:     false,
+		ignoreErrors: false,
 	}
 
 	for _, opt := range opts {
@@ -147,7 +156,7 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 		}
 	}
 
-	if len(errs) > 0 {
+	if !ro.ignoreErrors && len(errs) > 0 {
 		errs := append([]error{errors.New("attestors failed with error messages")}, errs...)
 		return result, errors.Join(errs...)
 	}
