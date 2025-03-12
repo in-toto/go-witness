@@ -15,16 +15,19 @@
 package oci
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"crypto"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
-	docker "github.com/in-toto/go-witness/internal/docker"
 	"github.com/in-toto/go-witness/log"
 	"github.com/invopop/jsonschema"
 )
@@ -34,7 +37,7 @@ const (
 	Type    = "https://witness.dev/attestations/oci/v0.1"
 	RunType = attestation.PostProductRunType
 
-	sha256MimeType = "text/sha256+text"
+	mimeTypes = "application/x-tar"
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -63,20 +66,60 @@ func init() {
 }
 
 type Attestor struct {
-	Materials       []Material           `json:"materials"`
-	ImageReferences []string             `json:"imagereferences"`
-	ImageDigest     cryptoutil.DigestSet `json:"imagedigest"`
-}
-
-type Material struct {
-	URI    string               `json:"uri"`
-	Digest cryptoutil.DigestSet `json:"digest"`
+	TarDigest      cryptoutil.DigestSet   `json:"tardigest"`
+	Manifest       []Manifest             `json:"manifest"`
+	ImageTags      []string               `json:"imagetags"`
+	LayerDiffIDs   []cryptoutil.DigestSet `json:"diffids"`
+	ImageID        cryptoutil.DigestSet   `json:"imageid"`
+	ManifestRaw    []byte                 `json:"manifestraw"`
+	ManifestDigest cryptoutil.DigestSet   `json:"manifestdigest"`
+	tarFilePath    string                 `json:"-"`
 }
 
 type Manifest struct {
 	Config   string   `json:"Config"`
 	RepoTags []string `json:"RepoTags"`
 	Layers   []string `json:"Layers"`
+}
+
+func (m *Manifest) getImageID(ctx *attestation.AttestationContext, tarFilePath string) (cryptoutil.DigestSet, error) {
+	tarFile, err := os.Open(tarFilePath)
+	if err != nil {
+		return nil, err
+	}
+	defer tarFile.Close()
+
+	tarReader := tar.NewReader(tarFile)
+	for {
+		h, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if h.FileInfo().IsDir() {
+			continue
+		}
+
+		if h.Name == m.Config {
+
+			b := make([]byte, h.Size)
+			_, err := tarReader.Read(b)
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+
+			imageID, err := cryptoutil.CalculateDigestSetFromBytes(b, ctx.Hashes())
+			if err != nil {
+				log.Debugf("(attestation/oci) error calculating image id: %w", err)
+				return nil, err
+			}
+
+			return imageID, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find config in tar file")
 }
 
 func New() *Attestor {
@@ -100,158 +143,190 @@ func (a *Attestor) Schema() *jsonschema.Schema {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	met, err := a.getDockerCandidate(ctx)
-	if err != nil {
-		log.Debugf("(attestation/oci) error getting docker candidate: %w", err)
+	if err := a.getCandidate(ctx); err != nil {
+		log.Debugf("(attestation/oci) error getting candidate: %w", err)
 		return err
 	}
-	if met != nil {
-		err := a.setDockerCandidate(met)
-		if err != nil {
-			log.Debugf("(attestation/oci) error setting docker candidate: %w", err)
-			return err
-		}
-	} else {
-		// NOTE: our final attempt here is to try and find the sha256 image digest saved to a file.
-		// most tools provide the ability to do this (e.g., docker, podman), and if they don't other manual mechanisms could be
-		// established by a user
-		dig, err := a.getImageDigestFileCandidate(ctx)
-		if err != nil {
-			log.Debugf("(attestation/oci) error getting image digest from file: %w", err)
-			return err
-		}
 
-		trimmed, found := strings.CutPrefix(dig, "sha256:")
-		if found == false {
-			err := fmt.Errorf("failed to remove prefix from digest")
-			log.Debugf("(attestation/oci) %s", err.Error())
-			return err
-		}
-		a.ImageDigest = map[cryptoutil.DigestValue]string{}
-		a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}] = trimmed
+	if err := a.parseMaifest(ctx); err != nil {
+		log.Debugf("(attestation/oci) error parsing manifest: %w", err)
+		return err
 	}
+
+	imageID, err := a.Manifest[0].getImageID(ctx, a.tarFilePath)
+	if err != nil {
+		log.Debugf("(attestation/oci) error getting image id: %w", err)
+		return err
+	}
+
+	layerDiffIDs, err := a.Manifest[0].getLayerDIFFIDs(ctx, a.tarFilePath)
+	if err != nil {
+		return err
+	}
+
+	a.ImageID = imageID
+	a.LayerDiffIDs = layerDiffIDs
+	a.ImageTags = a.Manifest[0].RepoTags
 
 	return nil
 }
 
-func (a *Attestor) setDockerCandidate(met *docker.BuildInfo) error {
-	if strings.HasPrefix(met.ContainerImageDigest, "sha256:") {
-		log.Debugf("(attestation/oci) found image digest '%s'", met.ContainerImageDigest)
-		a.ImageDigest = map[cryptoutil.DigestValue]string{}
-		log.Debugf("(attestation/oci) removing 'sha256:' prefix from digest '%s'", met.ContainerImageDigest)
-		trimmed, found := strings.CutPrefix(met.ContainerImageDigest, "sha256:")
-		if found == false {
-			err := fmt.Errorf("failed to remove prefix from digest")
-			log.Debugf("(attestation/oci) %s", err.Error())
-			return err
-		}
-		log.Debugf("(attestation/oci) setting image digest as '%s'", trimmed)
-		a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}] = trimmed
-	} else {
-		log.Warnf("(attestation/oci) found metadata file does not contain image digest of expected format: '%s'", met.ContainerImageDigest)
-	}
-
-	if len(met.Provenance.Materials) != 0 {
-		a.Materials = []Material{}
-		for _, material := range met.Provenance.Materials {
-			a.Materials = append(a.Materials, Material{URI: material.URI, Digest: cryptoutil.DigestSet{
-				cryptoutil.DigestValue{crypto.SHA256, false, false}: material.Digest.Sha256,
-			}})
-		}
-	}
-
-	// NOTE: we can get the builder architecture information from another attestor
-	// if plat := met.Provenance.Invocation.Environment.Platform; plat != "" {
-	// 	s := strings.Split(plat, "/")
-	// 	if len(s) != 2 {
-	// 		log.Warnf("(attestation/oci) docker buildx metadata `invocation.environment.platform` field '%s' not in expected `os/arch` fomat. skipping", plat)
-	// 	}
-	//
-	// 	a.Environment = met.Provenance.Invocation.Environment.Platform
-	// }
-
-	log.Debugf("setting image references as '%s'", met.ImageName)
-	a.ImageReferences = []string{}
-	a.ImageReferences = append(a.ImageReferences, met.ImageName)
-	return nil
-}
-
-func (a *Attestor) getImageDigestFileCandidate(ctx *attestation.AttestationContext) (string, error) {
-	products := ctx.Products()
-
-	for path, product := range products {
-		if strings.Contains(sha256MimeType, product.MimeType) {
-			f, err := os.ReadFile(filepath.Join(ctx.WorkingDir(), path))
-			if err != nil {
-				return "", fmt.Errorf("failed to read file %s: %w", path, err)
-			}
-			return string(f), nil
-		}
-	}
-
-	return "", nil
-}
-
-func (a *Attestor) getDockerCandidate(ctx *attestation.AttestationContext) (*docker.BuildInfo, error) {
+func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 	products := ctx.Products()
 
 	if len(products) == 0 {
-		return nil, fmt.Errorf("no products to attest")
+		return fmt.Errorf("no products to attest")
 	}
 
-	//NOTE: it's not ideal to try and parse it without a mime type but the metadata file is completely different depending on how the buildx is executed
-	for path, _ := range products {
-		var met docker.BuildInfo
-		f, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file %s: %w", path, err)
-		}
-
-		err = json.Unmarshal(f, &met)
-		if err != nil {
-			log.Debugf("(attestation/oci) error parsing file %s as docker metadata file: %w", path, err)
+	for path, product := range products {
+		if !strings.Contains(mimeTypes, product.MimeType) {
 			continue
 		}
 
-		log.Info("found image metadata file")
+		newDigestSet, err := cryptoutil.CalculateDigestSetFromFile(path, ctx.Hashes())
+		if newDigestSet == nil || err != nil {
+			return fmt.Errorf("error calculating digest set from file: %s", path)
+		}
 
-		return &met, nil
+		if !newDigestSet.Equal(product.Digest) {
+			return fmt.Errorf("integrity error: product digest set does not match candidate digest set")
+		}
+
+		a.TarDigest = product.Digest
+
+		a.tarFilePath = path
+		return nil
+	}
+	return fmt.Errorf("no tar file found")
+}
+
+func (a *Attestor) parseMaifest(ctx *attestation.AttestationContext) error {
+	f, err := os.Open(a.tarFilePath)
+	if err != nil {
+		err = fmt.Errorf("error opening tar file: %w", err)
+		return err
 	}
 
-	return nil, nil
+	tarReader := tar.NewReader(f)
+	for {
+		h, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if h.FileInfo().IsDir() {
+			continue
+		}
+		if h.Name == "manifest.json" {
+			a.ManifestRaw = make([]byte, h.Size)
+			_, err = tarReader.Read(a.ManifestRaw)
+			if err != nil || err == io.EOF {
+				break
+			}
+			break
+		}
+	}
+
+	manifestDigest, err := cryptoutil.CalculateDigestSetFromBytes(a.ManifestRaw, ctx.Hashes())
+	if err != nil {
+		return err
+	}
+
+	a.ManifestDigest = manifestDigest
+
+	err = json.Unmarshal(a.ManifestRaw, &a.Manifest)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	hashes := []cryptoutil.DigestValue{{Hash: crypto.SHA256}}
 	subj := make(map[string]cryptoutil.DigestSet)
-	subj[fmt.Sprintf("imagedigest:%s", a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.ImageDigest
-
-	for _, ir := range a.ImageReferences {
-		if hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(ir), hashes); err == nil {
-			subj[fmt.Sprintf("imagereference:%s", ir)] = hash
-		} else {
-			log.Debugf("(attestation/oci) failed to record github imagereference subject: %w", err)
-		}
-	}
-
-	for _, m := range a.Materials {
-		subj[fmt.Sprintf("materialdigest:%s", m.Digest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = m.Digest
-		if hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(m.URI), hashes); err == nil {
-			subj[fmt.Sprintf("materialuri:%s", m.URI)] = hash
-		} else {
-			log.Debugf("(attestation/github) failed to record github materialuri subject: %w", err)
-		}
-	}
+	subj[fmt.Sprintf("manifestdigest:%s", a.ManifestDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.ManifestDigest
+	subj[fmt.Sprintf("tardigest:%s", a.TarDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.TarDigest
+	subj[fmt.Sprintf("imageid:%s", a.ImageID[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.ImageID
 
 	// image tags
-	for _, ref := range a.ImageReferences {
-		hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(ref), hashes)
+	for _, tag := range a.ImageTags {
+		hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(tag), hashes)
 		if err != nil {
-			log.Debugf("(attestation/oci) error calculating image reference: %w", err)
+			log.Debugf("(attestation/oci) error calculating image tag: %w", err)
 			continue
 		}
-		subj[fmt.Sprintf("imagereference:%s", ref)] = hash
+		subj[fmt.Sprintf("imagetag:%s", tag)] = hash
 	}
 
+	// diff ids
+	for layer := range a.LayerDiffIDs {
+		subj[fmt.Sprintf("layerdiffid%02d:%s", layer, a.LayerDiffIDs[layer][cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.LayerDiffIDs[layer]
+	}
 	return subj
+}
+
+func (m *Manifest) getLayerDIFFIDs(ctx *attestation.AttestationContext, tarFilePath string) ([]cryptoutil.DigestSet, error) {
+	var layerDiffIDs []cryptoutil.DigestSet
+
+	tarFile, err := os.Open(tarFilePath)
+	if err != nil {
+		return nil, err
+	}
+	defer tarFile.Close()
+
+	tarReader := tar.NewReader(tarFile)
+	for {
+		h, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if h.FileInfo().IsDir() {
+			continue
+		}
+		for _, layerFile := range m.Layers {
+			if h.Name == layerFile {
+				b := make([]byte, h.Size)
+
+				_, err := tarReader.Read(b)
+				if err != nil && err != io.EOF {
+					return nil, err
+				}
+
+				contentType := http.DetectContentType(b)
+				if contentType == "application/x-gzip" {
+					breader, err := gzip.NewReader(bytes.NewReader(b))
+					if err != nil {
+						return nil, err
+					}
+					defer breader.Close()
+					c, err := io.ReadAll(breader)
+					if err != nil {
+						return nil, err
+					}
+					layerDiffID, err := cryptoutil.CalculateDigestSetFromBytes(c, ctx.Hashes())
+					if err != nil {
+						return nil, err
+					}
+					layerDiffIDs = append(layerDiffIDs, layerDiffID)
+
+				} else {
+					layerDiffID, err := cryptoutil.CalculateDigestSetFromBytes(b, ctx.Hashes())
+					if err != nil {
+						return nil, err
+					}
+					layerDiffIDs = append(layerDiffIDs, layerDiffID)
+				}
+
+			}
+		}
+	}
+	return layerDiffIDs, nil
 }

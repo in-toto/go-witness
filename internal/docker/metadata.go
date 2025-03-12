@@ -1,4 +1,11 @@
-package oci
+package docker
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"strings"
+)
 
 type Digest struct {
 	Sha256 string `json:"sha256"`
@@ -57,10 +64,60 @@ type ContainerImageDescriptor struct {
 }
 
 type BuildInfo struct {
-	Provenance                 Provenance               `json:"buildx.build.provenance"`
+	Provenance                 map[string]Provenance
 	BuildRef                   string                   `json:"buildx.build.ref"`
 	ContainerImageConfigDigest string                   `json:"containerimage.config.digest"`
 	ContainerImageDescriptor   ContainerImageDescriptor `json:"containerimage.descriptor"`
 	ContainerImageDigest       string                   `json:"containerimage.digest"`
 	ImageName                  string                   `json:"image.name"`
+}
+
+func (b *BuildInfo) UnmarshalJSON(data []byte) error {
+	type Alias BuildInfo
+	aux := &Alias{}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	*b = BuildInfo(*aux)
+
+	// Provenance looks a bit different so we handle it separately
+	b.Provenance = make(map[string]Provenance)
+
+	for key, value := range raw {
+		if key == "buildx.build.ref" {
+			json.Unmarshal(value, &b.BuildRef)
+		} else if strings.Contains(key, "buildx.build.provenance") {
+			var provenance Provenance
+			if err := json.Unmarshal(value, &provenance); err == nil {
+				var arch string
+				var found bool
+
+				if key == "buildx.build.provenance" {
+					for _, mat := range provenance.Materials {
+						if parts := strings.Split(mat.URI, "?platform="); len(parts) == 2 {
+							arch, err = url.QueryUnescape(parts[1])
+							if err != nil {
+								continue
+							}
+						}
+					}
+				} else {
+					arch, found = strings.CutPrefix(key, "buildx.build.provenance/")
+					if !found {
+						return fmt.Errorf("unexpected provenance prefix on key: %s", key)
+					}
+				}
+
+				b.Provenance[arch] = provenance
+			}
+		}
+	}
+
+	return nil
 }
