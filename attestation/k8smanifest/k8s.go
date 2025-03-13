@@ -450,7 +450,21 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 		}
 	}
 
-	recordedImages := recordImages(obj, gvk)
+	recordedImages := []RecordedImage{}
+	if list, ok := obj.(*corev1.List); ok {
+		for _, obj := range list.Items {
+			o, gvk, err := decode(obj.Raw, nil, nil)
+			if err != nil {
+				err := fmt.Errorf("Failed to decode file %s. Continuing: %s", filePath, err.Error())
+				log.Debugf("(attestation/k8smanifest) %w", err)
+				return nil, RecordedObject{}, err
+			}
+
+			recordedImages = append(recordedImages, recordImages(o, gvk)...)
+		}
+	} else {
+		recordedImages = recordImages(obj, gvk)
+	}
 
 	baseKey := fmt.Sprintf("k8smanifest:%s:%s:%s", filePath, kindVal, nameVal)
 	subjectKey := baseKey
@@ -500,7 +514,7 @@ func (a *Attestor) runRecordClusterInfo() error {
 		return nil
 	}
 
-	return fmt.Errorf("unable to find context '%s' in kubernetes config at path '%s'")
+	return fmt.Errorf("unable to find context '%s' in kubernetes config at path '%s'", cc, a.KubeconfigPath)
 }
 
 // runDryRun executes kubectl apply --dry-run=server -o json -f -
@@ -678,16 +692,6 @@ func recordImages(obj runtime.Object, gvk *schema.GroupVersionKind) []RecordedIm
 			recordedImages = append(recordedImages, newRecordedImage(c.Image))
 		}
 		// NOTE: there are likely a bunch of other list types that we should support here
-	case "List":
-		for _, i := range obj.(*corev1.List).Items {
-			var pod corev1.Pod
-			if err := json.Unmarshal(i.Raw, &pod); err == nil {
-				for _, c := range pod.Spec.Containers {
-					log.Info("recording image", c.Image)
-					recordedImages = append(recordedImages, newRecordedImage(c.Image))
-				}
-			}
-		}
 	default:
 		log.Debugf("(attestation/k8smanifest) Manifest of kind %s cannot be parsed to find images", gvk.Kind)
 	}
