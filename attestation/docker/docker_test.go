@@ -66,7 +66,10 @@ func Test_DockerAttestor(t *testing.T) {
 					Architecture: "linux/amd64",
 					URI:          "pkg:docker/alpine@latest?platform=linux%2Famd64",
 					Digest: cryptoutil.DigestSet{
-						cryptoutil.DigestValue{crypto.SHA256, false, false}: "a8560b36e8b8210634f77d9f7f9efd7ffa463e380b75e2e74aff4511df3ef88c",
+						cryptoutil.DigestValue{
+							Hash:    crypto.SHA256,
+							GitOID:  false,
+							DirHash: false}: "a8560b36e8b8210634f77d9f7f9efd7ffa463e380b75e2e74aff4511df3ef88c",
 					},
 				}}, a.Materials["linux/amd64"], "TestName: %s", name)
 
