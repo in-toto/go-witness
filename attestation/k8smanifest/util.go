@@ -16,8 +16,21 @@ package k8smanifest
 
 import (
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/sigstore/cosign/pkg/oci/remote"
+	remote "github.com/google/go-containerregistry/pkg/v1/remote"
 )
+
+var (
+	remoteGet = remote.Get
+)
+
+// Taken from github.com/sigstore/cosign/v2/pkg/oci/remote
+func resolveDigest(ref name.Reference) (name.Digest, error) {
+	desc, err := remoteGet(ref)
+	if err != nil {
+		return name.Digest{}, err
+	}
+	return ref.Context().Digest(desc.Digest.String()), nil
+}
 
 func DigestForRef(reference string) (string, error) {
 	ref, err := name.ParseReference(reference)
@@ -25,7 +38,7 @@ func DigestForRef(reference string) (string, error) {
 		return "", err
 	}
 
-	nref, err := remote.ResolveDigest(ref)
+	nref, err := resolveDigest(ref)
 	if err != nil {
 		return "", err
 	}
