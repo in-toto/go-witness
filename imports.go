@@ -37,7 +37,6 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/sarif"
 	_ "github.com/in-toto/go-witness/attestation/sbom"
 	_ "github.com/in-toto/go-witness/attestation/slsa"
-	_ "github.com/in-toto/go-witness/attestation/structureddata"
 	_ "github.com/in-toto/go-witness/attestation/vex"
 
 	// signer providers
