@@ -207,7 +207,8 @@ func (a *Attestor) getDockerCandidate(ctx *attestation.AttestationContext) (*doc
 		return nil, fmt.Errorf("no products to attest")
 	}
 
-	//NOTE: it's not ideal to try and parse it without a mime type but the metadata file is completely different depending on how the buildx is executed
+	//NOTE: it's not ideal to try and parse it without a dedicated mime type (using json here)
+	// but the metadata file is completely different depending on how the buildx is executed
 	for path, product := range products {
 		if strings.Contains(jsonMimeType, product.MimeType) {
 			var met docker.BuildInfo
@@ -253,7 +254,6 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		}
 	}
 
-	// image tags
 	for _, ref := range a.ImageReferences {
 		hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(ref), hashes)
 		if err != nil {
