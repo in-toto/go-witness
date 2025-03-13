@@ -15,7 +15,7 @@ require (
 	github.com/fkautz/omnitrail-go v0.0.0-20230808061951-37d34c23539d
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/go-git/go-git/v5 v5.13.2
-	github.com/go-jose/go-jose/v3 v3.0.3
+	github.com/go-jose/go-jose/v3 v3.0.4
 	github.com/in-toto/archivista v0.5.4
 	github.com/in-toto/attestation v1.0.2
 	github.com/invopop/jsonschema v0.12.0
