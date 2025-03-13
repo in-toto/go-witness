@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -62,6 +63,12 @@ func (e ErrAttestor) Error() string {
 }
 
 type AttestationContextOption func(ctx *AttestationContext)
+
+func WithOutputWriters(w []io.Writer) AttestationContextOption {
+	return func(ctx *AttestationContext) {
+		ctx.outputWriters = w
+	}
+}
 
 func WithContext(ctx context.Context) AttestationContextOption {
 	return func(actx *AttestationContext) {
@@ -138,6 +145,7 @@ type AttestationContext struct {
 	stepName            string
 	mutex               sync.RWMutex
 	environmentCapturer *environment.Capture
+	outputWriters       []io.Writer
 }
 
 type Product struct {
@@ -245,6 +253,10 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) {
 	}
 
 	log.Infof("Finished %v attestor... (%vs)", attestor.Name(), time.Since(startTime).Seconds())
+}
+
+func (ctx *AttestationContext) OutputWriters() []io.Writer {
+	return ctx.outputWriters
 }
 
 func (ctx *AttestationContext) DirHashGlob() []glob.Glob {
