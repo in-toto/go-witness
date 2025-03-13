@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/in-toto/go-witness/attestation/k8smanifest/attestor",
+  "$ref": "#/$defs/Attestor",
+  "$defs": {
+    "Attestor": {
+      "properties": {
+        "server_side_dry_run": {
+          "type": "boolean"
+        },
+        "record_cluster_info": {
+          "type": "boolean"
+        },
+        "kubeconfig": {
+          "type": "string"
+        },
+        "kubeContext": {
+          "type": "string"
+        },
+        "IgnoreFields": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "IgnoreFields"
+        },
+        "IgnoreAnnotations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "recorded_docs": {
+          "items": {
+            "$ref": "#/$defs/RecordedObject"
+          },
+          "type": "array"
+        },
+        "clusterInfo": {
+          "$ref": "#/$defs/ClusterInfo"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "clusterInfo"
+      ]
+    },
+    "ClusterInfo": {
+      "properties": {
+        "server": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "server"
+      ]
+    },
+    "DigestSet": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "RecordedImage": {
+      "properties": {
+        "reference": {
+          "type": "string"
+        },
+        "digest": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "reference",
+        "digest"
+      ]
+    },
+    "RecordedObject": {
+      "properties": {
+        "filePath": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "data": true,
+        "canonicalJSON": {
+          "type": "string"
+        },
+        "subjectKey": {
+          "type": "string"
+        },
+        "computedDigest": {
+          "$ref": "#/$defs/DigestSet"
+        },
+        "recordedImages": {
+          "items": {
+            "$ref": "#/$defs/RecordedImage"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "filePath",
+        "kind",
+        "name",
+        "data",
+        "canonicalJSON",
+        "subjectKey",
+        "computedDigest",
+        "recordedImages"
+      ]
+    }
+  }
+}

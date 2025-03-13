@@ -96,7 +96,7 @@ type Attestor struct {
 	ServerSideDryRun  bool     `json:"server_side_dry_run,omitempty"`
 	RecordClusterInfo bool     `json:"record_cluster_info,omitempty"`
 	KubeconfigPath    string   `json:"kubeconfig,omitempty"`
-	KubeContext       string   `json:kubeContext,omitempty"`
+	KubeContext       string   `json:"kubeContext,omitempty"`
 	IgnoreFields      []string `json:"IgnoreFields,omitempty" jsonschema:"title=IgnoreFields"`
 	IgnoreAnnotations []string `json:"IgnoreAnnotations,omitempty"`
 	ephemeralFields   []string

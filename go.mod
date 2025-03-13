@@ -20,7 +20,6 @@ require (
 	github.com/in-toto/archivista v0.5.4
 	github.com/in-toto/attestation v1.0.2
 	github.com/invopop/jsonschema v0.12.0
-	github.com/itchyny/gojq v0.12.17
 	github.com/jellydator/ttlcache/v3 v3.2.1
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-homedir v1.1.0
@@ -103,7 +102,6 @@ require (
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
-	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -189,7 +187,7 @@ require (
 	google.golang.org/genproto v0.0.0-20240401170217-c3f982113cda // indirect
 	google.golang.org/protobuf v1.36.5
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
 
