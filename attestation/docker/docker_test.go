@@ -34,7 +34,10 @@ func Test_DockerAttestor(t *testing.T) {
 					Architecture: "linux/arm64",
 					URI:          "pkg:docker/ubuntu@latest?platform=linux%2Farm64",
 					Digest: cryptoutil.DigestSet{
-						cryptoutil.DigestValue{crypto.SHA256, false, false}: "72297848456d5d37d1262630108ab308d3e9ec7ed1c3286a32fe09856619a782",
+						cryptoutil.DigestValue{
+							Hash:    crypto.SHA256,
+							GitOID:  false,
+							DirHash: false}: "72297848456d5d37d1262630108ab308d3e9ec7ed1c3286a32fe09856619a782",
 					},
 				}}, a.Materials["linux/arm64"], "TestName: %s", name)
 
@@ -42,7 +45,10 @@ func Test_DockerAttestor(t *testing.T) {
 					Architecture: "linux/amd64",
 					URI:          "pkg:docker/ubuntu@latest?platform=linux%2Famd64",
 					Digest: cryptoutil.DigestSet{
-						cryptoutil.DigestValue{crypto.SHA256, false, false}: "72297848456d5d37d1262630108ab308d3e9ec7ed1c3286a32fe09856619a782",
+						cryptoutil.DigestValue{
+							Hash:    crypto.SHA256,
+							GitOID:  false,
+							DirHash: false}: "72297848456d5d37d1262630108ab308d3e9ec7ed1c3286a32fe09856619a782",
 					},
 				}}, a.Materials["linux/amd64"], "TestName: %s", name)
 

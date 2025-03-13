@@ -91,7 +91,10 @@ func (b *BuildInfo) UnmarshalJSON(data []byte) error {
 
 	for key, value := range raw {
 		if key == "buildx.build.ref" {
-			json.Unmarshal(value, &b.BuildRef)
+			err := json.Unmarshal(value, &b.BuildRef)
+			if err != nil {
+				return err
+			}
 		} else if strings.Contains(key, "buildx.build.provenance") {
 			var provenance Provenance
 			if err := json.Unmarshal(value, &provenance); err == nil {

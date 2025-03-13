@@ -35,5 +35,4 @@ func (t TestProducter) Products() map[string]attestation.Product {
 
 func (t *TestProducter) SetProducts(products map[string]attestation.Product) {
 	t.products = products
-	return
 }

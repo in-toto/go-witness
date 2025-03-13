@@ -124,7 +124,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		}
 
 		trimmed, found := strings.CutPrefix(dig, "sha256:")
-		if found == false {
+		if !found {
 			err := fmt.Errorf("failed to remove prefix from digest")
 			log.Debugf("(attestation/docker) %s", err.Error())
 		}
@@ -141,7 +141,7 @@ func (a *Attestor) setDockerCandidate(met *docker.BuildInfo) error {
 		a.ImageDigest = map[cryptoutil.DigestValue]string{}
 		log.Debugf("(attestation/docker) removing 'sha256:' prefix from digest '%s'", met.ContainerImageDigest)
 		trimmed, found := strings.CutPrefix(met.ContainerImageDigest, "sha256:")
-		if found == false {
+		if !found {
 			err := fmt.Errorf("failed to remove prefix from digest")
 			log.Debugf("(attestation/docker) %s", err.Error())
 			return err
@@ -160,7 +160,11 @@ func (a *Attestor) setDockerCandidate(met *docker.BuildInfo) error {
 					Architecture: arch,
 					URI:          material.URI,
 					Digest: cryptoutil.DigestSet{
-						cryptoutil.DigestValue{crypto.SHA256, false, false}: material.Digest.Sha256,
+						cryptoutil.DigestValue{
+							Hash:    crypto.SHA256,
+							GitOID:  false,
+							DirHash: false,
+						}: material.Digest.Sha256,
 					},
 				}
 
