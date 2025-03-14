@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	"github.com/in-toto/go-witness/attestation"
-	"github.com/in-toto/go-witness/attestation/testproducter"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/internal/attestors/test/testproducter"
 	"github.com/stretchr/testify/require"
 )
 

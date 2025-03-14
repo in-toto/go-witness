@@ -24,8 +24,9 @@ import (
 	"testing"
 
 	"github.com/in-toto/go-witness/attestation"
-	"github.com/in-toto/go-witness/attestation/testproducter"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/internal/attestors/test/testproducter"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -120,16 +121,12 @@ func Test_DockerAttestor(t *testing.T) {
 			testProductSet := make(map[string]attestation.Product)
 			for _, prod := range tt.testProducts {
 				decoded, err := base64.StdEncoding.DecodeString(prod)
-				if err != nil {
-					t.Fatal(err)
-				}
+				require.NoError(t, err)
 
 				hashes := []cryptoutil.DigestValue{{Hash: crypto.SHA256}}
 
 				prodDigest, err := cryptoutil.CalculateDigestSetFromBytes([]byte(decoded), hashes)
-				if err != nil {
-					t.Errorf("Failed to calculate digest set from bytes: %v", err)
-				}
+				require.NoError(t, err)
 
 				file := SetupTest(t, prod)
 
@@ -142,9 +139,7 @@ func Test_DockerAttestor(t *testing.T) {
 			tp := testproducter.TestProducter{}
 			tp.SetProducts(testProductSet)
 			ctx, err := attestation.NewContext("test", []attestation.Attestor{tp, a})
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 
 			err = ctx.RunAttestors()
 
@@ -163,34 +158,23 @@ func SetupTest(t *testing.T, productFileData string) *os.File {
 	bs := s.Sum(nil)
 
 	file, err := os.CreateTemp("", fmt.Sprintf("%x.json", bs))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	decoded, err := base64.StdEncoding.DecodeString(productFileData)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	_, err = file.Write([]byte(decoded))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	return file
 }
 
 func TestNew(t *testing.T) {
 	a := New()
-	if a.Name() != Name {
-		t.Errorf("expected Name to be %s, got %s", Name, a.Name())
-	}
 
-	if a.Type() != Type {
-		t.Errorf("expected Type to be %s, got %s", Type, a.Type())
-	}
+	assert.Equal(t, Name, a.Name())
 
-	if a.RunType() != RunType {
-		t.Errorf("expected RunType to be %s, got %s", RunType, a.RunType())
-	}
+	assert.Equal(t, Type, a.Type())
+
+	assert.Equal(t, RunType, a.RunType())
 }

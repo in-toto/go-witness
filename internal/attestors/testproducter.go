@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package testproducter
+package attestors
 
 import (
 	"github.com/in-toto/go-witness/attestation"
