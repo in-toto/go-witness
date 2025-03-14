@@ -19,6 +19,7 @@ import (
 	// attestors
 	_ "github.com/in-toto/go-witness/attestation/aws-iid"
 	_ "github.com/in-toto/go-witness/attestation/commandrun"
+	_ "github.com/in-toto/go-witness/attestation/docker"
 	_ "github.com/in-toto/go-witness/attestation/environment"
 	_ "github.com/in-toto/go-witness/attestation/gcp-iit"
 	_ "github.com/in-toto/go-witness/attestation/git"
