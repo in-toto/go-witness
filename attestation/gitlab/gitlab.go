@@ -117,7 +117,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	a.CIServerUrl = os.Getenv("CI_SERVER_URL")
 	jwksUrl := fmt.Sprintf("%s/oauth/discovery/keys", a.CIServerUrl)
-	jwtString := os.Getenv("ID_TOKEN")
+	jwtString := os.Getenv("CI_JOB_TOKEN")
 	if jwtString != "" {
 		a.JWT = jwt.New(jwt.WithToken(jwtString), jwt.WithJWKSUrl(jwksUrl))
 		if err := a.JWT.Attest(ctx); err != nil {
