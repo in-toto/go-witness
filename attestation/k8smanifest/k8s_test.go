@@ -272,13 +272,11 @@ status:
 			}
 
 			require.Len(t, km.RecordedDocs, c.expectDocsCount, "RecordedDocs mismatch")
-			subs := km.Subjects()
-			require.Len(t, subs, c.expectSubjectsCount, "Subjects mismatch")
 
 			if c.checkIgnoreFields {
 				sch := km.Schema()
-				require.True(t, hasPropertyKeyInAttestor(sch, "IgnoreFields"),
-					"the schema should have 'IgnoreFields' in Attestor.Properties")
+				require.True(t, hasPropertyKeyInAttestor(sch, "ignorefields"),
+					"the schema should have 'ignorefields' in Attestor.Properties")
 			}
 		})
 	}
@@ -356,24 +354,12 @@ data:
 	require.NoError(t, err)
 
 	require.NoError(t, ctx.RunAttestors())
-	subs := km.Subjects()
-	require.NotEmpty(t, subs)
 
 	require.Len(t, km.RecordedDocs, 1)
 	doc := km.RecordedDocs[0]
 	require.Equal(t, "my-config", doc.Name)
 	require.Equal(t, "ConfigMap", doc.Kind)
-	require.NotEmpty(t, doc.CanonicalJSON)
-	require.NotEmpty(t, doc.ComputedDigest)
 
-	var foundKey string
-	for k := range subs {
-		if strings.Contains(k, "k8smanifest:config.yaml:ConfigMap:my-config") {
-			foundKey = k
-			break
-		}
-	}
-	require.NotEmpty(t, foundKey, "Expected to find a subject key with kind=ConfigMap and name=my-config")
 }
 
 func TestK8smanifest_MultiDoc(t *testing.T) {
@@ -410,21 +396,8 @@ metadata:
 	require.NoError(t, err)
 
 	require.NoError(t, ctx.RunAttestors())
-	subs := km.Subjects()
 
 	require.Len(t, km.RecordedDocs, 2)
-	require.Len(t, subs, 2)
-
-	var foundConfig, foundDeploy bool
-	for k := range subs {
-		if strings.Contains(k, "k8smanifest:multi.yaml:ConfigMap:config-one") {
-			foundConfig = true
-		} else if strings.Contains(k, "k8smanifest:multi.yaml:Deployment:deploy-two") {
-			foundDeploy = true
-		}
-	}
-	require.True(t, foundConfig, "Should find a subject referencing config-one")
-	require.True(t, foundDeploy, "Should find a subject referencing deploy-two")
 }
 
 func TestK8smanifest_IgnoresEphemeral(t *testing.T) {
@@ -464,17 +437,14 @@ status:
 	require.NoError(t, err)
 
 	require.NoError(t, ctx.RunAttestors())
-	subs := km.Subjects()
 
 	require.Len(t, km.RecordedDocs, 1)
-	require.Len(t, subs, 1)
 
 	doc := km.RecordedDocs[0]
 	require.Equal(t, "ephemeral-pod", doc.Name)
 	require.Contains(t, doc.SubjectKey, "k8smanifest:ephemeral.yaml:Pod:ephemeral-pod")
 
-	// doc.Data is the raw JSON after ephemeral removal & canonicalization
-	// Actually doc.Data is pre-canonical, but ephemeral fields should be removed from it too
+	// doc.Data is the raw JSON after ephemeral removal
 	var payload map[string]interface{}
 	err = json.Unmarshal(doc.Data, &payload)
 	require.NoError(t, err)
@@ -521,8 +491,8 @@ func TestK8smanifest_WithExtraIgnoreFields(t *testing.T) {
 
 	sch := km.Schema()
 	require.NotNil(t, sch)
-	require.True(t, hasPropertyKeyInAttestor(sch, "IgnoreFields"),
-		"the schema should have 'IgnoreFields' in Attestor.Properties")
+	require.True(t, hasPropertyKeyInAttestor(sch, "ignorefields"),
+		"the schema should have 'ignorefields' in Attestor.Properties")
 }
 
 func TestK8smanifest_SimpleJson(t *testing.T) {
@@ -561,24 +531,10 @@ func TestK8smanifest_SimpleJson(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, ctx.RunAttestors())
-	subs := km.Subjects()
-	require.NotEmpty(t, subs)
-
 	require.Len(t, km.RecordedDocs, 1)
 	doc := km.RecordedDocs[0]
 	require.Equal(t, "my-config-json", doc.Name)
 	require.Equal(t, "ConfigMap", doc.Kind)
-	require.NotEmpty(t, doc.CanonicalJSON)
-	require.NotEmpty(t, doc.ComputedDigest)
-
-	var foundKey string
-	for k := range subs {
-		if strings.Contains(k, "k8smanifest:config.json:ConfigMap:my-config-json") {
-			foundKey = k
-			break
-		}
-	}
-	require.NotEmpty(t, foundKey)
 }
 
 func TestK8smanifest_MultiDocJson(t *testing.T) {
@@ -621,19 +577,6 @@ func TestK8smanifest_MultiDocJson(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, ctx.RunAttestors())
-	subs := km.Subjects()
 
 	require.Len(t, km.RecordedDocs, 2)
-	require.Len(t, subs, 2)
-
-	var foundConfig, foundDeploy bool
-	for k := range subs {
-		if strings.Contains(k, "k8smanifest:multi.json:ConfigMap:config-one-json") {
-			foundConfig = true
-		} else if strings.Contains(k, "k8smanifest:multi.json:Deployment:deploy-two-json") {
-			foundDeploy = true
-		}
-	}
-	require.True(t, foundConfig)
-	require.True(t, foundDeploy)
 }

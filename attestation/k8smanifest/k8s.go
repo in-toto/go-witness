@@ -26,7 +26,6 @@ import (
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
-	"github.com/in-toto/go-witness/internal/jsoncanonicalizer"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
@@ -71,14 +70,12 @@ var defaultEphemeralAnnotations = []string{
 
 // RecordedObject stores ephemeral-cleaned doc details.
 type RecordedObject struct {
-	FilePath       string               `json:"filePath"`
-	Kind           string               `json:"kind"`
-	Name           string               `json:"name"`
-	Data           json.RawMessage      `json:"data"`
-	CanonicalJSON  string               `json:"canonicalJSON"`
-	SubjectKey     string               `json:"subjectKey"`
-	ComputedDigest cryptoutil.DigestSet `json:"computedDigest"`
-	RecordedImages []RecordedImage      `json:"recordedImages"`
+	FilePath       string          `json:"filepath"`
+	Kind           string          `json:"kind"`
+	Name           string          `json:"name"`
+	Data           json.RawMessage `json:"data"`
+	SubjectKey     string          `json:"subjectkey"`
+	RecordedImages []RecordedImage `json:"recordedimages"`
 }
 
 type ClusterInfo struct {
@@ -93,17 +90,17 @@ type RecordedImage struct {
 
 // Attestor implements the Witness Attestor interface for Kubernetes manifests.
 type Attestor struct {
-	ServerSideDryRun  bool     `json:"server_side_dry_run,omitempty"`
-	RecordClusterInfo bool     `json:"record_cluster_info,omitempty"`
+	ServerSideDryRun  bool     `json:"serversidedryrun,omitempty"`
+	RecordClusterInfo bool     `json:"recordclusterinfo,omitempty"`
 	KubeconfigPath    string   `json:"kubeconfig,omitempty"`
-	KubeContext       string   `json:"kubeContext,omitempty"`
-	IgnoreFields      []string `json:"IgnoreFields,omitempty" jsonschema:"title=IgnoreFields"`
-	IgnoreAnnotations []string `json:"IgnoreAnnotations,omitempty"`
+	KubeContext       string   `json:"kubecontext,omitempty"`
+	IgnoreFields      []string `json:"ignorefields,omitempty" jsonschema:"title=ignorefields"`
+	IgnoreAnnotations []string `json:"ignoreannotations,omitempty"`
 	ephemeralFields   []string
 	ephemeralAnn      []string
-	RecordedDocs      []RecordedObject `json:"recorded_docs,omitempty"`
+	RecordedDocs      []RecordedObject `json:"recordeddocs,omitempty"`
 	subjectDigests    sync.Map
-	ClusterInfo       ClusterInfo `json:"clusterInfo"`
+	ClusterInfo       ClusterInfo `json:"clusterinfo"`
 }
 
 var (
@@ -279,7 +276,7 @@ func (a *Attestor) Schema() *jsonschema.Schema {
 	return jsonschema.Reflect(a)
 }
 
-// Attest processes any YAML/JSON products, canonicalizes them, removes ephemeral fields, etc.
+// Attest processes any YAML/JSON products, removes ephemeral fields, etc.
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	products := ctx.Products()
 
@@ -369,26 +366,15 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 				continue
 			}
 
-			// processDoc does ephemeral removal & canonicalization
-			canonBytes, recorded, err := a.processDoc(docMap, path)
+			// processDoc does ephemeral removal
+			cleanBytes, recorded, err := a.processDoc(docMap, path)
 			if err != nil {
 				log.Debugf("error processing doc in %s: %v", path, err)
 				continue
 			}
 
-			// Calculate digest from canonical form
-			ds, err := cryptoutil.CalculateDigestSetFromBytes(canonBytes, ctx.Hashes())
-			if err != nil {
-				log.Debugf("failed hashing doc in %s: %v", path, err)
-				continue
-			}
-
-			// IMPORTANT FIX: use the ephemeral-removed JSON (cleanBytes) in recorded.Data
-			// instead of the original raw 'doc'.
-			recorded.Data = canonBytes
-			recorded.ComputedDigest = ds
+			recorded.Data = cleanBytes
 			a.RecordedDocs = append(a.RecordedDocs, recorded)
-			a.subjectDigests.Store(recorded.SubjectKey, ds)
 
 			parsedAnything = true
 		}
@@ -402,7 +388,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 // processDoc strips ephemeral fields, optionally does a server-side dry-run,
-// then returns canonical JSON bytes plus a RecordedObject (without final digest).
+// then returns the cleaned JSON bytes plus a RecordedObject (without final digest).
 func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]byte, RecordedObject, error) {
 	finalObj := doc
 	if a.ServerSideDryRun {
@@ -430,12 +416,6 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 		err := fmt.Errorf("Failed to decode file %s. Continuing: %s", filePath, err.Error())
 		log.Debugf("(attestation/k8smanifest) %w", err)
 		return nil, RecordedObject{}, err
-	}
-
-	// canonical JSON
-	canon, err := jsoncanonicalizer.Transform(cleanBytes)
-	if err != nil {
-		return nil, RecordedObject{}, fmt.Errorf("canonicalization error: %w", err)
 	}
 
 	kindVal := "UnknownKind"
@@ -482,13 +462,12 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 		FilePath:       filePath,
 		Kind:           kindVal,
 		Name:           nameVal,
-		CanonicalJSON:  string(canon),
 		SubjectKey:     subjectKey,
 		RecordedImages: recordedImages,
 	}
 
-	// Return canonical bytes for hashing, and the RecordedObject skeleton
-	return canon, rec, nil
+	// Return the cleaned bytes and the RecordedObject skeleton
+	return cleanBytes, rec, nil
 }
 
 func (a *Attestor) runRecordClusterInfo() error {
