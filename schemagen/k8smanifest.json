@@ -5,45 +5,45 @@
   "$defs": {
     "Attestor": {
       "properties": {
-        "server_side_dry_run": {
+        "serversidedryrun": {
           "type": "boolean"
         },
-        "record_cluster_info": {
+        "recordclusterinfo": {
           "type": "boolean"
         },
         "kubeconfig": {
           "type": "string"
         },
-        "kubeContext": {
+        "kubecontext": {
           "type": "string"
         },
-        "IgnoreFields": {
+        "ignorefields": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "title": "IgnoreFields"
+          "title": "ignorefields"
         },
-        "IgnoreAnnotations": {
+        "ignoreannotations": {
           "items": {
             "type": "string"
           },
           "type": "array"
         },
-        "recorded_docs": {
+        "recordeddocs": {
           "items": {
             "$ref": "#/$defs/RecordedObject"
           },
           "type": "array"
         },
-        "clusterInfo": {
+        "clusterinfo": {
           "$ref": "#/$defs/ClusterInfo"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "clusterInfo"
+        "clusterinfo"
       ]
     },
     "ClusterInfo": {
@@ -57,12 +57,6 @@
       "required": [
         "server"
       ]
-    },
-    "DigestSet": {
-      "additionalProperties": {
-        "type": "string"
-      },
-      "type": "object"
     },
     "RecordedImage": {
       "properties": {
@@ -85,7 +79,7 @@
     },
     "RecordedObject": {
       "properties": {
-        "filePath": {
+        "filepath": {
           "type": "string"
         },
         "kind": {
@@ -95,16 +89,10 @@
           "type": "string"
         },
         "data": true,
-        "canonicalJSON": {
+        "subjectkey": {
           "type": "string"
         },
-        "subjectKey": {
-          "type": "string"
-        },
-        "computedDigest": {
-          "$ref": "#/$defs/DigestSet"
-        },
-        "recordedImages": {
+        "recordedimages": {
           "items": {
             "$ref": "#/$defs/RecordedImage"
           },
@@ -114,14 +102,12 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "filePath",
+        "filepath",
         "kind",
         "name",
         "data",
-        "canonicalJSON",
-        "subjectKey",
-        "computedDigest",
-        "recordedImages"
+        "subjectkey",
+        "recordedimages"
       ]
     }
   }
