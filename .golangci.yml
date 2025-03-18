@@ -26,6 +26,11 @@ issues:
     linters:
     - staticcheck
     text: SA1019
+  # disabling deprecated OPA v0.x to v1.x transition warnings
+  - path: policy/rego.go
+    linters:
+    - staticcheck
+    text: SA1019
 run:
   issues-exit-code: 1
   timeout: 10m
