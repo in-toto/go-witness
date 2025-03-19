@@ -689,10 +689,10 @@ func newRecordedImage(image string) RecordedImage {
 		if spl := strings.Split(dig, ":"); len(spl) == 2 {
 			rc.Digest[spl[0]] = spl[1]
 		} else {
-			log.Debug("(attestation/k8smanifest) unrecognised structure for digest '%s'", rc.Reference)
+			log.Debugf("(attestation/k8smanifest) unrecognised structure for digest '%s'", rc.Reference)
 		}
 	} else {
-		log.Debug("(attestation/k8smanifest) failed to get digest for reference %s", rc.Reference)
+		log.Debugf("(attestation/k8smanifest) failed to get digest for reference %s: %s", rc.Reference, err.Error())
 	}
 
 	return rc
