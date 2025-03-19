@@ -16,9 +16,12 @@ package commandrun
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
@@ -103,7 +106,11 @@ type ProcessInfo struct {
 }
 
 type CommandRun struct {
-	Cmd       []string      `json:"cmd"`
+	Cmd []string `json:"cmd"`
+	// The hash of the program that was run
+	ProgramDigest cryptoutil.DigestSet `json:"programdigest,omitempty"`
+	CmdPath       string               `json:"cmdpath,omitempty"`
+
 	Stdout    string        `json:"stdout,omitempty"`
 	Stderr    string        `json:"stderr,omitempty"`
 	ExitCode  int           `json:"exitcode"`
@@ -112,6 +119,13 @@ type CommandRun struct {
 	silent        bool
 	materials     map[string]cryptoutil.DigestSet
 	enableTracing bool
+}
+
+func (a *CommandRun) Subjects() map[string]cryptoutil.DigestSet {
+	return map[string]cryptoutil.DigestSet{
+		"program": a.ProgramDigest,
+	}
+
 }
 
 func (a *CommandRun) Schema() *jsonschema.Schema {
@@ -155,7 +169,17 @@ func (rc *CommandRun) TracingEnabled() bool {
 }
 
 func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
+
 	c := exec.Command(r.Cmd[0], r.Cmd[1:]...)
+	//get the location of the command
+	programDigest, cmdPath, err := resolveCommandDigest(ctx, r.Cmd)
+	if err != nil {
+		return err
+	}
+
+	r.ProgramDigest = programDigest
+	r.CmdPath = cmdPath
+
 	c.Dir = ctx.WorkingDir()
 	stdoutBuffer := bytes.Buffer{}
 	stderrBuffer := bytes.Buffer{}
@@ -183,7 +207,6 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		return err
 	}
 
-	var err error
 	if r.enableTracing {
 		r.Processes, err = r.trace(c, ctx)
 	} else {
@@ -196,4 +219,44 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	r.Stdout = stdoutBuffer.String()
 	r.Stderr = stderrBuffer.String()
 	return err
+}
+
+// resolveCommandDigest resolves the command path and calculates its hash.
+func resolveCommandDigest(ctx *attestation.AttestationContext, cmd []string) (cryptoutil.DigestSet, string, error) {
+	if len(cmd) == 0 {
+		return nil, "", fmt.Errorf("no command provided")
+	}
+
+	// Check if the command starts with environment variable settings
+	cmdIndex := 0
+	for i, part := range cmd {
+		if strings.Contains(part, "=") {
+			cmdIndex = i + 1
+		} else {
+			break
+		}
+	}
+
+	if cmdIndex >= len(cmd) {
+		return nil, "", fmt.Errorf("no command found after environment variables")
+	}
+
+	cmdPath := cmd[cmdIndex]
+
+	// Check if the command path is absolute or contains a path separator.
+	if !filepath.IsAbs(cmdPath) && !strings.Contains(cmdPath, string(os.PathSeparator)) {
+		var err error
+		cmdPath, err = exec.LookPath(cmdPath)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	// Get the hash of the actual binary.
+	programDigest, err := cryptoutil.CalculateDigestSetFromFile(cmdPath, ctx.Hashes())
+	if err != nil {
+		return nil, cmdPath, err
+	}
+
+	return programDigest, cmdPath, nil
 }
