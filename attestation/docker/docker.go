@@ -200,7 +200,7 @@ func (a *Attestor) getDockerCandidate(ctx *attestation.AttestationContext) (*doc
 	for path, product := range products {
 		if strings.Contains(jsonMimeType, product.MimeType) {
 			var met docker.BuildInfo
-			f, err := os.ReadFile(path)
+			f, err := os.ReadFile(filepath.Join(ctx.WorkingDir(), path))
 			if err != nil {
 				return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 			}
