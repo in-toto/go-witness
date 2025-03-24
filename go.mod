@@ -16,13 +16,14 @@ require (
 	github.com/go-jose/go-jose/v3 v3.0.4
 	github.com/google/go-containerregistry v0.20.3
 	github.com/in-toto/archivista v0.5.4
-	github.com/in-toto/attestation v1.1.0
+	github.com/in-toto/attestation v1.1.1
 	github.com/invopop/jsonschema v0.12.0
 	github.com/jellydator/ttlcache/v3 v3.3.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/open-policy-agent/opa v1.1.0
 	github.com/owenrumney/go-sarif v1.1.1
+	github.com/sigstore/cosign/v2 v2.4.3
 	github.com/sigstore/fulcio v1.6.6
 	github.com/spdx/tools-golang v0.5.5
 	github.com/spiffe/go-spiffe/v2 v2.5.0
@@ -78,7 +79,6 @@ require (
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.8.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-chi/chi v4.1.2+incompatible // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
@@ -97,7 +97,6 @@ require (
 	github.com/go-openapi/validate v0.24.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -129,11 +128,9 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/rogpeppe/go-internal v1.13.2-0.20241226121412-a5dc8ff20d0a // indirect
 	github.com/sassoftware/relic v7.2.1+incompatible // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.9.0 // indirect
 	github.com/segmentio/ksuid v1.0.4 // indirect
-	github.com/sigstore/cosign/v2 v2.4.3 // indirect
 	github.com/sigstore/protobuf-specs v0.4.0 // indirect
 	github.com/sigstore/rekor v1.3.9 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
