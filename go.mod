@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/kms v1.20.5
 	github.com/CycloneDX/cyclonedx-go v0.9.2
 	github.com/aws/aws-sdk-go-v2/config v1.29.9
-	github.com/aws/aws-sdk-go-v2/service/kms v1.37.18
+	github.com/aws/aws-sdk-go-v2/service/kms v1.37.19
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
 	github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
