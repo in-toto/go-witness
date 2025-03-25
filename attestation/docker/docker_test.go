@@ -157,7 +157,7 @@ func SetupTest(t *testing.T, productFileData string) *os.File {
 	s.Write([]byte(productFileData))
 	bs := s.Sum(nil)
 
-	file, err := os.CreateTemp("", fmt.Sprintf("%x.json", bs))
+	file, err := os.CreateTemp("./", fmt.Sprintf("%x.json", bs))
 	require.NoError(t, err)
 
 	decoded, err := base64.StdEncoding.DecodeString(productFileData)
