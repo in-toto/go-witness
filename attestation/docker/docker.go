@@ -52,6 +52,10 @@ func init() {
 }
 
 type Attestor struct {
+	Products map[string]DockerProduct `json:"products"`
+}
+
+type DockerProduct struct {
 	Materials       map[string][]Material `json:"materials"`
 	ImageReferences []string              `json:"imagereferences"`
 	ImageDigest     cryptoutil.DigestSet  `json:"imagedigest"`
@@ -90,57 +94,46 @@ func (a *Attestor) Schema() *jsonschema.Schema {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	met, err := a.getDockerCandidate(ctx)
+	mets, err := a.getDockerCandidates(ctx)
 	if err != nil {
 		log.Debugf("(attestation/docker) error getting docker candidate: %w", err)
 		return err
 	}
-	if met != nil {
-		err := a.setDockerCandidate(met)
-		if err != nil {
-			log.Debugf("(attestation/docker) error setting docker candidate: %w", err)
-			return err
-		}
-	} else {
-		// NOTE: our final attempt here is to try and find the sha256 image digest saved to a file.
-		// most tools provide the ability to do this (e.g., docker, podman), and if they don't other manual mechanisms could be
-		// established by a user
-		dig, err := a.getImageDigestFileCandidate(ctx)
-		if err != nil {
-			log.Debugf("(attestation/docker) error getting image digest from file: %w", err)
-			return err
-		}
 
-		trimmed, found := strings.CutPrefix(dig, "sha256:")
-		if !found {
-			err := fmt.Errorf("failed to remove prefix from digest")
-			log.Debugf("(attestation/docker) %s", err.Error())
+	if mets != nil {
+		a.Products = map[string]DockerProduct{}
+		for _, met := range mets {
+			log.Debugf("(attestation/docker) setting docker candidate for image '%s'", met.ImageName)
+			err := a.setDockerCandidate(&met)
+			if err != nil {
+				log.Debugf("(attestation/docker) error setting docker candidate: %w", err)
+				return err
+			}
 		}
-		a.ImageDigest = map[cryptoutil.DigestValue]string{}
-		a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}] = trimmed
 	}
 
 	return nil
 }
 
 func (a *Attestor) setDockerCandidate(met *docker.BuildInfo) error {
-	if strings.HasPrefix(met.ContainerImageDigest, "sha256:") {
-		log.Debugf("(attestation/docker) found image digest '%s'", met.ContainerImageDigest)
-		a.ImageDigest = map[cryptoutil.DigestValue]string{}
-		log.Debugf("(attestation/docker) removing 'sha256:' prefix from digest '%s'", met.ContainerImageDigest)
-		trimmed, found := strings.CutPrefix(met.ContainerImageDigest, "sha256:")
-		if !found {
-			err := fmt.Errorf("failed to remove prefix from digest")
-			log.Debugf("(attestation/docker) %s", err.Error())
-			return err
-		}
-		log.Debugf("(attestation/docker) setting image digest as '%s'", trimmed)
-		a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}] = trimmed
-	} else {
-		log.Warnf("(attestation/docker) found metadata file does not contain image digest of expected format: '%s'", met.ContainerImageDigest)
+	if !strings.HasPrefix(met.ContainerImageDigest, "sha256:") {
+		err := fmt.Errorf("(attestation/docker) found metadata file does not contain image digest of expected sha256 format: '%s'", met.ContainerImageDigest)
+		log.Error(err.Error())
+		return err
 	}
 
-	a.Materials = make(map[string][]Material)
+	log.Debugf("(attestation/docker) found image digest '%s'", met.ContainerImageDigest)
+	trimmed, found := strings.CutPrefix(met.ContainerImageDigest, "sha256:")
+	log.Debugf("(attestation/docker) removing 'sha256:' prefix from digest '%s'", met.ContainerImageDigest)
+	if !found {
+		err := fmt.Errorf("failed to remove prefix from digest")
+		log.Debugf("(attestation/docker) %s", err.Error())
+		return err
+	}
+
+	log.Debugf("(attestation/docker) setting image digest as '%s'", trimmed)
+
+	materials := make(map[string][]Material)
 	for arch, prov := range met.Provenance {
 		if len(prov.Materials) != 0 {
 			for _, material := range prov.Materials {
@@ -156,19 +149,28 @@ func (a *Attestor) setDockerCandidate(met *docker.BuildInfo) error {
 					},
 				}
 
-				if a.Materials[arch] == nil {
-					a.Materials[arch] = []Material{
+				if materials[arch] == nil {
+					materials[arch] = []Material{
 						mat,
 					}
 				} else {
-					a.Materials[arch] = append(a.Materials[arch], mat)
+					materials[arch] = append(materials[arch], mat)
 				}
 			}
 		}
 	}
+
 	log.Debugf("setting image references as '%s'", met.ImageName)
-	a.ImageReferences = []string{}
-	a.ImageReferences = append(a.ImageReferences, met.ImageName)
+	imageReferences := []string{}
+	imageReferences = append(imageReferences, met.ImageName)
+
+	a.Products[trimmed] = DockerProduct{
+		ImageDigest: map[cryptoutil.DigestValue]string{
+			cryptoutil.DigestValue{Hash: crypto.SHA256}: trimmed,
+		},
+		Materials:       materials,
+		ImageReferences: imageReferences,
+	}
 	return nil
 }
 
@@ -188,7 +190,7 @@ func (a *Attestor) getImageDigestFileCandidate(ctx *attestation.AttestationConte
 	return "", nil
 }
 
-func (a *Attestor) getDockerCandidate(ctx *attestation.AttestationContext) (*docker.BuildInfo, error) {
+func (a *Attestor) getDockerCandidates(ctx *attestation.AttestationContext) ([]docker.BuildInfo, error) {
 	products := ctx.Products()
 
 	if len(products) == 0 {
@@ -197,6 +199,7 @@ func (a *Attestor) getDockerCandidate(ctx *attestation.AttestationContext) (*doc
 
 	//NOTE: it's not ideal to try and parse it without a dedicated mime type (using json here)
 	// but the metadata file is completely different depending on how the buildx is executed
+	mets := []docker.BuildInfo{}
 	for path, product := range products {
 		if strings.Contains(jsonMimeType, product.MimeType) {
 			var met docker.BuildInfo
@@ -211,44 +214,47 @@ func (a *Attestor) getDockerCandidate(ctx *attestation.AttestationContext) (*doc
 				continue
 			}
 
-			return &met, nil
+			mets = append(mets, met)
 		}
 	}
-	return nil, nil
+
+	return mets, nil
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	hashes := []cryptoutil.DigestValue{{Hash: crypto.SHA256}}
 	subj := make(map[string]cryptoutil.DigestSet)
-	subj[fmt.Sprintf("imagedigest:%s", a.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.ImageDigest
+	for _, p := range a.Products {
+		subj[fmt.Sprintf("imagedigest:%s", p.ImageDigest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = p.ImageDigest
 
-	for _, ir := range a.ImageReferences {
-		if hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(ir), hashes); err == nil {
-			subj[fmt.Sprintf("imagereference:%s", ir)] = hash
-		} else {
-			log.Debugf("(attestation/docker) failed to record github imagereference subject: %w", err)
-		}
-	}
-
-	// NOTE: Not sure if we should use the architecture here...
-	for _, mat := range a.Materials {
-		for _, m := range mat {
-			subj[fmt.Sprintf("materialdigest:%s", m.Digest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = m.Digest
-			if hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(m.URI), hashes); err == nil {
-				subj[fmt.Sprintf("materialuri:%s", m.URI)] = hash
+		for _, ir := range p.ImageReferences {
+			if hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(ir), hashes); err == nil {
+				subj[fmt.Sprintf("imagereference:%s", ir)] = hash
 			} else {
-				log.Debugf("(attestation/github) failed to record github materialuri subject: %w", err)
+				log.Debugf("(attestation/docker) failed to record github imagereference subject: %w", err)
 			}
 		}
-	}
 
-	for _, ref := range a.ImageReferences {
-		hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(ref), hashes)
-		if err != nil {
-			log.Debugf("(attestation/docker) error calculating image reference: %w", err)
-			continue
+		// NOTE: Not sure if we should use the architecture here...
+		for _, mat := range p.Materials {
+			for _, m := range mat {
+				subj[fmt.Sprintf("materialdigest:%s", m.Digest[cryptoutil.DigestValue{Hash: crypto.SHA256}])] = m.Digest
+				if hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(m.URI), hashes); err == nil {
+					subj[fmt.Sprintf("materialuri:%s", m.URI)] = hash
+				} else {
+					log.Debugf("(attestation/github) failed to record github materialuri subject: %w", err)
+				}
+			}
 		}
-		subj[fmt.Sprintf("imagereference:%s", ref)] = hash
+
+		for _, ref := range p.ImageReferences {
+			hash, err := cryptoutil.CalculateDigestSetFromBytes([]byte(ref), hashes)
+			if err != nil {
+				log.Debugf("(attestation/docker) error calculating image reference: %w", err)
+				continue
+			}
+			subj[fmt.Sprintf("imagereference:%s", ref)] = hash
+		}
 	}
 
 	return subj
