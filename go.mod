@@ -28,7 +28,7 @@ require (
 	github.com/spdx/tools-golang v0.5.5
 	github.com/spiffe/go-spiffe/v2 v2.5.0
 	github.com/stretchr/testify v1.10.0
-	go.step.sm/crypto v0.57.0
+	go.step.sm/crypto v0.57.1
 	golang.org/x/mod v0.22.0
 	golang.org/x/sys v0.31.0
 	google.golang.org/api v0.221.0
