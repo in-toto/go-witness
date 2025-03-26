@@ -420,7 +420,7 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 
 	obj, gvk, err := decode(cleanBytes, nil, nil)
 	if err != nil {
-		err := fmt.Errorf("Failed to decode file %s. Continuing: %s", filePath, err.Error())
+		err := fmt.Errorf("failed to decode file %s. Continuing: %s", filePath, err.Error())
 		log.Debugf("(attestation/k8smanifest) %w", err)
 		return nil, RecordedObject{}, err
 	}

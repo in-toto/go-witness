@@ -137,7 +137,7 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		}
 	}
 
-	subjects[fmt.Sprintf("policy:%v", a.VerificationSummary.Policy.URI)] = a.VerificationSummary.Policy.Digest
+	subjects[fmt.Sprintf("policy:%v", a.Policy.URI)] = a.Policy.Digest
 	return subjects
 }
 
