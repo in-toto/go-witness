@@ -178,22 +178,6 @@ func (a *Attestor) setDockerCandidate(met *docker.BuildInfo) error {
 	return nil
 }
 
-func (a *Attestor) getImageDigestFileCandidate(ctx *attestation.AttestationContext) (string, error) {
-	products := ctx.Products()
-
-	for path, product := range products {
-		if strings.Contains(sha256MimeType, product.MimeType) {
-			f, err := os.ReadFile(filepath.Join(ctx.WorkingDir(), path))
-			if err != nil {
-				return "", fmt.Errorf("failed to read file %s: %w", path, err)
-			}
-			return string(f), nil
-		}
-	}
-
-	return "", nil
-}
-
 func (a *Attestor) getDockerCandidates(ctx *attestation.AttestationContext) ([]docker.BuildInfo, error) {
 	products := ctx.Products()
 
