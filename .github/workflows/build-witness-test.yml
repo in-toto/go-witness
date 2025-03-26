@@ -1,0 +1,65 @@
+name: Build Witness CLI Test
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  build-witness:
+    name: Build Witness CLI with PR SHA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Build Witness CLI with current SHA
+        run: |
+          # Create Makefile
+          cat > ci-build-witness.mk << 'EOF'
+          # Makefile to build witness CLI using current go-witness PR SHA
+          .PHONY: build-witness clean
+
+          WITNESS_TMP_DIR := /tmp/witness-build-test
+          CURRENT_SHA := $(shell git rev-parse HEAD)
+          CURRENT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
+          GO_WITNESS_MODULE := github.com/in-toto/go-witness
+
+          build-witness:
+            @echo "Using go-witness SHA: $(CURRENT_SHA)"
+            @echo "Current branch: $(CURRENT_BRANCH)"
+            
+            # Create clean temporary directory
+            rm -rf $(WITNESS_TMP_DIR)
+            mkdir -p $(WITNESS_TMP_DIR)
+            
+            # Clone witness repository
+            git clone https://github.com/in-toto/witness.git $(WITNESS_TMP_DIR)
+            
+            # Update go-witness dependency to use our current SHA
+            cd $(WITNESS_TMP_DIR) && \
+              go get $(GO_WITNESS_MODULE)@$(CURRENT_SHA) && \
+              go mod tidy
+            
+            # Build witness
+            cd $(WITNESS_TMP_DIR) && \
+              go build -o witness .
+            
+            @echo "Witness successfully built with go-witness SHA: $(CURRENT_SHA)"
+            @echo "Binary located at: $(WITNESS_TMP_DIR)/witness"
+            
+            # Verify the binary works
+            $(WITNESS_TMP_DIR)/witness version
+
+          clean:
+            rm -rf $(WITNESS_TMP_DIR)
+          EOF
+
+          # Run the build
+          make -f ci-build-witness.mk build-witness
