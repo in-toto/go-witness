@@ -3,8 +3,9 @@ name: Build Witness CLI Test
 on:
   pull_request:
     branches: [ main ]
+    types: [ opened, synchronize, reopened, ready_for_review ]
   push:
-    branches: [ main ]
+    branches: [ main, 'feat/*' ]
 
 jobs:
   build-witness:
