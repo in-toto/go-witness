@@ -230,6 +230,7 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) {
 			Error:     err,
 		})
 		ctx.mutex.Unlock()
+		return
 	}
 
 	ctx.mutex.Lock()
