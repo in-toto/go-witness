@@ -60,6 +60,8 @@ build-witness: ## Build the witness CLI using local go-witness code (or SHA in C
 	
 	# Verify the binary works
 	$(WITNESS_TMP_DIR)/witness version
+	@echo "Available attestors:"
+	$(WITNESS_TMP_DIR)/witness attestors list
 
 .PHONY: clean-witness
 clean-witness: ## Clean up witness build environment

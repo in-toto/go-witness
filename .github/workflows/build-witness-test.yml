@@ -23,3 +23,7 @@ jobs:
         run: |
           # In CI we'll use the checked out copy of go-witness
           make build-witness GO_WITNESS_PATH=$GITHUB_WORKSPACE
+          
+          # List available attestors
+          echo "Available attestors:"
+          /tmp/witness-build-test/witness attestors list
