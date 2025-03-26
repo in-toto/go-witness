@@ -1,0 +1,202 @@
+name: Build Witness CLI from Comment
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  check-comment:
+    name: Check Build Command
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/build-witness')
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.parse-comment.outputs.should_build }}
+      witness_ref: ${{ steps.parse-comment.outputs.witness_ref }}
+    steps:
+      - name: Parse Comment
+        id: parse-comment
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          
+          # Default to main if no reference is specified
+          WITNESS_REF="main"
+          
+          # Look for ref=xxx pattern
+          if [[ $COMMENT =~ ref=([^[:space:]]+) ]]; then
+            WITNESS_REF="${BASH_REMATCH[1]}"
+          fi
+          
+          echo "Detected witness reference: $WITNESS_REF"
+          echo "should_build=true" >> $GITHUB_OUTPUT
+          echo "witness_ref=$WITNESS_REF" >> $GITHUB_OUTPUT
+          
+          # Add a reaction to the comment to indicate we're processing it
+          gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            --method POST \
+            -f content="rocket" \
+            -H "Accept: application/vnd.github.squirrel-girl-preview+json"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-witness:
+    name: Build Witness CLI with Custom Reference
+    needs: check-comment
+    if: needs.check-comment.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add initial comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 Building witness CLI with:
+              - go-witness: PR #${{ github.event.issue.number }} (${{ github.sha }})
+              - witness reference: \`${{ needs.check-comment.outputs.witness_ref }}\`
+              
+              I'll post a comment when the build is complete.`
+            })
+
+      - name: Get PR details
+        id: pr-details
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            return {
+              sha: pullRequest.head.sha,
+              ref: pullRequest.head.ref,
+              repo: pullRequest.head.repo.full_name
+            }
+          result-encoding: string
+
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ fromJSON(steps.pr-details.outputs.result).sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Build Witness CLI
+        id: build-witness
+        run: |
+          # Create temporary directory
+          WITNESS_TMP_DIR=/tmp/witness-build-test
+          rm -rf $WITNESS_TMP_DIR
+          mkdir -p $WITNESS_TMP_DIR
+          
+          # Get current SHA
+          CURRENT_SHA=$(git rev-parse HEAD)
+          CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          GO_WITNESS_MODULE=github.com/in-toto/go-witness
+          
+          echo "Using go-witness SHA: $CURRENT_SHA"
+          echo "Current branch: $CURRENT_BRANCH"
+          
+          # Clone witness repository
+          git clone https://github.com/in-toto/witness.git $WITNESS_TMP_DIR
+          
+          # Checkout the requested witness reference
+          cd $WITNESS_TMP_DIR
+          WITNESS_REF="${{ needs.check-comment.outputs.witness_ref }}"
+          echo "Checking out witness ref: $WITNESS_REF"
+          git checkout $WITNESS_REF || {
+            echo "Failed to checkout $WITNESS_REF, falling back to main"
+            git checkout main
+            echo "fallback_to_main=true" >> $GITHUB_OUTPUT
+            WITNESS_REF="main (fallback)"
+          }
+          
+          # Update go-witness dependency to use our current SHA
+          go get $GO_WITNESS_MODULE@$CURRENT_SHA
+          go mod tidy
+          
+          # Create artifact directory
+          mkdir -p /tmp/witness-artifacts
+          
+          # Build witness for the current platform (Linux AMD64)
+          echo "Building for Linux AMD64..."
+          go build -o witness .
+          
+          echo "Witness successfully built with go-witness SHA: $CURRENT_SHA"
+          
+          # Verify the binary works
+          ./witness version
+          
+          # Copy to artifacts directory
+          cp ./witness /tmp/witness-artifacts/witness-linux-amd64
+          
+          # Build for other platforms
+          echo "Building for macOS AMD64..."
+          GOOS=darwin GOARCH=amd64 go build -o /tmp/witness-artifacts/witness-darwin-amd64 .
+          
+          echo "Building for macOS ARM64..."
+          GOOS=darwin GOARCH=arm64 go build -o /tmp/witness-artifacts/witness-darwin-arm64 .
+          
+          echo "Building for Windows AMD64..."
+          GOOS=windows GOARCH=amd64 go build -o /tmp/witness-artifacts/witness-windows-amd64.exe .
+          
+          # Set output variables
+          echo "witness_dir=/tmp/witness-artifacts" >> $GITHUB_OUTPUT
+          echo "sha_short=${CURRENT_SHA:0:7}" >> $GITHUB_OUTPUT
+          echo "witness_ref=$WITNESS_REF" >> $GITHUB_OUTPUT
+
+      - name: Upload Witness Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: witness-cli-${{ steps.build-witness.outputs.sha_short }}-${{ needs.check-comment.outputs.witness_ref }}
+          path: ${{ steps.build-witness.outputs.witness_dir }}/*
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Post Result Comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const artifactName = `witness-cli-${{ steps.build-witness.outputs.sha_short }}-${{ needs.check-comment.outputs.witness_ref }}`;
+            const workflow_run_id = context.runId;
+            
+            let fallbackMessage = '';
+            if ('${{ steps.build-witness.outputs.fallback_to_main }}' === 'true') {
+              fallbackMessage = '⚠️ Could not find the requested witness reference, falling back to `main`.\n\n';
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `✅ Witness CLI built successfully!
+
+${fallbackMessage}**Build Details:**
+- go-witness SHA: \`${{ steps.build-witness.outputs.sha_short }}\`
+- witness reference: \`${{ steps.build-witness.outputs.witness_ref }}\`
+
+**Download Links:**
+The binaries are available as artifacts from this workflow run. Download them from:
+https://github.com/${{ github.repository }}/actions/runs/${workflow_run_id}
+
+**Platforms:**
+- Linux AMD64: \`witness-linux-amd64\`
+- macOS AMD64: \`witness-darwin-amd64\`
+- macOS ARM64: \`witness-darwin-arm64\`
+- Windows AMD64: \`witness-windows-amd64.exe\`
+
+You can trigger another build with a different witness reference by commenting:
+\`\`\`
+/build-witness ref=<branch|tag|commit>
+\`\`\`
+`
+            })
