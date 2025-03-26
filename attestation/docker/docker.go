@@ -112,14 +112,18 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		}
 	}
 
+	if len(a.Products) == 0 {
+		return fmt.Errorf("no products to attest")
+	}
+
 	return nil
 }
 
 func (a *Attestor) setDockerCandidate(met *docker.BuildInfo) error {
 	if !strings.HasPrefix(met.ContainerImageDigest, "sha256:") {
-		err := fmt.Errorf("(attestation/docker) found metadata file does not contain image digest of expected sha256 format: '%s'", met.ContainerImageDigest)
-		log.Error(err.Error())
-		return err
+		// NOTE: If we find that there is not a digest, we can't deterministically say what the image is and therefore we will not attest it
+		log.Warnf("(attestation/docker) found metadata file does not contain image digest of expected sha256 format: '%s'", met.ContainerImageDigest)
+		return nil
 	}
 
 	log.Debugf("(attestation/docker) found image digest '%s'", met.ContainerImageDigest)
@@ -166,7 +170,7 @@ func (a *Attestor) setDockerCandidate(met *docker.BuildInfo) error {
 
 	a.Products[trimmed] = DockerProduct{
 		ImageDigest: map[cryptoutil.DigestValue]string{
-			cryptoutil.DigestValue{Hash: crypto.SHA256}: trimmed,
+			{Hash: crypto.SHA256}: trimmed,
 		},
 		Materials:       materials,
 		ImageReferences: imageReferences,
@@ -197,7 +201,7 @@ func (a *Attestor) getDockerCandidates(ctx *attestation.AttestationContext) ([]d
 		return nil, fmt.Errorf("no products to attest")
 	}
 
-	//NOTE: it's not ideal to try and parse it without a dedicated mime type (using json here)
+	// NOTE: it's not ideal to try and parse it without a dedicated mime type (using json here)
 	// but the metadata file is completely different depending on how the buildx is executed
 	mets := []docker.BuildInfo{}
 	for path, product := range products {
