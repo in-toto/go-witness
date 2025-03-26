@@ -21,6 +21,7 @@ jobs:
           go-version: "stable"
 
       - name: Build Witness CLI with current SHA
+        id: build-witness
         run: |
           # Create temporary directory
           WITNESS_TMP_DIR=/tmp/witness-build-test
@@ -43,11 +44,39 @@ jobs:
           go get $GO_WITNESS_MODULE@$CURRENT_SHA
           go mod tidy
           
-          # Build witness
+          # Create artifact directory
+          mkdir -p /tmp/witness-artifacts
+          
+          # Build witness for the current platform (Linux AMD64)
+          echo "Building for Linux AMD64..."
           go build -o witness .
           
           echo "Witness successfully built with go-witness SHA: $CURRENT_SHA"
-          echo "Binary located at: $WITNESS_TMP_DIR/witness"
           
           # Verify the binary works
           ./witness version
+          
+          # Copy to artifacts directory
+          cp ./witness /tmp/witness-artifacts/witness-linux-amd64
+          
+          # Build for other platforms
+          echo "Building for macOS AMD64..."
+          GOOS=darwin GOARCH=amd64 go build -o /tmp/witness-artifacts/witness-darwin-amd64 .
+          
+          echo "Building for macOS ARM64..."
+          GOOS=darwin GOARCH=arm64 go build -o /tmp/witness-artifacts/witness-darwin-arm64 .
+          
+          echo "Building for Windows AMD64..."
+          GOOS=windows GOARCH=amd64 go build -o /tmp/witness-artifacts/witness-windows-amd64.exe .
+          
+          # Set output variables
+          echo "witness_dir=/tmp/witness-artifacts" >> $GITHUB_OUTPUT
+          echo "sha_short=${CURRENT_SHA:0:7}" >> $GITHUB_OUTPUT
+
+      - name: Upload Witness Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: witness-cli-${{ steps.build-witness.outputs.sha_short }}
+          path: ${{ steps.build-witness.outputs.witness_dir }}/*
+          retention-days: 7
+          if-no-files-found: error
