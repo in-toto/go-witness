@@ -19,12 +19,12 @@ build-witness:
 	
 	# Update go-witness dependency to use our current SHA
 	cd $(WITNESS_TMP_DIR) && \
-		go get $(GO_WITNESS_MODULE)@$(CURRENT_SHA) && \
-		go mod tidy
+	go get $(GO_WITNESS_MODULE)@$(CURRENT_SHA) && \
+	go mod tidy
 	
 	# Build witness
 	cd $(WITNESS_TMP_DIR) && \
-		go build -o witness .
+	go build -o witness .
 	
 	@echo "Witness successfully built with go-witness SHA: $(CURRENT_SHA)"
 	@echo "Binary located at: $(WITNESS_TMP_DIR)/witness"
