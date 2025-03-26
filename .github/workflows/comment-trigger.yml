@@ -1,0 +1,26 @@
+name: Comment Trigger
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, '/echo') }}
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Echo the command
+        run: |
+          echo "Comment received: ${{ github.event.comment.body }}"
+          
+      - name: Reply to comment
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            👋 Hello! I received your command: `${{ github.event.comment.body }}`
+            
+            This is a test response from the comment trigger workflow.
