@@ -38,9 +38,23 @@ jobs:
           
           # Clone witness repository
           git clone https://github.com/in-toto/witness.git $WITNESS_TMP_DIR
+          cd $WITNESS_TMP_DIR
+          
+          # Try to checkout a matching branch in witness repo if it exists
+          # Otherwise stay on main
+          WITNESS_BRANCH="main"
+          if [ "$CURRENT_BRANCH" != "main" ] && [ "$CURRENT_BRANCH" != "HEAD" ]; then
+            git fetch origin $CURRENT_BRANCH || true
+            if git show-ref --verify --quiet refs/remotes/origin/$CURRENT_BRANCH; then
+              git checkout $CURRENT_BRANCH
+              WITNESS_BRANCH=$CURRENT_BRANCH
+              echo "Using matching witness branch: $WITNESS_BRANCH"
+            else
+              echo "No matching branch found in witness repo, using main"
+            fi
+          fi
           
           # Update go-witness dependency to use our current SHA
-          cd $WITNESS_TMP_DIR
           go get $GO_WITNESS_MODULE@$CURRENT_SHA
           go mod tidy
           
@@ -51,7 +65,9 @@ jobs:
           echo "Building for Linux AMD64..."
           go build -o witness .
           
-          echo "Witness successfully built with go-witness SHA: $CURRENT_SHA"
+          echo "Witness successfully built with:"
+          echo "- go-witness SHA: $CURRENT_SHA"
+          echo "- witness branch: $WITNESS_BRANCH"
           
           # Verify the binary works
           ./witness version
@@ -72,11 +88,12 @@ jobs:
           # Set output variables
           echo "witness_dir=/tmp/witness-artifacts" >> $GITHUB_OUTPUT
           echo "sha_short=${CURRENT_SHA:0:7}" >> $GITHUB_OUTPUT
+          echo "witness_branch=$WITNESS_BRANCH" >> $GITHUB_OUTPUT
 
       - name: Upload Witness Binary
         uses: actions/upload-artifact@v4
         with:
-          name: witness-cli-${{ steps.build-witness.outputs.sha_short }}
+          name: witness-cli-${{ steps.build-witness.outputs.sha_short }}-witness-${{ steps.build-witness.outputs.witness_branch }}
           path: ${{ steps.build-witness.outputs.witness_dir }}/*
           retention-days: 7
           if-no-files-found: error
