@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-witness:
-    name: Build Witness CLI with PR SHA
+    name: Build Witness CLI with local code
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -19,7 +19,7 @@ jobs:
         with:
           go-version: "stable"
 
-      - name: Build Witness CLI with current SHA
+      - name: Build Witness CLI with local code
         run: |
-          # Run the build using the integrated Makefile target
-          make build-witness
+          # In CI we'll use the checked out copy of go-witness
+          make build-witness GO_WITNESS_PATH=$GITHUB_WORKSPACE

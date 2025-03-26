@@ -31,9 +31,11 @@ WITNESS_TMP_DIR := /tmp/witness-build-test
 CURRENT_SHA := $(shell git rev-parse HEAD)
 CURRENT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 GO_WITNESS_MODULE := github.com/in-toto/go-witness
+GO_WITNESS_PATH ?= $(shell pwd)
 
 .PHONY: build-witness
-build-witness: ## Build the witness CLI using current go-witness SHA
+build-witness: ## Build the witness CLI using local go-witness code (or SHA in CI)
+	# Usage: make build-witness GO_WITNESS_PATH=/path/to/go-witness (defaults to current dir)
 	@echo "Using go-witness SHA: $(CURRENT_SHA)"
 	@echo "Current branch: $(CURRENT_BRANCH)"
 	
@@ -44,9 +46,9 @@ build-witness: ## Build the witness CLI using current go-witness SHA
 	# Clone witness repository
 	git clone https://github.com/in-toto/witness.git $(WITNESS_TMP_DIR)
 	
-	# Update go-witness dependency to use our current SHA
+	# Update go-witness dependency to use local code
 	cd $(WITNESS_TMP_DIR) && \
-		go get $(GO_WITNESS_MODULE)@$(CURRENT_SHA) && \
+		go mod edit -replace $(GO_WITNESS_MODULE)=$(GO_WITNESS_PATH) && \
 		go mod tidy
 	
 	# Build witness
