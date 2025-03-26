@@ -4,11 +4,19 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   check-comment:
     name: Check Build Command
-    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/build-witness')
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/build-witness') }}
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
     outputs:
       should_build: ${{ steps.parse-comment.outputs.should_build }}
       witness_ref: ${{ steps.parse-comment.outputs.witness_ref }}
@@ -41,8 +49,13 @@ jobs:
   build-witness:
     name: Build Witness CLI with Custom Reference
     needs: check-comment
-    if: needs.check-comment.outputs.should_build == 'true'
+    if: ${{ needs.check-comment.outputs.should_build == 'true' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: write
     steps:
       - name: Add initial comment
         uses: actions/github-script@v7
