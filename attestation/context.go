@@ -161,13 +161,14 @@ func NewContext(stepName string, attestors []Attestor, opts ...AttestationContex
 	}
 
 	ctx := &AttestationContext{
-		ctx:        context.Background(),
-		attestors:  attestors,
-		workingDir: wd,
-		hashes:     []cryptoutil.DigestValue{{Hash: crypto.SHA256}, {Hash: crypto.SHA256, GitOID: true}, {Hash: crypto.SHA1, GitOID: true}},
-		materials:  make(map[string]cryptoutil.DigestSet),
-		products:   make(map[string]Product),
-		stepName:   stepName,
+		ctx:                 context.Background(),
+		attestors:           attestors,
+		workingDir:          wd,
+		hashes:              []cryptoutil.DigestValue{{Hash: crypto.SHA256}, {Hash: crypto.SHA256, GitOID: true}, {Hash: crypto.SHA1, GitOID: true}},
+		materials:           make(map[string]cryptoutil.DigestSet),
+		products:            make(map[string]Product),
+		stepName:            stepName,
+		environmentCapturer: environment.New(),
 	}
 
 	for _, opt := range opts {
@@ -201,12 +202,11 @@ func (ctx *AttestationContext) RunAttestors() error {
 		log.Infof("Starting %s attestors stage...", k.String())
 
 		var wg sync.WaitGroup
-		ch := make(chan int, len(attestors))
 
 		for _, att := range attestors[k] {
 			wg.Add(1)
 			go func(att Attestor) {
-				defer func() { wg.Done(); <-ch }()
+				defer wg.Done()
 				ctx.runAttestor(att)
 			}(att)
 		}
@@ -230,6 +230,7 @@ func (ctx *AttestationContext) runAttestor(attestor Attestor) {
 			Error:     err,
 		})
 		ctx.mutex.Unlock()
+		return
 	}
 
 	ctx.mutex.Lock()

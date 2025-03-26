@@ -4,6 +4,27 @@
   "$defs": {
     "Attestor": {
       "properties": {
+        "products": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DockerProduct"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "products"
+      ]
+    },
+    "DigestSet": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "DockerProduct": {
+      "properties": {
         "materials": {
           "additionalProperties": {
             "items": {
@@ -30,12 +51,6 @@
         "imagereferences",
         "imagedigest"
       ]
-    },
-    "DigestSet": {
-      "additionalProperties": {
-        "type": "string"
-      },
-      "type": "object"
     },
     "Material": {
       "properties": {
