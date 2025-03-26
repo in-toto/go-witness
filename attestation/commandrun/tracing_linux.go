@@ -202,7 +202,7 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 			allVars := strings.Split(string(environ), "\x00")
 
 			env := make([]string, 0)
-			var capturedEnv map[string]string = p.environmentCapturer.Capture(allVars)
+			capturedEnv := p.environmentCapturer.Capture(allVars)
 			for k, v := range capturedEnv {
 				env = append(env, fmt.Sprintf("%s=%s", k, v))
 			}
@@ -302,7 +302,7 @@ func (ctx *ptraceContext) readSyscallReg(pid int, addr uintptr, n int) (string, 
 }
 
 func cleanString(s string) string {
-	return strings.TrimSpace(strings.Replace(s, "\x00", " ", -1))
+	return strings.TrimSpace(strings.ReplaceAll(s, "\x00", " "))
 }
 
 func getPPIDFromStatus(status []byte) (int, error) {
