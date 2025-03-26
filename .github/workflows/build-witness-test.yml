@@ -1,0 +1,25 @@
+name: Build Witness CLI Test
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  build-witness:
+    name: Build Witness CLI with PR SHA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Build Witness CLI with current SHA
+        run: |
+          # Run the build using the integrated Makefile target
+          make build-witness
