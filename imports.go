@@ -19,7 +19,6 @@ import (
 	// attestors
 	_ "github.com/in-toto/go-witness/attestation/aws-iid"
 	_ "github.com/in-toto/go-witness/attestation/commandrun"
-	_ "github.com/in-toto/go-witness/attestation/docker"
 	_ "github.com/in-toto/go-witness/attestation/environment"
 	_ "github.com/in-toto/go-witness/attestation/gcp-iit"
 	_ "github.com/in-toto/go-witness/attestation/git"
@@ -27,9 +26,7 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/gitlab"
 	_ "github.com/in-toto/go-witness/attestation/jenkins"
 	_ "github.com/in-toto/go-witness/attestation/jwt"
-	_ "github.com/in-toto/go-witness/attestation/k8smanifest"
 	_ "github.com/in-toto/go-witness/attestation/link"
-	_ "github.com/in-toto/go-witness/attestation/lockfiles"
 	_ "github.com/in-toto/go-witness/attestation/material"
 	_ "github.com/in-toto/go-witness/attestation/maven"
 	_ "github.com/in-toto/go-witness/attestation/oci"
@@ -37,6 +34,7 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/product"
 	_ "github.com/in-toto/go-witness/attestation/sarif"
 	_ "github.com/in-toto/go-witness/attestation/sbom"
+	_ "github.com/in-toto/go-witness/attestation/secretscan"
 	_ "github.com/in-toto/go-witness/attestation/slsa"
 	_ "github.com/in-toto/go-witness/attestation/vex"
 
