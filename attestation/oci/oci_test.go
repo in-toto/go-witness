@@ -22,37 +22,9 @@ import (
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
-	"github.com/invopop/jsonschema"
+	testproducter "github.com/in-toto/go-witness/internal/attestors/test"
 	"github.com/stretchr/testify/require"
 )
-
-type testProducter struct {
-	products map[string]attestation.Product
-}
-
-func (testProducter) Name() string {
-	return "dummy-products"
-}
-
-func (testProducter) Type() string {
-	return "dummy-products"
-}
-
-func (testProducter) RunType() attestation.RunType {
-	return attestation.PreMaterialRunType
-}
-
-func (testProducter) Schema() *jsonschema.Schema {
-	return jsonschema.Reflect(&testProducter{})
-}
-
-func (testProducter) Attest(ctx *attestation.AttestationContext) error {
-	return nil
-}
-
-func (t testProducter) Products() map[string]attestation.Product {
-	return t.products
-}
 
 func TestNew(t *testing.T) {
 	a := New()
@@ -112,7 +84,9 @@ func TestAttestor_Attest(t *testing.T) {
 		Digest:   tarDigest,
 	}
 
-	ctx, err := attestation.NewContext("test", []attestation.Attestor{testProducter{testProductSet}, a})
+	tp := testproducter.TestProducter{}
+	tp.SetProducts(testProductSet)
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{tp, a})
 	if err != nil {
 		t.Fatal(err)
 	}

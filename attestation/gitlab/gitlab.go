@@ -69,6 +69,8 @@ func (e ErrNotGitlab) Error() string {
 	return "not in a gitlab ci job"
 }
 
+type Option func(a *Attestor)
+
 type Attestor struct {
 	JWT          *jwt.Attestor `json:"jwt,omitempty"`
 	CIConfigPath string        `json:"ciconfigpath"`
@@ -84,10 +86,30 @@ type Attestor struct {
 	RunnerID     string        `json:"runnerid"`
 	CIHost       string        `json:"cihost"`
 	CIServerUrl  string        `json:"ciserverurl"`
+	token        string
+	tokenEnvVar  string
 }
 
-func New() *Attestor {
-	return &Attestor{}
+func WithToken(token string) Option {
+	return func(a *Attestor) {
+		a.token = token
+	}
+}
+
+func WithTokenEnvVar(envVar string) Option {
+	return func(a *Attestor) {
+		a.tokenEnvVar = envVar
+	}
+}
+
+func New(opts ...Option) *Attestor {
+	a := &Attestor{}
+
+	for _, opt := range opts {
+		opt(a)
+	}
+
+	return a
 }
 
 func (a *Attestor) Name() string {
@@ -117,7 +139,17 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	a.CIServerUrl = os.Getenv("CI_SERVER_URL")
 	jwksUrl := fmt.Sprintf("%s/oauth/discovery/keys", a.CIServerUrl)
-	jwtString := os.Getenv("ID_TOKEN")
+
+	var jwtString string
+	if a.token != "" {
+		jwtString = a.token
+	} else if a.tokenEnvVar != "" {
+		jwtString = os.Getenv(a.tokenEnvVar)
+	} else {
+		// Only works in GitLab < 17.0
+		jwtString = os.Getenv("CI_JOB_JWT")
+	}
+
 	if jwtString != "" {
 		a.JWT = jwt.New(jwt.WithToken(jwtString), jwt.WithJWKSUrl(jwksUrl))
 		if err := a.JWT.Attest(ctx); err != nil {
