@@ -2,6 +2,8 @@ module github.com/in-toto/go-witness
 
 go 1.23.4
 
+toolchain go1.24.1
+
 require (
 	cloud.google.com/go/kms v1.20.5
 	github.com/CycloneDX/cyclonedx-go v0.9.2
@@ -195,7 +197,7 @@ require (
 	golang.org/x/term v0.30.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/genproto v0.0.0-20241118233622-e639e219e697 // indirect
-	google.golang.org/protobuf v1.36.5
+	google.golang.org/protobuf v1.36.6
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
