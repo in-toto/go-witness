@@ -2,6 +2,8 @@ module github.com/in-toto/go-witness
 
 go 1.23.4
 
+toolchain go1.24.1
+
 require (
 	cloud.google.com/go/kms v1.20.5
 	github.com/CycloneDX/cyclonedx-go v0.9.2
@@ -36,7 +38,7 @@ require (
 	gopkg.in/go-jose/go-jose.v2 v2.6.3
 	k8s.io/api v0.28.15
 	k8s.io/apimachinery v0.30.10
-	k8s.io/client-go v0.28.3
+	k8s.io/client-go v0.28.15
 )
 
 require (
