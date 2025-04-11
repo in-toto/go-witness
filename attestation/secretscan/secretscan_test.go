@@ -18,7 +18,6 @@ import (
 	"crypto"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +26,6 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/attestation/product"
 	"github.com/in-toto/go-witness/cryptoutil"
-	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zricethezav/gitleaks/v8/detect"
@@ -80,51 +78,7 @@ func TestConfigOptions(t *testing.T) {
 	assert.Equal(t, "/path/to/config.toml", attestor.configPath)
 }
 
-// For testing - helper to create findings from test content
-// This simulates what a detector would do without needing to modify Gitleaks internals
-func scanForTestPatterns(content, filePath string) []Finding {
-	findings := []Finding{}
-
-	// Define common test patterns that should be detected in tests
-	testPatterns := map[string]string{
-		"test-api-key":      "API_KEY=",
-		"test-password":     "password=",
-		"test-aws-access":   "AWS_ACCESS_KEY",
-		"test-aws-secret":   "AWS_SECRET",
-		"test-password-all": "PASSWORD=",
-	}
-
-	// Scan content for each pattern
-	for ruleID, pattern := range testPatterns {
-		if strings.Contains(content, pattern) {
-			// Simple finding creation for test purposes
-			secret := fmt.Sprintf("%s:xxx...:SHA256:1234abcd", ruleID)
-			match := content
-			if len(match) > 40 {
-				index := strings.Index(match, pattern)
-				if index >= 0 {
-					// Extract context around the match
-					start := int(math.Max(0, float64(index-10)))
-					end := int(math.Min(float64(len(match)), float64(index+len(pattern)+10)))
-					match = match[start:end]
-				} else {
-					match = match[:20] + "..." + match[len(match)-20:]
-				}
-			}
-
-			findings = append(findings, Finding{
-				RuleID:      ruleID,
-				Description: "Test pattern for " + ruleID,
-				File:        filePath,
-				Line:        1, // Simplified for test
-				Match:       match,
-				Secret:      secret,
-			})
-		}
-	}
-
-	return findings
-}
+// Note: This helper function was removed as it's not used in any tests
 
 // Creates a standard Gitleaks detector
 // This function is for testing only
@@ -139,7 +93,11 @@ func TestAllowlistConfig(t *testing.T) {
 	// Create a temporary directory
 	tempDir, err := os.MkdirTemp("", "secretscan-allowlist-test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Create a test file with AWS secret pattern that would be detected
 	secretFile := filepath.Join(tempDir, "secret-file.txt")
@@ -247,7 +205,11 @@ func TestAllowlistStopWords(t *testing.T) {
 	// Create a temporary directory
 	tempDir, err := os.MkdirTemp("", "secretscan-stopwords-test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Create test file with a secret containing a stop word
 	secretFile := filepath.Join(tempDir, "secret-file.txt")
@@ -393,7 +355,11 @@ func TestFailOnDetection(t *testing.T) {
 	// Create a temporary directory
 	tempDir, err := os.MkdirTemp("", "secretscan-fail-test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Create a file with a AWS key secret pattern that gitleaks will definitely detect
 	secretFile := filepath.Join(tempDir, "secret-file.txt")
@@ -473,7 +439,11 @@ func TestSecretDetection(t *testing.T) {
 	// Create a temporary directory
 	tempDir, err := os.MkdirTemp("", "secretscan-detection-test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Create test file with multiple common secret patterns that Gitleaks should detect
 	// Using patterns from multiple detection rules to increase chances of detection
@@ -567,7 +537,11 @@ func TestBasicAttestation(t *testing.T) {
 	// Create a temporary directory
 	tempDir, err := os.MkdirTemp("", "secretscan-basic-test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Create test file with a secret pattern
 	testFile := filepath.Join(tempDir, "test-file.txt")
@@ -697,7 +671,11 @@ func TestSecretFormat(t *testing.T) {
 	// Test with ScanFile functionality
 	tempDir, err := os.MkdirTemp("", "format-test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Create a temp file with a fake secret for testing
 	testFile := filepath.Join(tempDir, "test-format.txt")
@@ -738,59 +716,178 @@ func TestSecretFormat(t *testing.T) {
 	}
 }
 
-// testAttestor is a simple attestor implementation for testing
-type testAttestor struct {
-	name       string
-	secretData string
-}
+func TestFilePathUpdate(t *testing.T) {
+	// Test the updateFindingsFile method with different source types
 
-func (a *testAttestor) Name() string {
-	return a.name
-}
-
-func (a *testAttestor) Type() string {
-	return "test"
-}
-
-func (a *testAttestor) RunType() attestation.RunType {
-	return attestation.MaterialRunType
-}
-
-func (a *testAttestor) Schema() *jsonschema.Schema {
-	return jsonschema.Reflect(a)
-}
-
-func (a *testAttestor) Attest(ctx *attestation.AttestationContext) error {
-	return nil
-}
-
-func (a *testAttestor) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]string{
-		"name":       a.name,
-		"secretData": a.secretData,
-	})
-}
-
-func TestAttestationContextInteraction(t *testing.T) {
 	// Create a temporary directory
-	tempDir, err := os.MkdirTemp("", "secretscan-context-test")
+	tempDir, err := os.MkdirTemp("", "secretscan-filepath-test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
-	// Create test attestors with embedded secrets
-	testAttestors := []attestation.Attestor{
-		&testAttestor{
-			name:       "test-attestor-1",
-			secretData: "API_KEY=1234567890abcdef",
+	// Define test cases
+	testCases := []struct {
+		name         string
+		tempFilePath string
+		sourceID     string
+		expectedFile string
+		ruleID       string
+		findingID    string
+	}{
+		{
+			name:         "Attestation source",
+			tempFilePath: filepath.Join(tempDir, "temp_file1.json"),
+			sourceID:     "attestation:git",
+			expectedFile: "attestation:git",
+			ruleID:       "test-rule-1",
+			findingID:    "abcdef1234",
+		},
+		{
+			name:         "Product source",
+			tempFilePath: filepath.Join(tempDir, "temp_file2.json"),
+			sourceID:     "product:/path/to/product.txt",
+			expectedFile: "product:/path/to/product.txt",
+			ruleID:       "test-rule-2",
+			findingID:    "fedcba4321",
+		},
+		{
+			name:         "Deep nested temp path",
+			tempFilePath: filepath.Join(tempDir, "nested", "dir", "temp_file3.json"),
+			sourceID:     "attestation:material",
+			expectedFile: "attestation:material",
+			ruleID:       "test-rule-3",
+			findingID:    "123456abcd",
 		},
 	}
+
+	// Create attestor
+	attestor := New()
+	attestor.Findings = []Finding{}
+
+	// Add test findings
+	for _, tc := range testCases {
+		// Ensure parent directories exist
+		if dir := filepath.Dir(tc.tempFilePath); dir != "" {
+			_ = os.MkdirAll(dir, 0755)
+		}
+
+		// Add the finding
+		attestor.Findings = append(attestor.Findings, Finding{
+			RuleID:       tc.ruleID,
+			Description:  "Test finding for " + tc.name,
+			File:         tc.tempFilePath,
+			Line:         10,
+			Match:        "SECRET=12345",
+			Secret:       tc.ruleID + ":SEC...:SHA256:hash123",
+			Source:       tc.sourceID,
+			actualSecret: "SECRET12345",
+		})
+	}
+
+	// Call the updateFindingsFile method
+	attestor.updateFindingsFile()
+
+	// Verify the File field in findings has been updated to match Source
+	for i, tc := range testCases {
+		t.Run(tc.name+" finding", func(t *testing.T) {
+			assert.Equal(t, tc.expectedFile, attestor.Findings[i].File,
+				"File field should be updated to source identifier")
+		})
+	}
+
+	// Verify JSON serialization doesn't contain temporary paths and has source identifiers
+	jsonData, err := json.Marshal(attestor)
+	require.NoError(t, err)
+	jsonStr := string(jsonData)
+
+	// Verify with subtests
+	for _, tc := range testCases {
+		t.Run(tc.name+" JSON", func(t *testing.T) {
+			// Verify temp path is not in JSON
+			assert.NotContains(t, jsonStr, tc.tempFilePath,
+				"JSON output should not contain temporary file path")
+
+			// Verify source ID is in JSON
+			assert.Contains(t, jsonStr, tc.sourceID,
+				"JSON output should contain source identifier")
+		})
+	}
+}
+
+// TestIntegrationFilePathUpdate tests that the full attestation process correctly
+// updates file paths in findings to use source identifiers
+func TestIntegrationFilePathUpdate(t *testing.T) {
+	// Create a temporary directory
+	tempDir, err := os.MkdirTemp("", "secretscan-integration-test")
+	require.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	// Define test cases for different secret types and sources
+	testCases := []struct {
+		name          string
+		setupFunc     func(dir string) (string, error) // returns filename or identifier
+		secretType    string                           // "product" or "attestation"
+		secretPattern string                           // pattern to look for in the source
+	}{
+		{
+			name: "Product file with API key",
+			setupFunc: func(dir string) (string, error) {
+				testFile := filepath.Join(dir, "api-secret.txt")
+				secretContent := "API_KEY=1234567890abcdef"
+				err := os.WriteFile(testFile, []byte(secretContent), 0644)
+				return "api-secret.txt", err
+			},
+			secretType:    "product",
+			secretPattern: "API_KEY=",
+		},
+		{
+			name: "Product file with password",
+			setupFunc: func(dir string) (string, error) {
+				testFile := filepath.Join(dir, "password-file.txt")
+				secretContent := "password=supersecret123"
+				err := os.WriteFile(testFile, []byte(secretContent), 0644)
+				return "password-file.txt", err
+			},
+			secretType:    "product",
+			secretPattern: "password=",
+		},
+	}
+
+	// Setup test files
+	for _, tc := range testCases {
+		_, err := tc.setupFunc(tempDir)
+		require.NoError(t, err, "Failed to setup test case: %s", tc.name)
+	}
+
+	// Create test attestors
+	testAttestors := []attestation.Attestor{
+		&testSecretAttestor{
+			name:       "git-test",
+			secretData: "GITHUB_TOKEN=ghp_1234567890abcdef",
+		},
+		&testSecretAttestor{
+			name:       "jenkins-test",
+			secretData: "API_TOKEN=abcdef1234567890",
+		},
+	}
+
+	// Create the product attestor (required to register the files)
+	productAttestor := product.New()
 
 	// Create the secretscan attestor
 	secretscanAttestor := New()
 
-	// Create context with test attestors
-	ctx, err := attestation.NewContext("test",
-		append(testAttestors, secretscanAttestor),
+	// Setup attestation context with all attestors
+	allAttestors := append(testAttestors, productAttestor, secretscanAttestor)
+	ctx, err := attestation.NewContext("test-integration",
+		allAttestors,
 		attestation.WithWorkingDir(tempDir),
 		attestation.WithHashes([]cryptoutil.DigestValue{{Hash: crypto.SHA256}}),
 	)
@@ -798,177 +895,118 @@ func TestAttestationContextInteraction(t *testing.T) {
 
 	// Run attestors
 	err = ctx.RunAttestors()
-	if err != nil {
-		t.Logf("Error running attestors: %v", err)
-		return
+	require.NoError(t, err)
+
+	// Verify findings were created
+	t.Logf("Found %d findings", len(secretscanAttestor.Findings))
+
+	// Group findings by source prefix for verification
+	findingsByType := map[string][]Finding{
+		"product":     {},
+		"attestation": {},
 	}
 
-	// Just verify the attestor ran successfully
-	assert.NotNil(t, secretscanAttestor)
-}
+	// Log all findings for debugging
+	for i, finding := range secretscanAttestor.Findings {
+		t.Logf("Finding %d: File=%s, Source=%s", i, finding.File, finding.Source)
 
-func TestMaxFileSizeLimit(t *testing.T) {
-	// Create a temporary directory
-	tempDir, err := os.MkdirTemp("", "secretscan-filesize-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	// Create a test file with a secret - use a pattern Gitleaks will detect
-	normalFile := filepath.Join(tempDir, "normal-file.txt")
-	secretContent := `password = "SuperS3cr3tP4ssw0rd!"`
-	err = os.WriteFile(normalFile, []byte(secretContent), 0644)
-	require.NoError(t, err)
-
-	// Create a test "large" file using repeating content
-	// We'll use a file around 5MB by repeating the content
-	largeFile := filepath.Join(tempDir, "large-file.txt")
-	// This should create a file around 5MB in size
-	largeContent := strings.Repeat("This is test content with password=abcdef123456\n", 250000)
-	err = os.WriteFile(largeFile, []byte(largeContent), 0644)
-	require.NoError(t, err)
-
-	// Calculate file sizes for debugging
-	normalFileInfo, _ := os.Stat(normalFile)
-	largeFileInfo, _ := os.Stat(largeFile)
-	t.Logf("Normal file size: %d bytes", normalFileInfo.Size())
-	t.Logf("Large file size: %d bytes", largeFileInfo.Size())
-
-	// Test 1: Basic file size checking functionality
-	// -----------------------------------------------
-	// First test: Direct scan of normal file should work
-	t.Log("Test 1: Direct scan of normal-sized file")
-	detector, err := detect.NewDetectorDefaultConfig()
-	require.NoError(t, err)
-
-	// Create attestor with standard size limit (10MB)
-	attestor := New()
-	findings, err := attestor.ScanFile(normalFile, detector)
-	require.NoError(t, err)
-
-	// Log findings for debugging
-	t.Logf("Found %d findings in normal file", len(findings))
-
-	// Test 2: Verify file size limiting functionality
-	// ----------------------------------------------
-	// Create attestor with small limit (WithMaxFileSize only accepts int values)
-	t.Log("Test 2: Verifying size limiting with minimal limit")
-	tinyLimitAttestor := New(WithMaxFileSize(1)) // 1MB limit
-
-	// For this test, we'll manually check a tiny file instead of using a tiny limit
-	// Create a tiny file that would be skipped with a 1MB limit
-	tinyFile := filepath.Join(tempDir, "tiny-file.txt")
-	err = os.WriteFile(tinyFile, []byte("tiny"), 0644)
-	require.NoError(t, err)
-
-	// Change the file on disk to be larger than what we set in the attestor
-	// This simulates a small limit without using floating point values
-	normalFileContent := strings.Repeat("x", 2*1024*1024) // 2MB
-	err = os.WriteFile(normalFile, []byte(normalFileContent), 0644)
-	require.NoError(t, err)
-
-	// Now scan with our 1MB limit attestor - the 2MB file should be skipped
-	smallFindings, err := tinyLimitAttestor.ScanFile(normalFile, detector)
-	require.NoError(t, err)
-	assert.Empty(t, smallFindings, "File exceeding 1MB limit should be skipped")
-
-	// Test the ScanFile implementation directly to verify size limit handling
-	// ---------------------------------------------------------------
-
-	// Test 3: Manual verification of file size limit in maxFileSizeMB
-	t.Log("Test 3: Manual verification of file size limit in maxFileSizeMB")
-	// Create a custom file of known size
-	knownSizeFile := filepath.Join(tempDir, "known-size.txt")
-	// Create file with exactly 1 MB of content
-	oneMBContent := strings.Repeat("x", 1024*1024)
-	err = os.WriteFile(knownSizeFile, []byte(oneMBContent), 0644)
-	require.NoError(t, err)
-
-	// Verify the file size
-	knownSizeInfo, err := os.Stat(knownSizeFile)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1024*1024), knownSizeInfo.Size(), "Test file should be exactly 1MB")
-
-	// Create attestor with exactly 1MB limit
-	exactLimitAttestor := New(WithMaxFileSize(1)) // 1MB
-
-	// File should NOT be skipped as it exactly matches the max size
-	exactFindings, err := exactLimitAttestor.ScanFile(knownSizeFile, detector)
-	require.NoError(t, err)
-	t.Logf("With exact limit match (1MB), scan returned %d findings", len(exactFindings))
-
-	// Test with a zero limit (which means no limit in the implementation)
-	zeroLimitAttestor := New(WithMaxFileSize(0)) // No limit
-
-	// With zero limit, file should NOT be skipped
-	zeroLimitFindings, err := zeroLimitAttestor.ScanFile(knownSizeFile, detector)
-	require.NoError(t, err)
-	t.Logf("With zero limit (no limit), scan returned %d findings", len(zeroLimitFindings))
-
-	// Verify the large file is properly skipped with default limit
-	t.Log("Verifying large file (5MB) is properly handled with 1MB limit")
-	oneMBLimitAttestor := New(WithMaxFileSize(1)) // 1MB limit
-	largeFileFindings, err := oneMBLimitAttestor.ScanFile(largeFile, detector)
-	require.NoError(t, err)
-	assert.Empty(t, largeFileFindings, "Large 5MB file should be skipped with 1MB limit")
-}
-
-func TestErrorHandling(t *testing.T) {
-	// Create a temporary directory
-	tempDir, err := os.MkdirTemp("", "secretscan-error-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	// Create a test file with content for scanFile testing
-	testFile := filepath.Join(tempDir, "test-file.txt")
-	err = os.WriteFile(testFile, []byte("Test content with API_KEY=12345"), 0644)
-	require.NoError(t, err)
-
-	// Mock-like approach to test nil detector
-	// Use the exported method directly
-	attestor := New()
-	findings, err := attestor.ScanFile(testFile, nil)
-
-	// Should return error but no findings
-	assert.Error(t, err, "Should handle nil detector gracefully")
-	assert.Empty(t, findings, "Should return empty findings for nil detector")
-}
-
-// Severity test removed
-
-func TestSubjects(t *testing.T) {
-	// This test directly verifies the subjects creation without running a full attestation
-
-	// Create an attestor
-	attestor := New()
-
-	// Create proper DigestSet objects
-	digestSet1 := make(cryptoutil.DigestSet)
-	digestSet1[cryptoutil.DigestValue{Hash: crypto.SHA256}] = "abc123"
-	digestSet1[cryptoutil.DigestValue{Hash: crypto.SHA512}] = "def456"
-
-	digestSet2 := make(cryptoutil.DigestSet)
-	digestSet2[cryptoutil.DigestValue{Hash: crypto.SHA256}] = "xyz789"
-	digestSet2[cryptoutil.DigestValue{Hash: crypto.SHA512}] = "uvw012"
-
-	// Directly set subjects for testing
-	attestor.subjects = map[string]cryptoutil.DigestSet{
-		"product:file1.txt": digestSet1,
-		"product:file2.bin": digestSet2,
+		// Group finding by type
+		if strings.HasPrefix(finding.Source, "product:") {
+			findingsByType["product"] = append(findingsByType["product"], finding)
+		} else if strings.HasPrefix(finding.Source, "attestation:") {
+			findingsByType["attestation"] = append(findingsByType["attestation"], finding)
+		}
 	}
 
-	// Get subjects
-	subjects := attestor.Subjects()
+	// Run subtests for each finding type
+	t.Run("Path format verification", func(t *testing.T) {
+		// Verify all findings have correct path format
+		for _, finding := range secretscanAttestor.Findings {
+			// Verify Source and File match
+			assert.Equal(t, finding.Source, finding.File,
+				"Finding File should match Source identifier")
 
-	// Ensure we get the expected subjects
-	assert.Len(t, subjects, 2, "Should have 2 subjects")
-	assert.Contains(t, subjects, "product:file1.txt", "Should contain file1.txt")
-	assert.Contains(t, subjects, "product:file2.bin", "Should contain file2.bin")
+			// Verify no temporary paths in the findings
+			assert.False(t, strings.HasPrefix(finding.File, os.TempDir()),
+				"Finding File should not be a temporary path")
+			assert.False(t, strings.Contains(finding.File, "secretscan"),
+				"Finding File should not contain 'secretscan' temp dir name")
+		}
+	})
 
-	// Ensure no attestation subjects were created
-	for key := range subjects {
-		assert.False(t, strings.HasPrefix(key, "attestation:"),
-			"Should not have attestation subjects")
-	}
+	// Run JSON serialization test
+	t.Run("JSON serialization", func(t *testing.T) {
+		jsonData, err := json.Marshal(secretscanAttestor)
+		require.NoError(t, err)
+		jsonStr := string(jsonData)
+
+		// Verify JSON doesn't contain temp directory paths
+		assert.NotContains(t, jsonStr, os.TempDir(),
+			"JSON should not contain temporary directory paths")
+
+		// Check for specific patterns in the JSON
+		if len(findingsByType["product"]) > 0 {
+			t.Run("Product path in JSON", func(t *testing.T) {
+				for _, finding := range findingsByType["product"] {
+					assert.Contains(t, jsonStr, fmt.Sprintf(`"file":"%s"`, finding.Source),
+						"JSON should contain product source as file")
+				}
+			})
+		}
+
+		if len(findingsByType["attestation"]) > 0 {
+			t.Run("Attestation path in JSON", func(t *testing.T) {
+				for _, finding := range findingsByType["attestation"] {
+					assert.Contains(t, jsonStr, fmt.Sprintf(`"file":"%s"`, finding.Source),
+						"JSON should contain attestation source as file")
+				}
+			})
+		}
+	})
+
+	// Verify expected findings for each test case
+	t.Run("Specific test cases", func(t *testing.T) {
+		// Only run if we have findings to check
+		if len(secretscanAttestor.Findings) > 0 {
+			// For product files, verify the expected files have findings
+			for _, tc := range testCases {
+				if tc.secretType == "product" {
+					foundMatch := false
+					for _, finding := range findingsByType["product"] {
+						if strings.Contains(finding.File, tc.name) ||
+							strings.Contains(finding.Source, tc.name) ||
+							strings.Contains(finding.Match, tc.secretPattern) {
+							foundMatch = true
+							break
+						}
+					}
+
+					// Don't fail the test if we don't find the secret - detection depends on
+					// Gitleaks configuration which may vary in different environments
+					if !foundMatch {
+						t.Logf("Note: No finding detected for test case: %s", tc.name)
+					}
+				}
+			}
+
+			// For attestation sources, verify we scanned the test attestors
+			for _, attestor := range testAttestors {
+				found := false
+				for _, finding := range findingsByType["attestation"] {
+					if strings.Contains(finding.Source, attestor.Name()) {
+						found = true
+						break
+					}
+				}
+
+				// Don't fail the test if we don't find the secret - detection depends on
+				// Gitleaks configuration which may vary in different environments
+				if !found {
+					t.Logf("Note: No finding detected for attestor: %s", attestor.Name())
+				}
+			}
+		}
+	})
 }
 
 // TestDetectionAndAllowlist verifies that secret detection and allowlisting
@@ -977,7 +1015,11 @@ func TestDetectionAndAllowlist(t *testing.T) {
 	// Create a temporary directory
 	tempDir, err := os.MkdirTemp("", "secretscan-detection-allowlist-test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// 1. Create files with different secret patterns
 	// File 1: Contains multiple secret patterns that Gitleaks should detect

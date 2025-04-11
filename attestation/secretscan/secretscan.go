@@ -40,11 +40,12 @@ const (
 	RunType = attestation.PostProductRunType
 
 	// Default configuration values
-	defaultFailOnDetection = false
-	defaultMaxFileSizeMB   = 10   // Default maximum file size to scan (in MB)
-	defaultFilePerm        = 0600 // More restrictive file permissions (owner read/write only)
-	defaultAllowList       = ""   // No default allow list
-	defaultConfigPath      = ""   // No default custom config path
+	defaultFailOnDetection      = false
+	defaultMaxFileSizeMB        = 10   // Default maximum file size to scan (in MB)
+	defaultFilePerm             = 0600 // More restrictive file permissions (owner read/write only)
+	defaultAllowList            = ""   // No default allow list
+	defaultConfigPath           = ""   // No default custom config path
+	defaultSanitizeAttestations = true // Default to sanitizing attestations
 )
 
 // Verify the Attestor implements the required interfaces at compile time.
@@ -156,6 +157,22 @@ func init() {
 				return secretscanAttestor, nil
 			},
 		),
+
+		// Configure whether to sanitize attestations with detected secrets
+		registry.BoolConfigOption(
+			"sanitize-attestations",
+			"Sanitize attestations with detected secrets (replace with redaction markers)",
+			defaultSanitizeAttestations,
+			func(a attestation.Attestor, sanitizeAttestations bool) (attestation.Attestor, error) {
+				secretscanAttestor, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a secretscan attestor", a)
+				}
+
+				WithSanitizeAttestations(sanitizeAttestations)(secretscanAttestor)
+				return secretscanAttestor, nil
+			},
+		),
 	)
 }
 
@@ -200,6 +217,14 @@ func WithConfigPath(configPath string) Option {
 	}
 }
 
+// WithSanitizeAttestations configures whether to sanitize attestations by
+// replacing detected secrets with redaction markers
+func WithSanitizeAttestations(sanitize bool) Option {
+	return func(a *Attestor) {
+		a.sanitizeAttestations = sanitize
+	}
+}
+
 // Finding represents a detected secret with sensitive data properly obfuscated.
 // It stores details about the detected secret while ensuring the actual secret
 // is not exposed.
@@ -210,7 +235,8 @@ type Finding struct {
 	// Description explains what type of secret was found
 	Description string `json:"description"`
 
-	// File is the path to the file containing the secret
+	// File identifies where the secret was found, using the same format as Source
+	// Format: "attestation:attestor-name" or "product:/path/to/file"
 	File string `json:"file"`
 
 	// Line is the line number where the secret was found
@@ -230,6 +256,11 @@ type Finding struct {
 	// Source identifies where this finding came from (attestation, product)
 	// Format: product:/path/to/file or attestation:attestor-name
 	Source string `json:"source"`
+
+	// actualSecret holds the raw secret value for internal use only.
+	// This field is private (unexported) and excluded from JSON serialization
+	// to prevent leaking secrets.
+	actualSecret string `json:"-"`
 }
 
 // AllowList defines patterns that should be ignored during secret scanning.
@@ -248,6 +279,9 @@ type AllowList struct {
 	StopWords []string `json:"stopWords,omitempty"`
 }
 
+// Note: SanitizationReport and FindingDetail types have been removed
+// as they are redundant with the Finding type and don't provide additional value
+
 // Attestor performs scanning of products and attestations for potential secrets
 // using Gitleaks detection rules. It implements the attestation.Attestor interface
 // and provides these key security features:
@@ -263,15 +297,19 @@ type AllowList struct {
 //
 // 5. Configurable Behavior: Can report findings or fail the attestation process
 //
+//  6. Attestation Sanitization: Can sanitize attestations by replacing secrets with
+//     deterministic redaction markers
+//
 // The attestor runs after product attestors to analyze all products and adds
 // scanned products as subjects for verifiability.
 type Attestor struct {
 	// Configuration options
-	failOnDetection bool
-	maxFileSizeMB   int
-	filePerm        os.FileMode
-	allowList       *AllowList
-	configPath      string
+	failOnDetection      bool
+	maxFileSizeMB        int
+	filePerm             os.FileMode
+	allowList            *AllowList
+	configPath           string
+	sanitizeAttestations bool
 
 	// Results and state
 	Findings []Finding `json:"findings"`
@@ -280,12 +318,13 @@ type Attestor struct {
 
 func New(opts ...Option) *Attestor {
 	a := &Attestor{
-		failOnDetection: defaultFailOnDetection,
-		maxFileSizeMB:   defaultMaxFileSizeMB,
-		filePerm:        defaultFilePerm,
-		allowList:       nil,
-		configPath:      defaultConfigPath,
-		subjects:        make(map[string]cryptoutil.DigestSet),
+		failOnDetection:      defaultFailOnDetection,
+		maxFileSizeMB:        defaultMaxFileSizeMB,
+		filePerm:             defaultFilePerm,
+		allowList:            nil,
+		configPath:           defaultConfigPath,
+		sanitizeAttestations: defaultSanitizeAttestations,
+		subjects:             make(map[string]cryptoutil.DigestSet),
 	}
 
 	for _, opt := range opts {
@@ -311,6 +350,18 @@ func (a *Attestor) Schema() *jsonschema.Schema {
 	return jsonschema.Reflect(a)
 }
 
+// updateFindingsFile updates all file paths in findings to use source identifiers
+// instead of temporary file paths. This ensures that all outputs show meaningful
+// source information rather than temporary paths used during scanning.
+func (a *Attestor) updateFindingsFile() {
+	// Replace temporary file paths with source identifiers in findings
+	for i := range a.Findings {
+		// The Source field contains a properly formatted identifier:
+		// "attestation:attestor-name" or "product:/path/to/file"
+		a.Findings[i].File = a.Findings[i].Source
+	}
+}
+
 // Attest scans attestations and products for potential secrets.
 // The attestor will fail if configured with failOnDetection=true and secrets are found.
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
@@ -319,7 +370,11 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	if err != nil {
 		return fmt.Errorf("error creating temp dir: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			log.Debugf("(attestation/secretscan) error removing temp dir: %s", err)
+		}
+	}()
 
 	// Initialize Gitleaks detector
 	detector, err := a.initGitleaksDetector()
@@ -336,6 +391,9 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	if err := a.scanProducts(ctx, tempDir, detector); err != nil {
 		log.Debugf("(attestation/secretscan) error scanning products: %s", err)
 	}
+
+	// Update all File fields to use Source instead of temporary file paths
+	a.updateFindingsFile()
 
 	// Fail if configured and secrets are found
 	if a.failOnDetection && len(a.Findings) > 0 {
@@ -375,45 +433,76 @@ func (a *Attestor) scanAttestations(ctx *attestation.AttestationContext, tempDir
 	completedAttestors := ctx.CompletedAttestors()
 	log.Debugf("(attestation/secretscan) scanning %d completed attestors", len(completedAttestors))
 
+	// No need to initialize sanitization report anymore
+
+	// Process each attestor
 	for _, completed := range completedAttestors {
-		// Skip scanning ourselves to avoid recursion
-		if completed.Attestor.Name() == Name {
+		// Skip attestors that should not be scanned
+		if a.shouldSkipAttestor(completed.Attestor) {
 			continue
 		}
 
-		// Convert attestor to JSON for scanning
-		attestorJSON, err := json.MarshalIndent(completed.Attestor, "", "  ")
-		if err != nil {
-			log.Debugf("(attestation/secretscan) error marshaling attestor %s: %s", completed.Attestor.Name(), err)
-			continue
-		}
-
-		// Create a temporary file with restrictive permissions
-		filename := filepath.Join(tempDir, fmt.Sprintf("attestor_%s.json", completed.Attestor.Name()))
-		if err := os.WriteFile(filename, attestorJSON, a.filePerm); err != nil {
-			log.Debugf("(attestation/secretscan) error writing temp file: %s", err)
-			continue
-		}
-
-		// Scan the file
-		findings, err := a.ScanFile(filename, detector)
+		// Scan the attestor for secrets
+		findings, err := a.scanSingleAttestor(completed.Attestor, tempDir, detector)
 		if err != nil {
 			log.Debugf("(attestation/secretscan) error scanning attestor %s: %s", completed.Attestor.Name(), err)
 			continue
 		}
 
-		// Mark the source of these findings
-		for i := range findings {
-			findings[i].Source = fmt.Sprintf("attestation:%s", completed.Attestor.Name())
-		}
+		// Set source for all findings to identify which attestor they came from
+		a.setAttestationSource(findings, completed.Attestor.Name())
 
-		// Add the findings - note we don't add attestations as subjects since they
-		// are not subjects in the conceptual model of witnessing
+		// Add the findings to our collection
 		a.Findings = append(a.Findings, findings...)
 	}
 
 	return nil
 }
+
+// The initSanitizationReport method has been removed
+
+// shouldSkipAttestor determines if an attestor should be skipped during scanning
+func (a *Attestor) shouldSkipAttestor(attestor attestation.Attestor) bool {
+	// Skip scanning ourselves to avoid recursion
+	if attestor.Name() == Name {
+		return true
+	}
+
+	// Skip other post-product attestors to avoid race conditions
+	if attestor.RunType() == RunType {
+		log.Debugf("(attestation/secretscan) skipping other post-product attestor: %s", attestor.Name())
+		return true
+	}
+
+	return false
+}
+
+// scanSingleAttestor converts an attestor to JSON and scans it for secrets
+func (a *Attestor) scanSingleAttestor(attestor attestation.Attestor, tempDir string, detector *detect.Detector) ([]Finding, error) {
+	// Convert attestor to JSON for scanning
+	attestorJSON, err := json.MarshalIndent(attestor, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling attestor %s: %w", attestor.Name(), err)
+	}
+
+	// Create a temporary file with restrictive permissions
+	filename := filepath.Join(tempDir, fmt.Sprintf("attestor_%s.json", attestor.Name()))
+	if err := os.WriteFile(filename, attestorJSON, a.filePerm); err != nil {
+		return nil, fmt.Errorf("error writing temp file: %w", err)
+	}
+
+	// Scan the file for secrets
+	return a.ScanFile(filename, detector)
+}
+
+// setAttestationSource sets the source field on findings to the attestation name
+func (a *Attestor) setAttestationSource(findings []Finding, attestorName string) {
+	for i := range findings {
+		findings[i].Source = fmt.Sprintf("attestation:%s", attestorName)
+	}
+}
+
+// The updateSanitizationReportForAttestor method has been removed
 
 // scanProducts examines all products for potential secrets.
 // Binary files and directories are automatically skipped.
@@ -427,36 +516,23 @@ func (a *Attestor) scanProducts(ctx *attestation.AttestationContext, tempDir str
 	log.Debugf("(attestation/secretscan) scanning %d products", len(products))
 
 	for path, product := range products {
-		// Skip directories
-		if product.MimeType == "text/directory" {
-			log.Debugf("(attestation/secretscan) skipping directory: %s", path)
+		// Skip files that should not be scanned
+		if a.shouldSkipProduct(path, product) {
 			continue
 		}
 
-		// Skip binary files
-		if isBinaryFile(product.MimeType) {
-			log.Debugf("(attestation/secretscan) skipping binary file: %s (mime: %s)", path, product.MimeType)
-			continue
-		}
+		// Get absolute path for scanning while preserving original path for records
+		absPath := a.getAbsolutePath(path, ctx.WorkingDir())
 
-		// Convert to absolute path for scanning while preserving original path for records
-		absPath := path
-		if !filepath.IsAbs(path) && ctx.WorkingDir() != "" {
-			absPath = filepath.Join(ctx.WorkingDir(), path)
-			log.Debugf("(attestation/secretscan) converting relative path %s to absolute path %s", path, absPath)
-		}
-
-		// Scan text files using absolute path to ensure file can be opened
+		// Scan the file for secrets
 		findings, err := a.ScanFile(absPath, detector)
 		if err != nil {
 			log.Debugf("(attestation/secretscan) error scanning file %s: %s", path, err)
 			continue
 		}
 
-		// Record source of findings with original path (for consistency with other attestors)
-		for i := range findings {
-			findings[i].Source = fmt.Sprintf("product:%s", path)
-		}
+		// Set source for all findings to identify which product they came from
+		a.setProductSource(findings, path)
 
 		// Add findings to collection
 		if len(findings) > 0 {
@@ -471,6 +547,41 @@ func (a *Attestor) scanProducts(ctx *attestation.AttestationContext, tempDir str
 	return nil
 }
 
+// shouldSkipProduct determines if a product should be skipped during scanning
+// based on its type and other characteristics
+func (a *Attestor) shouldSkipProduct(path string, product attestation.Product) bool {
+	// Skip directories
+	if product.MimeType == "text/directory" {
+		log.Debugf("(attestation/secretscan) skipping directory: %s", path)
+		return true
+	}
+
+	// Skip binary files
+	if isBinaryFile(product.MimeType) {
+		log.Debugf("(attestation/secretscan) skipping binary file: %s (mime: %s)", path, product.MimeType)
+		return true
+	}
+
+	return false
+}
+
+// getAbsolutePath converts a path to absolute if it's relative and we have a working directory
+func (a *Attestor) getAbsolutePath(path, workingDir string) string {
+	if !filepath.IsAbs(path) && workingDir != "" {
+		absPath := filepath.Join(workingDir, path)
+		log.Debugf("(attestation/secretscan) converting relative path %s to absolute path %s", path, absPath)
+		return absPath
+	}
+	return path
+}
+
+// setProductSource sets the source field on findings to the product path
+func (a *Attestor) setProductSource(findings []Finding, productPath string) {
+	for i := range findings {
+		findings[i].Source = fmt.Sprintf("product:%s", productPath)
+	}
+}
+
 // ScanFile scans a single file with Gitleaks detector and filters findings based on allowlist.
 // This method is exported for testing purposes.
 func (a *Attestor) ScanFile(filePath string, detector *detect.Detector) ([]Finding, error) {
@@ -479,10 +590,38 @@ func (a *Attestor) ScanFile(filePath string, detector *detect.Detector) ([]Findi
 		return nil, fmt.Errorf("nil detector provided")
 	}
 
+	// Validate and check file size
+	if exceeds, err := a.exceedsMaxFileSize(filePath); err != nil || exceeds {
+		return nil, err // If error or exceeds size limit, return immediately
+	}
+
+	// Read file content
+	content, err := a.readFileContent(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if content is allowlisted
+	contentStr := string(content)
+	if a.isFileContentAllowListed(contentStr, filePath) {
+		return nil, nil
+	}
+
+	// Detect secrets using Gitleaks
+	gitleaksFindings := detector.DetectBytes(content)
+	log.Debugf("(attestation/secretscan) gitleaks found %d raw findings in file: %s",
+		len(gitleaksFindings), filePath)
+
+	// Process findings
+	return a.processGitleaksFindings(gitleaksFindings, filePath), nil
+}
+
+// exceedsMaxFileSize checks if a file exceeds the configured size limit
+func (a *Attestor) exceedsMaxFileSize(filePath string) (bool, error) {
 	// Check file size to avoid loading unnecessarily large files
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("error getting file info: %w", err)
+		return false, fmt.Errorf("error getting file info: %w", err)
 	}
 
 	// Apply size limit if configured (maxFileSizeMB of 0 means no limit)
@@ -490,35 +629,50 @@ func (a *Attestor) ScanFile(filePath string, detector *detect.Detector) ([]Findi
 	if a.maxFileSizeMB > 0 && fileInfo.Size() > maxSizeBytes {
 		log.Debugf("(attestation/secretscan) skipping large file: %s (size: %d bytes, max: %d bytes)",
 			filePath, fileInfo.Size(), maxSizeBytes)
-		return nil, nil
+		return true, nil
 	}
 
-	// Read file content with size limiting
+	return false, nil
+}
+
+// readFileContent reads file content with size limiting
+func (a *Attestor) readFileContent(filePath string) ([]byte, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Debugf("(attestation/secretscan) error closing file: %s", err)
+		}
+	}()
 
+	// Apply the size limit for safety
+	maxSizeBytes := int64(a.maxFileSizeMB) * 1024 * 1024
 	reader := io.LimitReader(file, maxSizeBytes)
+
 	content, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("error reading file: %w", err)
 	}
 
-	// Skip files that match allowlist patterns
-	contentStr := string(content)
-	if a.allowList != nil && isContentAllowListed(contentStr, a.allowList) {
+	return content, nil
+}
+
+// isFileContentAllowListed checks if file content matches allowlist patterns
+func (a *Attestor) isFileContentAllowListed(content, filePath string) bool {
+	if a.allowList != nil && isContentAllowListed(content, a.allowList) {
 		log.Debugf("(attestation/secretscan) skipping allowlisted file: %s", filePath)
-		return nil, nil
+		return true
 	}
+	return false
+}
 
-	// Detect secrets using Gitleaks
-	gitleaksFindings := detector.DetectBytes(content)
-	log.Debugf("(attestation/secretscan) gitleaks found %d raw findings in file: %s", len(gitleaksFindings), filePath)
-
-	// Process findings
+// processGitleaksFindings converts Gitleaks findings to our Finding format
+// and filters out any allowlisted matches
+func (a *Attestor) processGitleaksFindings(gitleaksFindings []report.Finding, filePath string) []Finding {
 	findings := []Finding{}
+
 	for _, gf := range gitleaksFindings {
 		// Skip allowlisted matches
 		if a.allowList != nil && isMatchAllowlisted(gf.Match, a.allowList) {
@@ -533,28 +687,42 @@ func (a *Attestor) ScanFile(filePath string, detector *detect.Detector) ([]Findi
 
 	log.Debugf("(attestation/secretscan) returning %d findings after filtering for: %s",
 		len(findings), filePath)
-	return findings, nil
+	return findings
 }
 
 // createSecureFinding converts a Gitleaks finding to our secure Finding format.
 // It obfuscates secrets by using a prefix and hash to avoid exposing sensitive data.
 func createSecureFinding(gf report.Finding, filePath string) Finding {
+	// The File field initially contains the temporary file path
+	// but will be updated to contain the proper Source identifier
+	// by the updateFindingsFile() method at the end of Attest()
+	return Finding{
+		RuleID:       strings.ToLower(gf.RuleID), // Use lowercase rule ID
+		Description:  gf.Description,
+		File:         filePath,
+		Line:         gf.StartLine,
+		Match:        truncateMatch(gf.Match),
+		Secret:       formatSecretValue(gf),
+		Entropy:      gf.Entropy,
+		actualSecret: gf.Secret, // Store the actual secret for internal use
+	}
+}
+
+// truncateMatch safely truncates the match string to avoid exposing full secrets
+func truncateMatch(match string) string {
+	if len(match) > 40 {
+		return match[:20] + "..." + match[len(match)-20:]
+	}
+	return match
+}
+
+// formatSecretValue creates the obfuscated secret value with prefix and hash
+func formatSecretValue(gf report.Finding) string {
 	// Use lowercase rule ID
 	ruleID := strings.ToLower(gf.RuleID)
 
 	// Create truncated prefix based on secret length
-	var prefix string
-	if len(gf.Secret) <= 4 {
-		if len(gf.Secret) > 0 {
-			prefix = gf.Secret[:1] + "..."
-		} else {
-			prefix = "..."
-		}
-	} else if len(gf.Secret) <= 8 {
-		prefix = gf.Secret[:2] + "..."
-	} else {
-		prefix = gf.Secret[:3] + "..."
-	}
+	prefix := createTruncatedPrefix(gf.Secret)
 
 	// Hash the secret with SHA256
 	hasher := sha256.New()
@@ -562,25 +730,21 @@ func createSecureFinding(gf report.Finding, filePath string) Finding {
 	hashHex := hex.EncodeToString(hasher.Sum(nil))
 
 	// Format as rule_id:prefix...:SHA256:hash
-	secretValue := fmt.Sprintf("%s:%s:SHA256:%s", ruleID, prefix, hashHex)
+	return fmt.Sprintf("%s:%s:SHA256:%s", ruleID, prefix, hashHex)
+}
 
-	// Truncate match string to avoid exposing full secrets
-	var matchValue string
-	if len(gf.Match) > 40 {
-		matchValue = gf.Match[:20] + "..." + gf.Match[len(gf.Match)-20:]
-	} else {
-		matchValue = gf.Match
+// createTruncatedPrefix creates a truncated prefix from a secret
+// that gives a hint about the secret without revealing it
+func createTruncatedPrefix(secret string) string {
+	if len(secret) <= 4 {
+		if len(secret) > 0 {
+			return secret[:1] + "..."
+		}
+		return "..."
+	} else if len(secret) <= 8 {
+		return secret[:2] + "..."
 	}
-
-	return Finding{
-		RuleID:      gf.RuleID,
-		Description: gf.Description,
-		File:        filePath,
-		Line:        gf.StartLine,
-		Match:       matchValue,
-		Secret:      secretValue,
-		Entropy:     gf.Entropy,
-	}
+	return secret[:3] + "..."
 }
 
 // isContentAllowListed checks if content matches any allowlist patterns.
@@ -690,6 +854,99 @@ func isBinaryFile(mimeType string) bool {
 	}
 
 	return false
+}
+
+// generateFindingID creates a deterministic ID for a finding based on its details
+// The ID is used for cross-referencing sanitized content
+func generateFindingID(finding Finding) string {
+	// Create a consistent string combining file, line, and rule ID
+	idBase := fmt.Sprintf("%s:%d:%s", finding.File, finding.Line, finding.RuleID)
+
+	// Hash the string for a deterministic ID
+	hasher := sha256.New()
+	hasher.Write([]byte(idBase))
+	hash := hex.EncodeToString(hasher.Sum(nil))
+
+	// Return the first 10 characters as the ID
+	return hash[:10]
+}
+
+// extractSecretValue extracts the actual secret value from a finding
+// This is used for sanitization to know what value to replace in JSON content
+func extractSecretValue(finding Finding) string {
+	// Simply return the actual secret that we stored
+	return finding.actualSecret
+}
+
+// sanitizeJSON sanitizes JSON data by replacing any secret values with redaction markers
+func sanitizeJSON(data []byte, findings []Finding) ([]byte, error) {
+	// Parse JSON to generic structure
+	var jsonObj interface{}
+	if err := json.Unmarshal(data, &jsonObj); err != nil {
+		return nil, fmt.Errorf("error parsing JSON: %w", err)
+	}
+
+	// Apply sanitization recursively
+	sanitized := sanitizeJSONValue(jsonObj, findings)
+
+	// Re-marshal to JSON
+	return json.Marshal(sanitized)
+}
+
+// sanitizeJSONValue recursively processes a JSON structure, replacing secrets with redaction markers
+func sanitizeJSONValue(value interface{}, findings []Finding) interface{} {
+	switch v := value.(type) {
+	case string:
+		// Check if string contains any secrets
+		for _, finding := range findings {
+			secretValue := extractSecretValue(finding)
+			if secretValue != "" && strings.Contains(v, secretValue) {
+				// Replace with redaction marker including finding ID
+				findingID := generateFindingID(finding)
+				return fmt.Sprintf("[REDACTED:%s:%s]", finding.RuleID, findingID)
+			}
+		}
+		return v
+
+	case map[string]interface{}:
+		// Process all map entries
+		for key, mapValue := range v {
+			v[key] = sanitizeJSONValue(mapValue, findings)
+		}
+		return v
+
+	case []interface{}:
+		// Process all array items
+		for i, item := range v {
+			v[i] = sanitizeJSONValue(item, findings)
+		}
+		return v
+
+	default:
+		// Return unchanged for other types
+		return v
+	}
+}
+
+// MarshalJSON customizes how the attestor is marshaled to JSON
+// This allows us to sanitize the JSON output when sanitization is enabled
+func (a *Attestor) MarshalJSON() ([]byte, error) {
+	// If no findings or sanitization disabled, use standard marshaling
+	if !a.sanitizeAttestations || len(a.Findings) == 0 {
+		// Create a temporary struct that omits the MarshalJSON method to avoid recursion
+		type attestorAlias Attestor
+		return json.Marshal((*attestorAlias)(a))
+	}
+
+	// First marshal normally
+	type attestorAlias Attestor
+	data, err := json.Marshal((*attestorAlias)(a))
+	if err != nil {
+		return nil, err
+	}
+
+	// Sanitize the JSON before returning
+	return sanitizeJSON(data, a.Findings)
 }
 
 // Subjects returns the products that were scanned as subjects.
