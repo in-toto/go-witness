@@ -117,11 +117,25 @@ func (b *BuildInfo) UnmarshalJSON(data []byte) error {
 
 				if key == "buildx.build.provenance" {
 					for _, mat := range provenance.Materials {
-						if parts := strings.Split(mat.URI, "?platform="); len(parts) == 2 {
-							arch, err = url.QueryUnescape(parts[1])
-							if err != nil {
-								continue
-							}
+						raw := strings.ReplaceAll(mat.URI, `\u0026`, "&")
+						parsed, err := url.Parse(raw)
+						if err != nil {
+							continue
+						}
+
+						queryParams, err := url.ParseQuery(parsed.RawQuery)
+						if err != nil {
+							continue
+						}
+
+						platform := queryParams.Get("platform")
+						if platform == "" {
+							continue
+						}
+
+						arch, err = url.QueryUnescape(platform)
+						if err != nil {
+							continue
 						}
 					}
 				} else {

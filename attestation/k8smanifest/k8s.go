@@ -79,7 +79,14 @@ type RecordedObject struct {
 }
 
 type ClusterInfo struct {
-	Server string `json:"server"`
+	Server        string                  `json:"server"`
+	RecordedNodes map[string]RecordedNode `json:"nodes"`
+}
+
+type RecordedNode struct {
+	Name     string                `json:"name"`
+	Labels   map[string]string     `json:"labels"`
+	NodeInfo corev1.NodeSystemInfo `json:"nodeInfo"`
 }
 
 // Recorded image stores the details of images found in kubernetes manifests
@@ -435,15 +442,37 @@ func (a *Attestor) processDoc(doc map[string]interface{}, filePath string) ([]by
 		for _, obj := range list.Items {
 			o, gvk, err := decode(obj.Raw, nil, nil)
 			if err != nil {
-				err := fmt.Errorf("Failed to decode file %s. Continuing: %s", filePath, err.Error())
+				err := fmt.Errorf("failed to decode file %s. Continuing: %s", filePath, err.Error())
 				log.Debugf("(attestation/k8smanifest) %w", err)
 				return nil, RecordedObject{}, err
 			}
 
 			recordedImages = append(recordedImages, recordImages(o, gvk)...)
+			if gvk.Kind == "Node" && a.RecordClusterInfo {
+				n, err := recordNode(o, gvk)
+				if err != nil {
+					return nil, RecordedObject{}, fmt.Errorf("failed to record node info: '%w'", err)
+				}
+
+				if a.ClusterInfo.RecordedNodes == nil {
+					a.ClusterInfo.RecordedNodes = make(map[string]RecordedNode)
+				}
+				a.ClusterInfo.RecordedNodes[n.NodeInfo.MachineID] = n
+			}
 		}
 	} else {
 		recordedImages = recordImages(obj, gvk)
+		if gvk.Kind == "Node" && a.RecordClusterInfo {
+			n, err := recordNode(obj, gvk)
+			if err != nil {
+				return nil, RecordedObject{}, fmt.Errorf("failed to record node info: '%w'", err)
+			}
+
+			if a.ClusterInfo.RecordedNodes == nil {
+				a.ClusterInfo.RecordedNodes = make(map[string]RecordedNode)
+			}
+			a.ClusterInfo.RecordedNodes[n.NodeInfo.MachineID] = n
+		}
 	}
 
 	baseKey := fmt.Sprintf("k8smanifest:%s:%s:%s", filePath, kindVal, nameVal)
@@ -636,6 +665,18 @@ func convertKeys(value interface{}) interface{} {
 		return v
 	default:
 		return v
+	}
+}
+
+func recordNode(obj runtime.Object, gvk *schema.GroupVersionKind) (RecordedNode, error) {
+	if n, ok := obj.(*corev1.Node); ok {
+		return RecordedNode{
+			Name:     n.Name,
+			Labels:   n.Labels,
+			NodeInfo: n.Status.NodeInfo,
+		}, nil
+	} else {
+		return RecordedNode{}, fmt.Errorf("failed to type cast object of type '%T' to type '%T'", obj, &corev1.Node{})
 	}
 }
 
