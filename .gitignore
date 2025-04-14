@@ -16,3 +16,6 @@ test/log
 profile.cov
 .vscode/
 .aider*
+.DS_Store
+
+!log/

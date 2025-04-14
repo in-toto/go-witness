@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/in-toto/go-witness/attestation"
@@ -41,6 +42,64 @@ func TestNameTypeRunType(t *testing.T) {
 	require.Equal(t, Name, attestor.Name(), "Expected the attestor's name")
 	require.Equal(t, Type, attestor.Type(), "Expected the attestor's type")
 	require.Equal(t, RunType, attestor.RunType(), "Expected the attestor's run type")
+}
+
+func TestRemotesParsing(t *testing.T) {
+	tests := []struct {
+		name           string
+		remoteURL      string
+		expectedRemote string
+	}{
+		{
+			name:           "Remote URL with credentials should be sanitized to remove credentials",
+			remoteURL:      "https://user:password@github.com/example/repo.git",
+			expectedRemote: "https://github.com/example/repo.git",
+		},
+		{
+			name:           "Remote URL without credentials should remain unchanged",
+			remoteURL:      "https://github.com/example/repo.git",
+			expectedRemote: "https://github.com/example/repo.git",
+		},
+		{
+			name:           "Remote SSH url should remain unchanged",
+			remoteURL:      "user@github.com:/example/repo.git",
+			expectedRemote: "user@github.com:/example/repo.git",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attestor := New()
+
+			// Create a test repository
+			_, dir, cleanup := createTestRepo(t, true)
+			defer cleanup()
+
+			// Add a remote with the specified URL
+			repo, err := git.PlainOpen(dir)
+			require.NoError(t, err)
+
+			_, err = repo.CreateRemote(&config.RemoteConfig{
+				Name: "origin",
+				URLs: []string{tt.remoteURL},
+			})
+			require.NoError(t, err)
+
+			// Run the attestor
+			ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor}, attestation.WithWorkingDir(dir))
+			require.NoError(t, err, "Expected no error from NewContext")
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err, "Expected no error from RunAttestors")
+
+			// Validate that the remote URL matches the expected sanitized URL
+			require.NotEmpty(t, attestor.Remotes, "Expected remotes to be set")
+			for _, remote := range attestor.Remotes {
+				require.NotContains(t, remote, "user:password", "Remote URL should not contain user:password")
+				require.Equal(t, tt.expectedRemote, remote, "Expected sanitized remote URL")
+			}
+		})
+	}
 }
 
 func TestRunWorksWithCommits(t *testing.T) {

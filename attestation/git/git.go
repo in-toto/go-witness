@@ -17,6 +17,7 @@ package git
 import (
 	"crypto"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -156,7 +157,17 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	for _, remote := range remotes {
-		a.Remotes = append(a.Remotes, remote.Config().URLs...)
+		for _, urlStr := range remote.Config().URLs {
+			parsed, err := url.Parse(urlStr)
+			if err != nil {
+				// If parsing fails, fallback to the original URL
+				a.Remotes = append(a.Remotes, urlStr)
+				continue
+			}
+			// Remove any embedded user info (tokens, credentials, etc.)
+			parsed.User = nil
+			a.Remotes = append(a.Remotes, parsed.String())
+		}
 	}
 
 	refs, err := repo.References()
@@ -254,7 +265,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func GoGitGetStatus(repo *git.Repository) (map[string]Status, error) {
-	var gitStatuses map[string]Status = make(map[string]Status)
+	gitStatuses := make(map[string]Status)
 
 	worktree, err := repo.Worktree()
 	if err != nil {
