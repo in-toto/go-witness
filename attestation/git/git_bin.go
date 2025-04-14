@@ -81,7 +81,7 @@ func GitGetStatus(workDir string) (map[string]Status, error) {
 	lines := strings.Split(output, "\n")
 
 	// Iterate over the lines and parse the status
-	var gitStatuses map[string]Status = make(map[string]Status)
+	gitStatuses := make(map[string]Status)
 	for _, line := range lines {
 		// Skip empty lines
 		if len(line) == 0 {

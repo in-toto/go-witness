@@ -154,11 +154,12 @@ func (a *SBOMAttestor) getCandidate(ctx *attestation.AttestationContext) error {
 
 	a.subjects = make(map[string]cryptoutil.DigestSet)
 	for path, product := range products {
-		if product.MimeType == SPDXMimeType {
+		switch product.MimeType {
+		case SPDXMimeType:
 			a.predicateType = SPDXPredicateType
-		} else if product.MimeType == CycloneDxMimeType {
+		case CycloneDxMimeType:
 			a.predicateType = CycloneDxPredicateType
-		} else {
+		default:
 			continue
 		}
 

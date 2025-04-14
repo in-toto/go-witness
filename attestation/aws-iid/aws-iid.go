@@ -201,26 +201,26 @@ func (a *Attestor) Verify() error {
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	hashes := []cryptoutil.DigestValue{{Hash: crypto.SHA256}}
 	subjects := make(map[string]cryptoutil.DigestSet)
-	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.EC2InstanceIdentityDocument.InstanceID), hashes); err == nil {
-		subjects[fmt.Sprintf("instanceid:%s", a.EC2InstanceIdentityDocument.InstanceID)] = ds
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.InstanceID), hashes); err == nil {
+		subjects[fmt.Sprintf("instanceid:%s", a.InstanceID)] = ds
 	} else {
 		log.Debugf("(attestation/aws) failed to record aws instanceid subject: %w", err)
 	}
 
-	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.EC2InstanceIdentityDocument.AccountID), hashes); err == nil {
-		subjects[fmt.Sprintf("accountid:%s", a.EC2InstanceIdentityDocument.AccountID)] = ds
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.AccountID), hashes); err == nil {
+		subjects[fmt.Sprintf("accountid:%s", a.AccountID)] = ds
 	} else {
 		log.Debugf("(attestation/aws) failed to record aws accountid subject: %w", err)
 	}
 
-	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.EC2InstanceIdentityDocument.ImageID), hashes); err == nil {
-		subjects[fmt.Sprintf("imageid:%s", a.EC2InstanceIdentityDocument.ImageID)] = ds
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.ImageID), hashes); err == nil {
+		subjects[fmt.Sprintf("imageid:%s", a.ImageID)] = ds
 	} else {
 		log.Debugf("(attestation/aws) failed to record aws imageid subject: %w", err)
 	}
 
-	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.EC2InstanceIdentityDocument.PrivateIP), hashes); err == nil {
-		subjects[fmt.Sprintf("privateip:%s", a.EC2InstanceIdentityDocument.PrivateIP)] = ds
+	if ds, err := cryptoutil.CalculateDigestSetFromBytes([]byte(a.PrivateIP), hashes); err == nil {
+		subjects[fmt.Sprintf("privateip:%s", a.PrivateIP)] = ds
 	} else {
 		log.Debugf("(attestation/aws) failed to record aws privateip subject: %w", err)
 	}

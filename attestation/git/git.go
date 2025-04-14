@@ -265,7 +265,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func GoGitGetStatus(repo *git.Repository) (map[string]Status, error) {
-	var gitStatuses map[string]Status = make(map[string]Status)
+	gitStatuses := make(map[string]Status)
 
 	worktree, err := repo.Worktree()
 	if err != nil {
