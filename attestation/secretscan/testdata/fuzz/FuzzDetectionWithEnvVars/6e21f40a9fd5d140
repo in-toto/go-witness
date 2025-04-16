@@ -1,0 +1,4 @@
+go test fuzz v1
+string("TOKEN")
+string("000\xf2")
+string("0")

@@ -37,6 +37,7 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/product"
 	_ "github.com/in-toto/go-witness/attestation/sarif"
 	_ "github.com/in-toto/go-witness/attestation/sbom"
+	_ "github.com/in-toto/go-witness/attestation/secretscan"
 	_ "github.com/in-toto/go-witness/attestation/slsa"
 	_ "github.com/in-toto/go-witness/attestation/system-packages"
 	_ "github.com/in-toto/go-witness/attestation/vex"
