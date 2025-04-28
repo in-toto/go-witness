@@ -369,7 +369,7 @@ func getCert(ctx context.Context, key *ecdsa.PrivateKey, fc fulciopb.CAClient, t
 		return nil, err
 	}
 
-	proof, err := signer.SignMessage(msg, sigo.WithCryptoSignerOpts(crypto.SHA256))
+	proof, err := signer.SignMessage(msg, sigo.WithCryptoSignerOpts(crypto.SHA384))
 	if err != nil {
 		return nil, err
 	}
