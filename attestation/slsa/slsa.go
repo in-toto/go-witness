@@ -22,6 +22,7 @@ import (
 	prov "github.com/in-toto/attestation/go/predicates/provenance/v1"
 	v1 "github.com/in-toto/attestation/go/v1"
 	"github.com/in-toto/go-witness/attestation"
+	aws_codebuild "github.com/in-toto/go-witness/attestation/aws-codebuild"
 	"github.com/in-toto/go-witness/attestation/commandrun"
 	"github.com/in-toto/go-witness/attestation/environment"
 	"github.com/in-toto/go-witness/attestation/git"
@@ -41,15 +42,16 @@ import (
 )
 
 const (
-	Name             = "slsa"
-	Type             = "https://slsa.dev/provenance/v1.0"
-	RunType          = attestation.PostProductRunType
-	defaultExport    = false
-	BuildType        = "https://witness.dev/slsa-build@v0.1"
-	DefaultBuilderId = "https://witness.dev/witness-default-builder@v0.1"
-	GHABuilderId     = "https://witness.dev/witness-github-action-builder@v0.1"
-	GLCBuilderId     = "https://witness.dev/witness-gitlab-component-builder@v0.1"
-	JenkinsBuilderId = "https://witness.dev/witness-jenkins-component-builder@v0.1"
+	Name                  = "slsa"
+	Type                  = "https://slsa.dev/provenance/v1.0"
+	RunType               = attestation.PostProductRunType
+	defaultExport         = false
+	BuildType             = "https://witness.dev/slsa-build@v0.1"
+	DefaultBuilderId      = "https://witness.dev/witness-default-builder@v0.1"
+	GHABuilderId          = "https://witness.dev/witness-github-action-builder@v0.1"
+	GLCBuilderId          = "https://witness.dev/witness-gitlab-component-builder@v0.1"
+	JenkinsBuilderId      = "https://witness.dev/witness-jenkins-component-builder@v0.1"
+	AWSCodeBuildBuilderId = "https://witness.dev/witness-aws-codebuild-builder@v0.1"
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -192,6 +194,11 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 			p.PbProvenance.RunDetails.Builder.Id = JenkinsBuilderId
 			p.PbProvenance.RunDetails.Metadata.InvocationId = jks.Data().PipelineUrl
 
+		case aws_codebuild.Name:
+			awsCodeBuild := attestor.Attestor.(aws_codebuild.AWSCodeBuildAttestor)
+			p.PbProvenance.RunDetails.Builder.Id = AWSCodeBuildBuilderId
+			p.PbProvenance.RunDetails.Metadata.InvocationId = awsCodeBuild.Data().BuildInfo.BuildARN
+
 		// Material Attestors
 		case material.Name:
 			mats := attestor.Attestor.(material.MaterialAttestor).Materials()
@@ -242,9 +249,9 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 		}
 	}
 
-	// NOTE: We want to warn users that they can use the github and gitlab attestors to enrich their provenance
+	// NOTE: We want to warn users that they can use build system attestors to enrich their provenance
 	if p.PbProvenance.RunDetails.Builder.Id == DefaultBuilderId {
-		log.Warn("No build system attestor invoked. Consider using github, gitlab, or jenkins attestors (if appropriate) to enrich your SLSA provenance")
+		log.Warn("No build system attestor invoked. Consider using github, gitlab, jenkins, or aws-codebuild attestors (if appropriate) to enrich your SLSA provenance")
 	}
 
 	var err error

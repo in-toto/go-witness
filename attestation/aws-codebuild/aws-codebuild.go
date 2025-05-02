@@ -15,15 +15,17 @@
 package aws_codebuild
 
 import (
+	"context"
 	"crypto"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/codebuild"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/codebuild"
+	"github.com/aws/aws-sdk-go-v2/service/codebuild/types"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
@@ -55,7 +57,23 @@ var (
 	_ attestation.Attestor   = &Attestor{}
 	_ attestation.Subjecter  = &Attestor{}
 	_ attestation.BackReffer = &Attestor{}
+	_ AWSCodeBuildAttestor   = &Attestor{}
 )
+
+type AWSCodeBuildAttestor interface {
+	// Attestor
+	Name() string
+	Type() string
+	RunType() attestation.RunType
+	Attest(ctx *attestation.AttestationContext) error
+	Data() *Attestor
+
+	// Subjecter
+	Subjects() map[string]cryptoutil.DigestSet
+
+	// Backreffer
+	BackRefs() map[string]cryptoutil.DigestSet
+}
 
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
@@ -65,46 +83,44 @@ func init() {
 
 // BuildInfo represents AWS CodeBuild metadata
 type BuildInfo struct {
-	BuildID        string           `json:"build_id"`
-	BuildARN       string           `json:"build_arn,omitempty"`
-	BuildNumber    string           `json:"build_number,omitempty"`
-	ProjectName    string           `json:"project_name,omitempty"`
-	Initiator      string           `json:"initiator,omitempty"`
-	SourceVersion  string           `json:"source_version,omitempty"`
-	SourceRepo     string           `json:"source_repo,omitempty"`
-	BatchBuildID   string           `json:"batch_build_id,omitempty"`
-	WebhookEvent   string           `json:"webhook_event,omitempty"`
-	WebhookHeadRef string           `json:"webhook_head_ref,omitempty"`
-	WebhookActorID string           `json:"webhook_actor_id,omitempty"`
-	Region         string           `json:"region,omitempty"`
-	BuildDetails   *codebuild.Build `json:"build_details,omitempty"`
+	BuildID        string       `json:"build_id"`
+	BuildARN       string       `json:"build_arn,omitempty"`
+	BuildNumber    string       `json:"build_number,omitempty"`
+	ProjectName    string       `json:"project_name,omitempty"`
+	Initiator      string       `json:"initiator,omitempty"`
+	SourceVersion  string       `json:"source_version,omitempty"`
+	SourceRepo     string       `json:"source_repo,omitempty"`
+	BatchBuildID   string       `json:"batch_build_id,omitempty"`
+	WebhookEvent   string       `json:"webhook_event,omitempty"`
+	WebhookHeadRef string       `json:"webhook_head_ref,omitempty"`
+	WebhookActorID string       `json:"webhook_actor_id,omitempty"`
+	Region         string       `json:"region,omitempty"`
+	BuildDetails   *types.Build `json:"build_details,omitempty"`
 }
 
 type Attestor struct {
 	hashes          []cryptoutil.DigestValue
-	session         *session.Session
-	conf            *aws.Config
+	awsConfig       aws.Config
 	BuildInfo       BuildInfo `json:"build_info"`
 	RawBuildDetails string    `json:"raw_build_details,omitempty"`
 }
 
 func New() *Attestor {
-	sess, err := session.NewSession()
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return &Attestor{
 			BuildInfo: BuildInfo{},
 		}
 	}
 
-	conf := &aws.Config{}
 	// If AWS_REGION is available, use it explicitly
 	if region := os.Getenv(envAWSRegion); region != "" {
-		conf.Region = aws.String(region)
+		cfg.Region = region
 	}
 
 	return &Attestor{
-		session:   sess,
-		conf:      conf,
+		awsConfig: cfg,
 		BuildInfo: BuildInfo{},
 	}
 }
@@ -148,19 +164,19 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.BuildInfo.WebhookActorID = os.Getenv(envCodeBuildWebhookActorAcctID)
 	a.BuildInfo.Region = os.Getenv(envAWSRegion)
 
-	// If we have a session, we'll try to get more details from the CodeBuild API
-	if a.session != nil {
-		err := a.getBuildDetails()
-		if err != nil {
-			log.Warnf("Unable to get CodeBuild build details: %v", err)
-			// Continue with environment-based metadata only
-		}
+	// Try to get more details from the CodeBuild API
+	err := a.getBuildDetails()
+	if err != nil {
+		log.Warnf("Unable to get CodeBuild build details: %v", err)
+		// Continue with environment-based metadata only
 	}
 
 	return nil
 }
 
 func (a *Attestor) getBuildDetails() error {
+	ctx := context.Background()
+
 	// Extract the build ID without the project name prefix
 	// e.g., project-name:build-id -> build-id
 	buildIDParts := strings.Split(a.BuildInfo.BuildID, ":")
@@ -169,12 +185,12 @@ func (a *Attestor) getBuildDetails() error {
 	}
 	buildID := buildIDParts[1]
 
-	svc := codebuild.New(a.session, a.conf)
+	svc := codebuild.NewFromConfig(a.awsConfig)
 	input := &codebuild.BatchGetBuildsInput{
-		Ids: []*string{aws.String(buildID)},
+		Ids: []string{buildID},
 	}
 
-	result, err := svc.BatchGetBuilds(input)
+	result, err := svc.BatchGetBuilds(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to get build details: %w", err)
 	}
@@ -184,7 +200,7 @@ func (a *Attestor) getBuildDetails() error {
 	}
 
 	build := result.Builds[0]
-	a.BuildInfo.BuildDetails = build
+	a.BuildInfo.BuildDetails = &build
 
 	// Store raw build details for verification
 	rawDetails, err := json.Marshal(build)
@@ -233,4 +249,8 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 func (a *Attestor) BackRefs() map[string]cryptoutil.DigestSet {
 	// Same as Subjects() for now, but we could be more selective in the future
 	return a.Subjects()
+}
+
+func (a *Attestor) Data() *Attestor {
+	return a
 }

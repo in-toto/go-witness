@@ -93,8 +93,7 @@ func TestAttest(t *testing.T) {
 		os.Setenv(envCodeBuildSourceRepo, "https://github.com/example/repo.git")
 
 		attestor := New()
-		// Disable session to avoid API calls
-		attestor.session = nil
+		// The new attestor will handle missing AWS config gracefully
 
 		ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
 		require.NoError(t, err)
