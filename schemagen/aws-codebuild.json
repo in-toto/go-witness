@@ -18,6 +18,30 @@
         "build_info"
       ]
     },
+    "AutoRetryConfig": {
+      "properties": {
+        "AutoRetryLimit": {
+          "type": "integer"
+        },
+        "AutoRetryNumber": {
+          "type": "integer"
+        },
+        "NextAutoRetry": {
+          "type": "string"
+        },
+        "PreviousAutoRetry": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "AutoRetryLimit",
+        "AutoRetryNumber",
+        "NextAutoRetry",
+        "PreviousAutoRetry"
+      ]
+    },
     "Build": {
       "properties": {
         "Arn": {
@@ -25,6 +49,9 @@
         },
         "Artifacts": {
           "$ref": "#/$defs/BuildArtifacts"
+        },
+        "AutoRetryConfig": {
+          "$ref": "#/$defs/AutoRetryConfig"
         },
         "BuildBatchArn": {
           "type": "string"
@@ -145,6 +172,7 @@
       "required": [
         "Arn",
         "Artifacts",
+        "AutoRetryConfig",
         "BuildBatchArn",
         "BuildComplete",
         "BuildNumber",
@@ -316,10 +344,10 @@
     },
     "CloudWatchLogsConfig": {
       "properties": {
-        "GroupName": {
+        "Status": {
           "type": "string"
         },
-        "Status": {
+        "GroupName": {
           "type": "string"
         },
         "StreamName": {
@@ -329,9 +357,37 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "GroupName",
         "Status",
+        "GroupName",
         "StreamName"
+      ]
+    },
+    "ComputeConfiguration": {
+      "properties": {
+        "Disk": {
+          "type": "integer"
+        },
+        "InstanceType": {
+          "type": "string"
+        },
+        "MachineType": {
+          "type": "string"
+        },
+        "Memory": {
+          "type": "integer"
+        },
+        "VCpu": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Disk",
+        "InstanceType",
+        "MachineType",
+        "Memory",
+        "VCpu"
       ]
     },
     "DebugSession": {
@@ -350,15 +406,54 @@
         "SessionTarget"
       ]
     },
+    "DockerServer": {
+      "properties": {
+        "ComputeType": {
+          "type": "string"
+        },
+        "SecurityGroupIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "Status": {
+          "$ref": "#/$defs/DockerServerStatus"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ComputeType",
+        "SecurityGroupIds",
+        "Status"
+      ]
+    },
+    "DockerServerStatus": {
+      "properties": {
+        "Message": {
+          "type": "string"
+        },
+        "Status": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Message",
+        "Status"
+      ]
+    },
     "EnvironmentVariable": {
       "properties": {
         "Name": {
           "type": "string"
         },
-        "Type": {
+        "Value": {
           "type": "string"
         },
-        "Value": {
+        "Type": {
           "type": "string"
         }
       },
@@ -366,8 +461,8 @@
       "type": "object",
       "required": [
         "Name",
-        "Type",
-        "Value"
+        "Value",
+        "Type"
       ]
     },
     "ExportedEnvironmentVariable": {
@@ -472,6 +567,12 @@
     },
     "ProjectCache": {
       "properties": {
+        "Type": {
+          "type": "string"
+        },
+        "CacheNamespace": {
+          "type": "string"
+        },
         "Location": {
           "type": "string"
         },
@@ -480,26 +581,36 @@
             "type": "string"
           },
           "type": "array"
-        },
-        "Type": {
-          "type": "string"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
+        "Type",
+        "CacheNamespace",
         "Location",
-        "Modes",
-        "Type"
+        "Modes"
       ]
     },
     "ProjectEnvironment": {
       "properties": {
+        "ComputeType": {
+          "type": "string"
+        },
+        "Image": {
+          "type": "string"
+        },
+        "Type": {
+          "type": "string"
+        },
         "Certificate": {
           "type": "string"
         },
-        "ComputeType": {
-          "type": "string"
+        "ComputeConfiguration": {
+          "$ref": "#/$defs/ComputeConfiguration"
+        },
+        "DockerServer": {
+          "$ref": "#/$defs/DockerServer"
         },
         "EnvironmentVariables": {
           "items": {
@@ -510,9 +621,6 @@
         "Fleet": {
           "$ref": "#/$defs/ProjectFleet"
         },
-        "Image": {
-          "type": "string"
-        },
         "ImagePullCredentialsType": {
           "type": "string"
         },
@@ -521,23 +629,22 @@
         },
         "RegistryCredential": {
           "$ref": "#/$defs/RegistryCredential"
-        },
-        "Type": {
-          "type": "string"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "Certificate",
         "ComputeType",
+        "Image",
+        "Type",
+        "Certificate",
+        "ComputeConfiguration",
+        "DockerServer",
         "EnvironmentVariables",
         "Fleet",
-        "Image",
         "ImagePullCredentialsType",
         "PrivilegedMode",
-        "RegistryCredential",
-        "Type"
+        "RegistryCredential"
       ]
     },
     "ProjectFileSystemLocation": {
@@ -582,6 +689,9 @@
     },
     "ProjectSource": {
       "properties": {
+        "Type": {
+          "type": "string"
+        },
         "Auth": {
           "$ref": "#/$defs/SourceAuth"
         },
@@ -608,14 +718,12 @@
         },
         "SourceIdentifier": {
           "type": "string"
-        },
-        "Type": {
-          "type": "string"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
+        "Type",
         "Auth",
         "BuildStatusConfig",
         "Buildspec",
@@ -624,8 +732,7 @@
         "InsecureSsl",
         "Location",
         "ReportBuildStatus",
-        "SourceIdentifier",
-        "Type"
+        "SourceIdentifier"
       ]
     },
     "ProjectSourceVersion": {
@@ -662,6 +769,9 @@
     },
     "S3LogsConfig": {
       "properties": {
+        "Status": {
+          "type": "string"
+        },
         "BucketOwnerAccess": {
           "type": "string"
         },
@@ -670,34 +780,31 @@
         },
         "Location": {
           "type": "string"
-        },
-        "Status": {
-          "type": "string"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
+        "Status",
         "BucketOwnerAccess",
         "EncryptionDisabled",
-        "Location",
-        "Status"
+        "Location"
       ]
     },
     "SourceAuth": {
       "properties": {
-        "Resource": {
+        "Type": {
           "type": "string"
         },
-        "Type": {
+        "Resource": {
           "type": "string"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "Resource",
-        "Type"
+        "Type",
+        "Resource"
       ]
     },
     "VpcConfig": {
