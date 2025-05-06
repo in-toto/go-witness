@@ -13,7 +13,17 @@
 # limitations under the License.
 
 name: release
-on: [push, pull_request]
+on: 
+  push:
+    tags:
+      - v*
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
 
 permissions:
   contents: read

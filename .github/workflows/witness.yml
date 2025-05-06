@@ -71,6 +71,7 @@ jobs:
             with:
               step: pre-${{ inputs.step }}
               attestations: ${{ inputs.attestations }}
+              version: 0.9.1
               command: /bin/sh -c "${{ inputs.pre-command }}"
           - if: ${{ inputs.pre-command != '' && inputs.pull_request == true }}
             run: ${{ inputs.pre-command }}
@@ -80,6 +81,7 @@ jobs:
             with:
               step: ${{ inputs.step }}
               attestations: ${{ inputs.attestations }}
+              version: 0.9.1
               command: /bin/sh -c "${{ inputs.command }}"
           - if: ${{ inputs.pull_request == true }}
             run: ${{ inputs.command }}
