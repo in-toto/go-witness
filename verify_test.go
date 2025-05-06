@@ -337,7 +337,7 @@ func signPolicy(t *testing.T, p policy.Policy, signer cryptoutil.Signer) dsse.En
 }
 
 func createTestRSAKey(t *testing.T) cryptoutil.Signer {
-	privKey, err := rsa.GenerateKey(rand.Reader, 512)
+	privKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	require.NoError(t, err)
 	signer := cryptoutil.NewRSASigner(privKey, crypto.SHA256)
 	return signer
