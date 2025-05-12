@@ -65,7 +65,7 @@ func (c *Client) SearchGitoids(ctx context.Context, vars SearchGitoidVariables) 
   }
 }`
 
-	response, err := archivistaapi.GraphQlQuery[searchGitoidResponse](ctx, c.url, query, vars)
+	response, err := archivistaapi.GraphQlQuery[searchGitoidResponse](ctx, c.url, query, vars, c.archivistaRequestOpts()...)
 	if err != nil {
 		return nil, err
 	}
