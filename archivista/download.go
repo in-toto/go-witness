@@ -22,5 +22,5 @@ import (
 )
 
 func (c *Client) Download(ctx context.Context, gitoid string) (dsse.Envelope, error) {
-	return archivistaapi.Download(ctx, c.url, gitoid)
+	return archivistaapi.Download(ctx, c.url, gitoid, c.archivistaRequestOpts()...)
 }

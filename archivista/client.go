@@ -14,12 +14,48 @@
 
 package archivista
 
+import (
+	"net/http"
+
+	"github.com/in-toto/archivista/pkg/api"
+)
+
 type Client struct {
-	url string
+	url     string
+	headers http.Header
 }
 
-func New(url string) *Client {
-	return &Client{
-		url,
+type Option func(*Client)
+
+func WithHeaders(h http.Header) Option {
+	return func(c *Client) {
+		if h != nil {
+			c.headers = h
+		}
 	}
+}
+
+func New(url string, opts ...Option) *Client {
+	c := &Client{
+		url: url,
+	}
+
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+
+		opt(c)
+	}
+
+	return c
+}
+
+func (c *Client) archivistaRequestOpts() []api.RequestOption {
+	opts := make([]api.RequestOption, 0)
+	if c.headers != nil {
+		opts = append(opts, api.WithHeaders(c.headers))
+	}
+
+	return opts
 }
