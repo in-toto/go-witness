@@ -122,26 +122,25 @@ func (a *Attestor) mergeAllowlistIntoGitleaksConfig(detector *detect.Detector) e
 	}
 
 	// Add regexes to the detector's allowlist description
+	allowList := &config.Allowlist{}
 	for _, pattern := range validatedPatterns {
-		detector.Config.Allowlist.Description = fmt.Sprintf("%s\nRegex: %s",
-			detector.Config.Allowlist.Description, pattern)
+		allowList.Description = fmt.Sprintf("%s\nRegex: %s", allowList.Description, pattern)
 		log.Debugf("(attestation/secretscan) added allowlist regex: %s", pattern)
 	}
 
 	// Add stop words to the detector's allowlist description
 	for _, stopWord := range a.allowList.StopWords {
-		detector.Config.Allowlist.Description = fmt.Sprintf("%s\nStop word: %s",
-			detector.Config.Allowlist.Description, stopWord)
+		allowList.Description = fmt.Sprintf("%s\nStop word: %s", allowList.Description, stopWord)
 		log.Debugf("(attestation/secretscan) added allowlist stop word: %s", stopWord)
 	}
 
 	// Add paths to the detector's allowlist description
 	for _, path := range a.allowList.Paths {
-		detector.Config.Allowlist.Description = fmt.Sprintf("%s\nPath: %s",
-			detector.Config.Allowlist.Description, path)
+		allowList.Description = fmt.Sprintf("%s\nPath: %s", allowList.Description, path)
 		log.Debugf("(attestation/secretscan) added allowlist path: %s", path)
 	}
 
+	detector.Config.Allowlists = append(detector.Config.Allowlists, allowList)
 	return nil
 }
 
