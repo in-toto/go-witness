@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ArchivedProduct": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/DigestSet"
+        },
+        "content": {
+          "type": "string",
+          "contentEncoding": "base64"
+        },
+        "metadata": {
+          "$ref": "#/$defs/FileMetadata"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "path",
+        "mimeType",
+        "digest",
+        "metadata"
+      ]
+    },
+    "DigestSet": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "FileMetadata": {
+      "properties": {
+        "mode": {
+          "type": "integer"
+        },
+        "uid": {
+          "type": "integer"
+        },
+        "gid": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "modTime": {
+          "type": "integer"
+        },
+        "accessTime": {
+          "type": "integer"
+        },
+        "changeTime": {
+          "type": "integer"
+        },
+        "birthTime": {
+          "type": "integer"
+        },
+        "inode": {
+          "type": "integer"
+        },
+        "nlink": {
+          "type": "integer"
+        },
+        "isDir": {
+          "type": "boolean"
+        },
+        "isRegular": {
+          "type": "boolean"
+        },
+        "isSymlink": {
+          "type": "boolean"
+        },
+        "linkTarget": {
+          "type": "string"
+        },
+        "xattrs": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "mode",
+        "uid",
+        "gid",
+        "size",
+        "modTime",
+        "accessTime",
+        "changeTime",
+        "inode",
+        "nlink",
+        "isDir",
+        "isRegular",
+        "isSymlink"
+      ]
+    }
+  },
+  "properties": {
+    "products": {
+      "items": {
+        "$ref": "#/$defs/ArchivedProduct"
+      },
+      "type": "array"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "products"
+  ]
+}
