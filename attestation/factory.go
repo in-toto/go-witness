@@ -66,9 +66,10 @@ type Exporter interface {
 
 // MultiExporter allows attestors to export multiple attestations, one for each item.
 // This is useful for attestors that want to create individual attestations for each
-// file or artifact they process.
+// file or artifact they process, or to export subsets of data separately.
+// Attestors implementing MultiExporter should also implement Exporter if they want
+// to control whether they are included in the attestation collection.
 type MultiExporter interface {
-	Export() bool
 	ExportedAttestations() []ExportedAttestation
 }
 

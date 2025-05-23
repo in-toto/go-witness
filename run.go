@@ -142,15 +142,14 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 		} else {
 			// Check if this is a MultiExporter first
 			if multiExporter, ok := r.Attestor.(attestation.MultiExporter); ok {
-				if !multiExporter.Export() {
-					log.Debugf("%s attestor not configured to be exported", r.Attestor.Name())
-					continue
-				}
 				// Create individual attestations for each exported item
 				for _, exported := range multiExporter.ExportedAttestations() {
-					envelope, err := createAndSignEnvelope(exported.Predicate, exported.PredicateType, exported.Subjects, dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
-					if err != nil {
-						return result, fmt.Errorf("failed to sign envelope for %s: %w", exported.Name, err)
+					var envelope dsse.Envelope
+					if !ro.insecure {
+						envelope, err = createAndSignEnvelope(exported.Predicate, exported.PredicateType, exported.Subjects, dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
+						if err != nil {
+							return result, fmt.Errorf("failed to sign envelope for %s: %w", exported.Name, err)
+						}
 					}
 					attestorName := r.Attestor.Name()
 					if exported.Name != "" {
@@ -158,29 +157,49 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 					}
 					result = append(result, RunResult{SignedEnvelope: envelope, AttestorName: attestorName})
 				}
+				// Skip regular Exporter processing for MultiExporter attestors
 			} else if exporter, ok := r.Attestor.(attestation.Exporter); ok {
 				if !exporter.Export() {
 					log.Debugf("%s attestor not configured to be exported as its own attestation", r.Attestor.Name())
 					continue
 				}
 				if subjecter, ok := r.Attestor.(attestation.Subjecter); ok {
-					envelope, err := createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
-					if err != nil {
-						return result, fmt.Errorf("failed to sign envelope: %w", err)
+					var envelope dsse.Envelope
+					if !ro.insecure {
+						envelope, err = createAndSignEnvelope(r.Attestor, r.Attestor.Type(), subjecter.Subjects(), dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
+						if err != nil {
+							return result, fmt.Errorf("failed to sign envelope: %w", err)
+						}
 					}
 					result = append(result, RunResult{SignedEnvelope: envelope, AttestorName: r.Attestor.Name()})
 				}
 			}
 		}
 	}
-
 	if !ro.ignoreErrors && len(errs) > 0 {
 		errs := append([]error{errors.New("attestors failed with error messages")}, errs...)
 		return result, errors.Join(errs...)
 	}
 
+	// Filter attestors for collection - exclude those that implement Exporter and return false
+	var attestorsForCollection []attestation.CompletedAttestor
+	for _, completed := range runCtx.CompletedAttestors() {
+		if completed.Error != nil {
+			continue
+		}
+		// Check if attestor implements Exporter
+		if exporter, ok := completed.Attestor.(attestation.Exporter); ok {
+			// If it does and Export() returns false, skip it
+			if !exporter.Export() {
+				continue
+			}
+		}
+		// Otherwise include it in the collection
+		attestorsForCollection = append(attestorsForCollection, completed)
+	}
+
 	var collectionResult RunResult
-	collectionResult.Collection = attestation.NewCollection(ro.stepName, runCtx.CompletedAttestors())
+	collectionResult.Collection = attestation.NewCollection(ro.stepName, attestorsForCollection)
 	if !ro.insecure {
 		collectionResult.SignedEnvelope, err = createAndSignEnvelope(collectionResult.Collection, attestation.CollectionType, collectionResult.Collection.Subjects(), dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
 		if err != nil {
