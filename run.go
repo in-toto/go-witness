@@ -140,7 +140,25 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 		if r.Error != nil {
 			errs = append(errs, r.Error)
 		} else {
-			if exporter, ok := r.Attestor.(attestation.Exporter); ok {
+			// Check if this is a MultiExporter first
+			if multiExporter, ok := r.Attestor.(attestation.MultiExporter); ok {
+				if !multiExporter.Export() {
+					log.Debugf("%s attestor not configured to be exported", r.Attestor.Name())
+					continue
+				}
+				// Create individual attestations for each exported item
+				for _, exported := range multiExporter.ExportedAttestations() {
+					envelope, err := createAndSignEnvelope(exported.Predicate, exported.PredicateType, exported.Subjects, dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
+					if err != nil {
+						return result, fmt.Errorf("failed to sign envelope for %s: %w", exported.Name, err)
+					}
+					attestorName := r.Attestor.Name()
+					if exported.Name != "" {
+						attestorName = fmt.Sprintf("%s/%s", attestorName, exported.Name)
+					}
+					result = append(result, RunResult{SignedEnvelope: envelope, AttestorName: attestorName})
+				}
+			} else if exporter, ok := r.Attestor.(attestation.Exporter); ok {
 				if !exporter.Export() {
 					log.Debugf("%s attestor not configured to be exported as its own attestation", r.Attestor.Name())
 					continue
