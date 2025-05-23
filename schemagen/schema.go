@@ -51,8 +51,18 @@ func main() {
 			os.Exit(1)
 		}
 
-		log.Printf("Writing schema for attestor %s to %s/%s.json", att.Name(), directory, att.Name())
-		err = os.WriteFile(fmt.Sprintf("%s/%s.json", directory, att.Name()), indented.Bytes(), 0644)
+		fileName := fmt.Sprintf("%s/%s.json", directory, att.Name())
+		newContent := indented.Bytes()
+
+		// Check if file exists and compare content
+		existingContent, err := os.ReadFile(fileName)
+		if err == nil && bytes.Equal(existingContent, newContent) {
+			log.Printf("Schema for attestor %s is up to date, skipping", att.Name())
+			continue
+		}
+
+		log.Printf("Writing schema for attestor %s to %s", att.Name(), fileName)
+		err = os.WriteFile(fileName, newContent, 0644)
 		if err != nil {
 			log.Fatal("Error writing to file:", err)
 		}
