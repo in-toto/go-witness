@@ -35,6 +35,7 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/oci"
 	_ "github.com/in-toto/go-witness/attestation/policyverify"
 	_ "github.com/in-toto/go-witness/attestation/product"
+	_ "github.com/in-toto/go-witness/attestation/productarchive"
 	_ "github.com/in-toto/go-witness/attestation/sarif"
 	_ "github.com/in-toto/go-witness/attestation/sbom"
 	_ "github.com/in-toto/go-witness/attestation/secretscan"
