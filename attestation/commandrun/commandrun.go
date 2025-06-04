@@ -16,14 +16,17 @@ package commandrun
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/log"
 	"github.com/invopop/jsonschema"
 )
 
@@ -60,7 +63,8 @@ type Option func(*CommandRun)
 
 func WithCommand(cmd []string) Option {
 	return func(cr *CommandRun) {
-		cr.Cmd = cmd
+		cr.Command = cmd
+		cr.Cmd = cmd // Also set deprecated field for compatibility
 	}
 }
 
@@ -132,16 +136,50 @@ type ConnectionInfo struct {
 
 // ProcessInfo contains information about a single process in the process tree
 type ProcessInfo struct {
-	Program          string                          `json:"program,omitempty"`
-	ProcessID        int                             `json:"processid"`
-	ParentPID        int                             `json:"parentpid"`
-	ProgramDigest    cryptoutil.DigestSet            `json:"programdigest,omitempty"`
+	// Modern field names (preferred)
+	ProgramPath           string                          `json:"programpath,omitempty"`
+	PID                   int                             `json:"pid"`
+	PPID                  int                             `json:"ppid"`
+	ProgramDigest         cryptoutil.DigestSet            `json:"programdigest,omitempty"`
+	CommandLine           string                          `json:"commandline,omitempty"`
+	ResolvedProgramDigest cryptoutil.DigestSet            `json:"resolvedprogramdigest,omitempty"`
+	FilesRead             map[string]cryptoutil.DigestSet `json:"filesread,omitempty"`
+	FilesWritten          map[string]cryptoutil.DigestSet `json:"fileswritten,omitempty"`
+	
+	// Timing information
+	StartTime             *time.Time                      `json:"starttime,omitempty"`
+	EndTime               *time.Time                      `json:"endtime,omitempty"`
+	
+	// Network activity
+	NetworkActivity       *NetworkActivity                `json:"networkactivity,omitempty"`
+	
+	// Resource usage
+	// NOTE: These performance metrics may be deprecated in a future version as they're
+	// not directly relevant for supply chain attestation. Consider if you really need these.
+	UserCPUTime           *time.Duration                  `json:"usercputime,omitempty"`
+	SystemCPUTime         *time.Duration                  `json:"systemcputime,omitempty"`
+	MemoryUsage           uint64                          `json:"memoryusage,omitempty"`      // in bytes
+	PeakMemoryUsage       uint64                          `json:"peakmemoryusage,omitempty"` // in bytes
+	
+	// Deprecated field aliases for backward compatibility
+	// These will be populated from the modern fields during unmarshaling
+	// and will log warnings when used
+	Program          string                          `json:"program,omitempty"`          // Deprecated: Use ProgramPath
+	ProcessID        int                             `json:"processid,omitempty"`        // Deprecated: Use PID
+	ParentPID        int                             `json:"parentpid,omitempty"`        // Deprecated: Use PPID
+	Cmdline          string                          `json:"cmdline,omitempty"`          // Deprecated: Use CommandLine
+	ExeDigest        cryptoutil.DigestSet            `json:"exedigest,omitempty"`        // Deprecated: Use ResolvedProgramDigest
+	OpenedFiles      map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`      // Deprecated: Use FilesRead
+	WrittenFiles     map[string]cryptoutil.DigestSet `json:"writtenfiles,omitempty"`     // Deprecated: Use FilesWritten
+	CPUTimeUser      *time.Duration                  `json:"cputimeuser,omitempty"`      // Deprecated: Use UserCPUTime
+	CPUTimeSystem    *time.Duration                  `json:"cputimesystem,omitempty"`    // Deprecated: Use SystemCPUTime
+	MemoryRSS        uint64                          `json:"memoryrss,omitempty"`        // Deprecated: Use MemoryUsage
+	PeakMemoryRSS    uint64                          `json:"peakmemoryrss,omitempty"`    // Deprecated: Use PeakMemoryUsage
+	
+	// Removed deprecated fields
 	// Deprecated: Comm is a Linux-specific truncated process name (max 16 chars) from /proc/[pid]/comm.
 	// This field is redundant with Program and will be removed in a future version.
 	Comm             string                          `json:"-"` // Never marshal/unmarshal
-	Cmdline          string                          `json:"cmdline,omitempty"`
-	ExeDigest        cryptoutil.DigestSet            `json:"exedigest,omitempty"`
-	OpenedFiles      map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
 	// Deprecated: Environ exposes potentially sensitive environment variables.
 	// Use the dedicated environment attestation instead. This field will be removed in a future version.
 	// SECURITY WARNING: This field may contain secrets like API keys and passwords.
@@ -149,33 +187,143 @@ type ProcessInfo struct {
 	// Deprecated: SpecBypassIsVuln tracks a specific 2018 CPU vulnerability (Spectre v4).
 	// This field will be removed in a future version as it's not relevant for supply chain attestation.
 	SpecBypassIsVuln bool                            `json:"-"` // Never marshal/unmarshal
+}
+
+// UnmarshalJSON implements custom unmarshaling to handle deprecated fields
+func (p *ProcessInfo) UnmarshalJSON(data []byte) error {
+	// Use an alias to avoid recursion
+	type Alias ProcessInfo
+	aux := &struct {
+		*Alias
+		// Capture deprecated fields during unmarshal
+		Comm             string `json:"comm,omitempty"`
+		Environ          string `json:"environ,omitempty"`
+		SpecBypassIsVuln bool   `json:"specbypassisvuln,omitempty"`
+	}{
+		Alias: (*Alias)(p),
+	}
 	
-	// New fields for enhanced tracing
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
 	
-	// Timing information
-	StartTime        *time.Time                      `json:"starttime,omitempty"`
-	EndTime          *time.Time                      `json:"endtime,omitempty"`
+	// Log warnings for deprecated fields that were provided
+	deprecatedFieldsUsed := []string{}
 	
-	// File write operations (path -> digest after write)
-	WrittenFiles     map[string]cryptoutil.DigestSet `json:"writtenfiles,omitempty"`
+	if aux.Comm != "" {
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "comm")
+	}
+	if aux.Environ != "" {
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "environ (SECURITY WARNING: may contain secrets)")
+	}
+	if aux.SpecBypassIsVuln {
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "specbypassisvuln")
+	}
 	
-	// Network activity
-	NetworkActivity  *NetworkActivity                `json:"networkactivity,omitempty"`
+	// Check for deprecated field aliases and copy to modern fields
+	if p.Program != "" && p.ProgramPath == "" {
+		p.ProgramPath = p.Program
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "program (use programpath)")
+	}
+	if p.ProcessID != 0 && p.PID == 0 {
+		p.PID = p.ProcessID
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "processid (use pid)")
+	}
+	if p.ParentPID != 0 && p.PPID == 0 {
+		p.PPID = p.ParentPID
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "parentpid (use ppid)")
+	}
+	if p.Cmdline != "" && p.CommandLine == "" {
+		p.CommandLine = p.Cmdline
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "cmdline (use commandline)")
+	}
+	if len(p.ExeDigest) > 0 && len(p.ResolvedProgramDigest) == 0 {
+		p.ResolvedProgramDigest = p.ExeDigest
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "exedigest (use resolvedprogramdigest)")
+	}
+	if len(p.OpenedFiles) > 0 && len(p.FilesRead) == 0 {
+		p.FilesRead = p.OpenedFiles
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "openedfiles (use filesread)")
+	}
+	if len(p.WrittenFiles) > 0 && len(p.FilesWritten) == 0 {
+		p.FilesWritten = p.WrittenFiles
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "writtenfiles (use fileswritten)")
+	}
+	if p.CPUTimeUser != nil && p.UserCPUTime == nil {
+		p.UserCPUTime = p.CPUTimeUser
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "cputimeuser (use usercputime)")
+	}
+	if p.CPUTimeSystem != nil && p.SystemCPUTime == nil {
+		p.SystemCPUTime = p.CPUTimeSystem
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "cputimesystem (use systemcputime)")
+	}
+	if p.MemoryRSS != 0 && p.MemoryUsage == 0 {
+		p.MemoryUsage = p.MemoryRSS
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "memoryrss (use memoryusage)")
+	}
+	if p.PeakMemoryRSS != 0 && p.PeakMemoryUsage == 0 {
+		p.PeakMemoryUsage = p.PeakMemoryRSS
+		deprecatedFieldsUsed = append(deprecatedFieldsUsed, "peakmemoryrss (use peakmemoryusage)")
+	}
 	
-	// Resource usage
-	// NOTE: These performance metrics may be deprecated in a future version as they're
-	// not directly relevant for supply chain attestation. Consider if you really need these.
-	CPUTimeUser      *time.Duration                 `json:"cputimeuser,omitempty"`
-	CPUTimeSystem    *time.Duration                 `json:"cputimesystem,omitempty"`
-	MemoryRSS        uint64                         `json:"memoryrss,omitempty"`      // in bytes
-	PeakMemoryRSS    uint64                         `json:"peakmemoryrss,omitempty"` // in bytes
+	if len(deprecatedFieldsUsed) > 0 {
+		log.Warnf("ProcessInfo: deprecated fields used: %s", strings.Join(deprecatedFieldsUsed, ", "))
+	}
+	
+	return nil
+}
+
+// MarshalJSON implements custom marshaling to populate deprecated fields for compatibility
+func (p ProcessInfo) MarshalJSON() ([]byte, error) {
+	// Populate deprecated fields from modern fields for backward compatibility
+	if p.ProgramPath != "" {
+		p.Program = p.ProgramPath
+	}
+	if p.PID != 0 {
+		p.ProcessID = p.PID
+	}
+	if p.PPID != 0 {
+		p.ParentPID = p.PPID
+	}
+	if p.CommandLine != "" {
+		p.Cmdline = p.CommandLine
+	}
+	if len(p.ResolvedProgramDigest) > 0 {
+		p.ExeDigest = p.ResolvedProgramDigest
+	}
+	if len(p.FilesRead) > 0 {
+		p.OpenedFiles = p.FilesRead
+	}
+	if len(p.FilesWritten) > 0 {
+		p.WrittenFiles = p.FilesWritten
+	}
+	if p.UserCPUTime != nil {
+		p.CPUTimeUser = p.UserCPUTime
+	}
+	if p.SystemCPUTime != nil {
+		p.CPUTimeSystem = p.SystemCPUTime
+	}
+	if p.MemoryUsage != 0 {
+		p.MemoryRSS = p.MemoryUsage
+	}
+	if p.PeakMemoryUsage != 0 {
+		p.PeakMemoryRSS = p.PeakMemoryUsage
+	}
+	
+	// Use an alias to avoid recursion
+	type Alias ProcessInfo
+	return json.Marshal((*Alias)(&p))
 }
 
 type CommandRun struct {
-	Cmd       []string      `json:"cmd"`
+	// Modern field names
+	Command   []string      `json:"command"`
 	Stdout    string        `json:"stdout,omitempty"`
 	Stderr    string        `json:"stderr,omitempty"`
 	ExitCode  int           `json:"exitcode"`
+	
+	// Deprecated field aliases
+	Cmd       []string      `json:"cmd,omitempty"`       // Deprecated: Use Command
 	Processes []ProcessInfo `json:"processes,omitempty"` // Deprecated: Use ExportedAttestations() to get trace data
 
 	silent         bool
@@ -192,8 +340,37 @@ func (a *CommandRun) Schema() *jsonschema.Schema {
 	return jsonschema.Reflect(&a)
 }
 
+// UnmarshalJSON implements custom unmarshaling for CommandRun
+func (c *CommandRun) UnmarshalJSON(data []byte) error {
+	type Alias CommandRun
+	aux := (*Alias)(c)
+	
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	
+	// Handle deprecated Cmd field
+	if len(c.Cmd) > 0 && len(c.Command) == 0 {
+		c.Command = c.Cmd
+		log.Warn("CommandRun: deprecated field 'cmd' used, please use 'command' instead")
+	}
+	
+	return nil
+}
+
+// MarshalJSON implements custom marshaling for CommandRun
+func (c CommandRun) MarshalJSON() ([]byte, error) {
+	// Populate deprecated field for backward compatibility
+	if len(c.Command) > 0 {
+		c.Cmd = c.Command
+	}
+	
+	type Alias CommandRun
+	return json.Marshal((*Alias)(&c))
+}
+
 func (rc *CommandRun) Attest(ctx *attestation.AttestationContext) error {
-	if len(rc.Cmd) == 0 {
+	if len(rc.Command) == 0 {
 		return attestation.ErrAttestor{
 			Name:    rc.Name(),
 			RunType: rc.RunType(),
@@ -250,7 +427,7 @@ func (rc *CommandRun) ExportedAttestations() []attestation.Attestor {
 }
 
 func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
-	c := exec.Command(r.Cmd[0], r.Cmd[1:]...)
+	c := exec.Command(r.Command[0], r.Command[1:]...)
 	c.Dir = ctx.WorkingDir()
 	stdoutBuffer := bytes.Buffer{}
 	stderrBuffer := bytes.Buffer{}

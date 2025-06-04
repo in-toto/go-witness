@@ -89,7 +89,7 @@ func (p *ptraceContext) runTrace() error {
 	}
 
 	procInfo := p.getProcInfo(p.parentPid)
-	procInfo.Program = p.mainProgram
+	procInfo.ProgramPath = p.mainProgram
 	if err := unix.PtraceSyscall(p.parentPid, 0); err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func (p *ptraceContext) retryOpenedFiles() {
 	// after tracing, look through opened files to try to resolve any newly created files
 	procInfo := p.getProcInfo(p.parentPid)
 
-	for file, digestSet := range procInfo.OpenedFiles {
+	for file, digestSet := range procInfo.FilesRead {
 		if digestSet != nil {
 			continue
 		}
@@ -135,11 +135,11 @@ func (p *ptraceContext) retryOpenedFiles() {
 		newDigest, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
 
 		if err != nil {
-			delete(procInfo.OpenedFiles, file)
+			delete(procInfo.FilesRead, file)
 			continue
 		}
 
-		procInfo.OpenedFiles[file] = newDigest
+		procInfo.FilesRead[file] = newDigest
 	}
 }
 
@@ -173,14 +173,14 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 
 		program, err := p.readSyscallReg(pid, argArray[0], MAX_PATH_LEN)
 		if err == nil {
-			procInfo.Program = program
+			procInfo.ProgramPath = program
 		}
 
-		exeLocation := fmt.Sprintf("/proc/%d/exe", procInfo.ProcessID)
-		commLocation := fmt.Sprintf("/proc/%d/comm", procInfo.ProcessID)
-		envinLocation := fmt.Sprintf("/proc/%d/environ", procInfo.ProcessID)
-		cmdlineLocation := fmt.Sprintf("/proc/%d/cmdline", procInfo.ProcessID)
-		status := fmt.Sprintf("/proc/%d/status", procInfo.ProcessID)
+		exeLocation := fmt.Sprintf("/proc/%d/exe", procInfo.PID)
+		commLocation := fmt.Sprintf("/proc/%d/comm", procInfo.PID)
+		envinLocation := fmt.Sprintf("/proc/%d/environ", procInfo.PID)
+		cmdlineLocation := fmt.Sprintf("/proc/%d/cmdline", procInfo.PID)
+		status := fmt.Sprintf("/proc/%d/status", procInfo.PID)
 
 		// read status file and set attributes on success
 		statusFile, err := os.ReadFile(status)
@@ -188,7 +188,7 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 			// Deprecated field - no longer collected
 			ppid, err := getPPIDFromStatus(statusFile)
 			if err == nil {
-				procInfo.ParentPID = ppid
+				procInfo.PPID = ppid
 			}
 		}
 
@@ -201,12 +201,12 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 
 		cmdline, err := os.ReadFile(cmdlineLocation)
 		if err == nil {
-			procInfo.Cmdline = cleanString(string(cmdline))
+			procInfo.CommandLine = cleanString(string(cmdline))
 		}
 
 		exeDigest, err := cryptoutil.CalculateDigestSetFromFile(exeLocation, p.hash)
 		if err == nil {
-			procInfo.ExeDigest = exeDigest
+			procInfo.ResolvedProgramDigest = exeDigest
 		}
 
 		if program != "" {
@@ -227,13 +227,13 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 		digestSet, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
 		if err != nil {
 			if _, isPathErr := err.(*os.PathError); isPathErr {
-				procInfo.OpenedFiles[file] = nil
+				procInfo.FilesRead[file] = nil
 			}
 
 			return err
 		}
 
-		procInfo.OpenedFiles[file] = digestSet
+		procInfo.FilesRead[file] = digestSet
 	}
 
 	return nil
@@ -243,8 +243,8 @@ func (ctx *ptraceContext) getProcInfo(pid int) *ProcessInfo {
 	procInfo, ok := ctx.processes[pid]
 	if !ok {
 		procInfo = &ProcessInfo{
-			ProcessID:   pid,
-			OpenedFiles: make(map[string]cryptoutil.DigestSet),
+			PID:       pid,
+			FilesRead: make(map[string]cryptoutil.DigestSet),
 		}
 
 		ctx.processes[pid] = procInfo

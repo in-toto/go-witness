@@ -133,7 +133,7 @@ func (t *linuxTracer) Wait() error {
 
 	// Initialize the main process info
 	procInfo := t.getOrCreateProcess(t.parentPid)
-	procInfo.Program = t.mainProgram
+	procInfo.ProgramPath = t.mainProgram
 	log.Debugf("Initialized main process: PID=%d Program=%s", t.parentPid, t.mainProgram)
 	
 	// Continue execution
@@ -286,7 +286,7 @@ func (t *linuxTracer) handleExecve(pid int, regs *syscallRegisters) {
 	}
 
 	procInfo := t.getOrCreateProcess(pid)
-	procInfo.Program = program
+	procInfo.ProgramPath = program
 	log.Debugf("EXECVE: PID=%d executing %s", pid, program)
 }
 
@@ -313,28 +313,28 @@ func (t *linuxTracer) handleOpenat(pid int, regs *syscallRegisters) {
 	
 	if isWrite || isCreate {
 		// Track as a written file
-		if procInfo.WrittenFiles == nil {
-			procInfo.WrittenFiles = make(map[string]cryptoutil.DigestSet)
+		if procInfo.FilesWritten == nil {
+			procInfo.FilesWritten = make(map[string]cryptoutil.DigestSet)
 		}
-		procInfo.WrittenFiles[file] = cryptoutil.DigestSet{}
+		procInfo.FilesWritten[file] = cryptoutil.DigestSet{}
 		log.Debugf("OPENAT: PID=%d opened %s for writing", pid, file)
 	} else {
 		// Track as a read file
-		if procInfo.OpenedFiles == nil {
-			procInfo.OpenedFiles = make(map[string]cryptoutil.DigestSet)
+		if procInfo.FilesRead == nil {
+			procInfo.FilesRead = make(map[string]cryptoutil.DigestSet)
 		}
 		
 		// Calculate digest if hashing is enabled and we have hashes
 		if t.opts.EnableHashing && t.hash != nil {
 			if digest, err := cryptoutil.CalculateDigestSetFromFile(file, t.hash); err == nil {
-				procInfo.OpenedFiles[file] = digest
+				procInfo.FilesRead[file] = digest
 			} else {
 				// Store empty digest to retry later
-				procInfo.OpenedFiles[file] = cryptoutil.DigestSet{}
+				procInfo.FilesRead[file] = cryptoutil.DigestSet{}
 			}
 		} else {
 			// Just track that the file was opened
-			procInfo.OpenedFiles[file] = cryptoutil.DigestSet{}
+			procInfo.FilesRead[file] = cryptoutil.DigestSet{}
 		}
 	}
 }
@@ -506,12 +506,12 @@ func (t *linuxTracer) handleWrite(pid int, regs *syscallRegisters) {
 		}
 		
 		// Initialize WrittenFiles if needed
-		if procInfo.WrittenFiles == nil {
-			procInfo.WrittenFiles = make(map[string]cryptoutil.DigestSet)
+		if procInfo.FilesWritten == nil {
+			procInfo.FilesWritten = make(map[string]cryptoutil.DigestSet)
 		}
 		
 		// Mark file as written (digest will be calculated later if hashing enabled)
-		procInfo.WrittenFiles[target] = cryptoutil.DigestSet{}
+		procInfo.FilesWritten[target] = cryptoutil.DigestSet{}
 		log.Debugf("WRITE: PID=%d to file %s (fd=%d)", pid, target, fd)
 	} else {
 		log.Debugf("WRITE: PID=%d failed to resolve fd=%d: %v", pid, fd, err)
@@ -527,8 +527,8 @@ func (t *linuxTracer) getOrCreateProcess(pid int) *ProcessInfo {
 	}
 
 	procInfo := &ProcessInfo{
-		ProcessID:   pid,
-		OpenedFiles: make(map[string]cryptoutil.DigestSet),
+		PID:       pid,
+		FilesRead: make(map[string]cryptoutil.DigestSet),
 	}
 
 	// Read process information from /proc
@@ -539,7 +539,7 @@ func (t *linuxTracer) getOrCreateProcess(pid int) *ProcessInfo {
 }
 
 func (t *linuxTracer) updateProcessInfo(procInfo *ProcessInfo) {
-	pid := procInfo.ProcessID
+	pid := procInfo.PID
 	
 	// Read various /proc files
 	statusPath := fmt.Sprintf("/proc/%d/status", pid)
@@ -547,14 +547,14 @@ func (t *linuxTracer) updateProcessInfo(procInfo *ProcessInfo) {
 	if err == nil {
 		// Deprecated field - no longer collected
 		if ppid, err := getPPIDFromStatus(statusData); err == nil {
-			procInfo.ParentPID = ppid
+			procInfo.PPID = ppid
 		}
 		// Extract memory info from status
 		if rss := getVmRSSFromStatus(statusData); rss > 0 {
-			procInfo.MemoryRSS = rss
+			procInfo.MemoryUsage = rss
 		}
 		if peak := getVmPeakFromStatus(statusData); peak > 0 {
-			procInfo.PeakMemoryRSS = peak
+			procInfo.PeakMemoryUsage = peak
 		}
 	}
 	
@@ -562,8 +562,8 @@ func (t *linuxTracer) updateProcessInfo(procInfo *ProcessInfo) {
 	statPath := fmt.Sprintf("/proc/%d/stat", pid)
 	if statData, err := os.ReadFile(statPath); err == nil {
 		if userTime, sysTime, err := getCPUTimeFromStat(statData); err == nil {
-			procInfo.CPUTimeUser = &userTime
-			procInfo.CPUTimeSystem = &sysTime
+			procInfo.UserCPUTime = &userTime
+			procInfo.SystemCPUTime = &sysTime
 		}
 	}
 
@@ -572,7 +572,7 @@ func (t *linuxTracer) updateProcessInfo(procInfo *ProcessInfo) {
 	// Read cmdline
 	cmdlinePath := fmt.Sprintf("/proc/%d/cmdline", pid)
 	if cmdline, err := os.ReadFile(cmdlinePath); err == nil {
-		procInfo.Cmdline = cleanString(string(cmdline))
+		procInfo.CommandLine = cleanString(string(cmdline))
 	}
 
 	// Deprecated field Environ - no longer collected for security reasons
@@ -582,17 +582,17 @@ func (t *linuxTracer) updateProcessInfo(procInfo *ProcessInfo) {
 		// Exe digest
 		exePath := fmt.Sprintf("/proc/%d/exe", pid)
 		if exeDigest, err := cryptoutil.CalculateDigestSetFromFile(exePath, t.hash); err == nil {
-			procInfo.ExeDigest = exeDigest
+			procInfo.ResolvedProgramDigest = exeDigest
 			log.Debugf("Calculated exe digest for PID %d", pid)
 		} else {
 			log.Debugf("Failed to calculate exe digest for PID %d: %v", pid, err)
 		}
 
 		// Program digest (if different from exe)
-		if procInfo.Program != "" {
-			if programDigest, err := cryptoutil.CalculateDigestSetFromFile(procInfo.Program, t.hash); err == nil {
+		if procInfo.ProgramPath != "" {
+			if programDigest, err := cryptoutil.CalculateDigestSetFromFile(procInfo.ProgramPath, t.hash); err == nil {
 				procInfo.ProgramDigest = programDigest
-				log.Debugf("Calculated program digest for PID %d: %s", pid, procInfo.Program)
+				log.Debugf("Calculated program digest for PID %d: %s", pid, procInfo.ProgramPath)
 			} else {
 				log.Debugf("Failed to calculate program digest for PID %d: %v", pid, err)
 			}
@@ -609,11 +609,11 @@ func (t *linuxTracer) retryOpenedFiles() {
 	defer t.processLock.Unlock()
 
 	for _, procInfo := range t.processes {
-		for file, digest := range procInfo.OpenedFiles {
+		for file, digest := range procInfo.FilesRead {
 			if len(digest) == 0 {
 				// Retry calculating digest
 				if newDigest, err := cryptoutil.CalculateDigestSetFromFile(file, t.hash); err == nil {
-					procInfo.OpenedFiles[file] = newDigest
+					procInfo.FilesRead[file] = newDigest
 				}
 			}
 		}
