@@ -995,7 +995,7 @@ nc -w 1 8.8.8.8 53 < /dev/null || true
 	}
 }
 
-func TestNetworkAddressParsing(t *testing.T) {
+func TestNetworkHelperFunctions(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("Linux only test")
 	}
