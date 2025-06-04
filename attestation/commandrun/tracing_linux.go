@@ -185,7 +185,7 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 		// read status file and set attributes on success
 		statusFile, err := os.ReadFile(status)
 		if err == nil {
-			procInfo.SpecBypassIsVuln = getSpecBypassIsVulnFromStatus(statusFile)
+			// Deprecated field - no longer collected
 			ppid, err := getPPIDFromStatus(statusFile)
 			if err == nil {
 				procInfo.ParentPID = ppid
@@ -194,21 +194,10 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 
 		comm, err := os.ReadFile(commLocation)
 		if err == nil {
-			procInfo.Comm = cleanString(string(comm))
+			// Deprecated field Comm - no longer collected
 		}
 
-		environ, err := os.ReadFile(envinLocation)
-		if err == nil {
-			allVars := strings.Split(string(environ), "\x00")
-
-			env := make([]string, 0)
-			capturedEnv := p.environmentCapturer.Capture(allVars)
-			for k, v := range capturedEnv {
-				env = append(env, fmt.Sprintf("%s=%s", k, v))
-			}
-
-			procInfo.Environ = strings.Join(env, " ")
-		}
+		// Deprecated field Environ - no longer collected for security reasons
 
 		cmdline, err := os.ReadFile(cmdlineLocation)
 		if err == nil {

@@ -138,17 +138,17 @@ type ProcessInfo struct {
 	ProgramDigest    cryptoutil.DigestSet            `json:"programdigest,omitempty"`
 	// Deprecated: Comm is a Linux-specific truncated process name (max 16 chars) from /proc/[pid]/comm.
 	// This field is redundant with Program and will be removed in a future version.
-	Comm             string                          `json:"comm,omitempty"`
+	Comm             string                          `json:"-"` // Never marshal/unmarshal
 	Cmdline          string                          `json:"cmdline,omitempty"`
 	ExeDigest        cryptoutil.DigestSet            `json:"exedigest,omitempty"`
 	OpenedFiles      map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
 	// Deprecated: Environ exposes potentially sensitive environment variables.
 	// Use the dedicated environment attestation instead. This field will be removed in a future version.
 	// SECURITY WARNING: This field may contain secrets like API keys and passwords.
-	Environ          string                          `json:"environ,omitempty"`
+	Environ          string                          `json:"-"` // Never marshal/unmarshal
 	// Deprecated: SpecBypassIsVuln tracks a specific 2018 CPU vulnerability (Spectre v4).
 	// This field will be removed in a future version as it's not relevant for supply chain attestation.
-	SpecBypassIsVuln bool                            `json:"specbypassisvuln,omitempty"`
+	SpecBypassIsVuln bool                            `json:"-"` // Never marshal/unmarshal
 	
 	// New fields for enhanced tracing
 	

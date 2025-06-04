@@ -300,12 +300,10 @@ func TestProcessInfoSchema(t *testing.T) {
 		ProcessID:        1234,
 		ParentPID:        1000,
 		ProgramDigest:    cryptoutil.DigestSet{},
-		Comm:             "echo",
+		// Deprecated fields removed
 		Cmdline:          "echo hello",
 		ExeDigest:        cryptoutil.DigestSet{},
 		OpenedFiles:      map[string]cryptoutil.DigestSet{"/etc/passwd": {}},
-		Environ:          "PATH=/usr/bin",
-		SpecBypassIsVuln: false,
 		StartTime:        &now,
 		EndTime:          &now,
 		WrittenFiles:     map[string]cryptoutil.DigestSet{"/tmp/output": {}},

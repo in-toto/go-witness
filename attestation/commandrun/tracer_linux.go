@@ -545,7 +545,7 @@ func (t *linuxTracer) updateProcessInfo(procInfo *ProcessInfo) {
 	statusPath := fmt.Sprintf("/proc/%d/status", pid)
 	statusData, err := os.ReadFile(statusPath)
 	if err == nil {
-		procInfo.SpecBypassIsVuln = getSpecBypassIsVulnFromStatus(statusData)
+		// Deprecated field - no longer collected
 		if ppid, err := getPPIDFromStatus(statusData); err == nil {
 			procInfo.ParentPID = ppid
 		}
@@ -567,11 +567,7 @@ func (t *linuxTracer) updateProcessInfo(procInfo *ProcessInfo) {
 		}
 	}
 
-	// Read comm
-	commPath := fmt.Sprintf("/proc/%d/comm", pid)
-	if comm, err := os.ReadFile(commPath); err == nil {
-		procInfo.Comm = cleanString(string(comm))
-	}
+	// Deprecated field Comm - no longer collected
 
 	// Read cmdline
 	cmdlinePath := fmt.Sprintf("/proc/%d/cmdline", pid)
@@ -579,25 +575,7 @@ func (t *linuxTracer) updateProcessInfo(procInfo *ProcessInfo) {
 		procInfo.Cmdline = cleanString(string(cmdline))
 	}
 
-	// Read environment
-	environPath := fmt.Sprintf("/proc/%d/environ", pid)
-	if environ, err := os.ReadFile(environPath); err == nil {
-		allVars := strings.Split(string(environ), "\x00")
-		
-		// Only capture environment if we have a capturer
-		if t.environmentCapturer != nil {
-			capturedEnv := t.environmentCapturer.Capture(allVars)
-			
-			env := make([]string, 0, len(capturedEnv))
-			for k, v := range capturedEnv {
-				env = append(env, fmt.Sprintf("%s=%s", k, v))
-			}
-			procInfo.Environ = strings.Join(env, " ")
-		} else {
-			// Just join the raw environment variables
-			procInfo.Environ = strings.Join(allVars, " ")
-		}
-	}
+	// Deprecated field Environ - no longer collected for security reasons
 
 	// Calculate program digests if hashing is enabled and we have hashes
 	if t.opts.EnableHashing && t.hash != nil {
@@ -900,17 +878,3 @@ func getPPIDFromStatus(status []byte) (int, error) {
 	return 0, fmt.Errorf("PPid not found")
 }
 
-func getSpecBypassIsVulnFromStatus(status []byte) bool {
-	statusStr := string(status)
-	lines := strings.Split(statusStr, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "Speculation_Store_Bypass:") {
-			parts := strings.Split(line, ":")
-			isVuln := strings.TrimSpace(parts[1])
-			if strings.Contains(isVuln, "vulnerable") {
-				return true
-			}
-		}
-	}
-	return false
-}

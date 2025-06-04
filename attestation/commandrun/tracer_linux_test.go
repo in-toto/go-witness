@@ -1319,13 +1319,3 @@ func Test_getPPIDFromStatus(t *testing.T) {
 
 }
 
-func Test_getSpecBypassIsVulnFromStatus(t *testing.T) {
-	byteStatus := []byte(testStatusContent)
-
-	isVuln := getSpecBypassIsVulnFromStatus(byteStatus)
-
-	if isVuln != true {
-		t.Errorf("getSpecBypassIsVulnFromStatus() = %v, want %v", isVuln, true)
-	}
-
-}
