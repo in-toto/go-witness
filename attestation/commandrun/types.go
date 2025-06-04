@@ -186,13 +186,13 @@ type ResourceLimits struct {
 	MaxMemoryPerProc uint64        // Maximum memory per process before warning
 }
 
-// DefaultResourceLimits returns sensible defaults
+// DefaultResourceLimits returns sensible defaults for CI environments
 func DefaultResourceLimits() ResourceLimits {
 	return ResourceLimits{
-		MaxProcesses:     1000,
-		MaxFileSize:      100 * 1024 * 1024, // 100MB
-		MaxTraceTime:     30 * time.Minute,
-		MaxMemoryPerProc: 1024 * 1024 * 1024, // 1GB
+		MaxProcesses:     10000,               // CI builds can spawn many processes
+		MaxFileSize:      500 * 1024 * 1024,   // 500MB - larger artifacts in CI
+		MaxTraceTime:     2 * time.Hour,       // CI jobs can run for hours
+		MaxMemoryPerProc: 4 * 1024 * 1024 * 1024, // 4GB - build tools can use lots of memory
 	}
 }
 
