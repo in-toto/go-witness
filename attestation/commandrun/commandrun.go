@@ -140,6 +140,8 @@ type ProcessInfo struct {
 	ExeDigest        cryptoutil.DigestSet            `json:"exedigest,omitempty"`
 	OpenedFiles      map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
 	Environ          string                          `json:"environ,omitempty"`
+	// Deprecated: SpecBypassIsVuln tracks a specific 2018 CPU vulnerability (Spectre v4).
+	// This field will be removed in a future version as it's not relevant for supply chain attestation.
 	SpecBypassIsVuln bool                            `json:"specbypassisvuln,omitempty"`
 	
 	// New fields for enhanced tracing
