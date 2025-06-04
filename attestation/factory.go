@@ -64,6 +64,17 @@ type Exporter interface {
 	Subjects() map[string]cryptoutil.DigestSet
 }
 
+// MultiExporter allows attestors to export multiple attestations, one for each item.
+// This is useful for attestors that want to create individual attestations for each
+// file or artifact they process, or to export subsets of data separately.
+// Attestors implementing MultiExporter should also implement Exporter if they want
+// to control whether they are included in the attestation collection.
+// The returned attestors should be fully initialized and ready to have their
+// Type(), Name(), and Subjecter.Subjects() methods called.
+type MultiExporter interface {
+	ExportedAttestations() []Attestor
+}
+
 // BackReffer allows attestors to indicate which of their subjects are good candidates
 // to find related attestations.  For example the git attestor's commit hash subject
 // is a good candidate to find all attestation collections that also refer to a specific
