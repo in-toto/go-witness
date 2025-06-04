@@ -178,24 +178,6 @@ const (
 	ProcessZombie
 )
 
-// ResourceLimits represents configurable limits for tracing
-type ResourceLimits struct {
-	MaxProcesses     int           // Maximum number of processes to trace
-	MaxFileSize      int64         // Maximum file size to hash
-	MaxTraceTime     time.Duration // Maximum time to trace
-	MaxMemoryPerProc uint64        // Maximum memory per process before warning
-}
-
-// DefaultResourceLimits returns sensible defaults for CI environments
-func DefaultResourceLimits() ResourceLimits {
-	return ResourceLimits{
-		MaxProcesses:     10000,               // CI builds can spawn many processes
-		MaxFileSize:      500 * 1024 * 1024,   // 500MB - larger artifacts in CI
-		MaxTraceTime:     2 * time.Hour,       // CI jobs can run for hours
-		MaxMemoryPerProc: 4 * 1024 * 1024 * 1024, // 4GB - build tools can use lots of memory
-	}
-}
-
 // Custom errors for better error handling
 
 var (
@@ -207,9 +189,6 @@ var (
 	
 	// ErrPermissionDenied indicates insufficient permissions
 	ErrPermissionDenied = errors.New("permission denied")
-	
-	// ErrResourceLimit indicates a resource limit was hit
-	ErrResourceLimit = errors.New("resource limit exceeded")
 )
 
 // TracerError provides structured error information
