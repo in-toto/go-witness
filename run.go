@@ -142,19 +142,25 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 		} else {
 			// Check if this is a MultiExporter first
 			if multiExporter, ok := r.Attestor.(attestation.MultiExporter); ok {
-				// Create individual attestations for each exported item
-				for _, exported := range multiExporter.ExportedAttestations() {
+				// Create individual attestations for each exported attestor
+				for _, exportedAttestor := range multiExporter.ExportedAttestations() {
 					var envelope dsse.Envelope
+					var subjects map[string]cryptoutil.DigestSet
+
+					// Get subjects if the exported attestor implements Subjecter
+					if subjecter, ok := exportedAttestor.(attestation.Subjecter); ok {
+						subjects = subjecter.Subjects()
+					}
+
 					if !ro.insecure {
-						envelope, err = createAndSignEnvelope(exported.Predicate, exported.PredicateType, exported.Subjects, dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
+						envelope, err = createAndSignEnvelope(exportedAttestor, exportedAttestor.Type(), subjects, dsse.SignWithSigners(ro.signers...), dsse.SignWithTimestampers(ro.timestampers...))
 						if err != nil {
-							return result, fmt.Errorf("failed to sign envelope for %s: %w", exported.Name, err)
+							return result, fmt.Errorf("failed to sign envelope for %s: %w", exportedAttestor.Name(), err)
 						}
 					}
-					attestorName := r.Attestor.Name()
-					if exported.Name != "" {
-						attestorName = fmt.Sprintf("%s/%s", attestorName, exported.Name)
-					}
+
+					// Create attestor name combining parent and exported attestor names
+					attestorName := fmt.Sprintf("%s/%s", r.Attestor.Name(), exportedAttestor.Name())
 					result = append(result, RunResult{SignedEnvelope: envelope, AttestorName: attestorName})
 				}
 				// Skip regular Exporter processing for MultiExporter attestors
