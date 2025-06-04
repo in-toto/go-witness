@@ -187,20 +187,24 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 		return result, errors.Join(errs...)
 	}
 
-	// Filter attestors for collection - exclude those that implement Exporter and return false
+	// Filter attestors for collection - exclude those that are exported separately
 	var attestorsForCollection []attestation.CompletedAttestor
 	for _, completed := range runCtx.CompletedAttestors() {
 		if completed.Error != nil {
 			continue
 		}
-		// Check if attestor implements Exporter
-		if exporter, ok := completed.Attestor.(attestation.Exporter); ok {
-			// If it does and Export() returns false, skip it
-			if !exporter.Export() {
-				continue
-			}
+
+		// Skip MultiExporter attestors as they export their own attestations
+		if _, ok := completed.Attestor.(attestation.MultiExporter); ok {
+			continue
 		}
-		// Otherwise include it in the collection
+
+		// Skip attestors that implement Exporter and want to be exported separately
+		if exporter, ok := completed.Attestor.(attestation.Exporter); ok && exporter.Export() {
+			continue
+		}
+
+		// Include all other attestors in the collection
 		attestorsForCollection = append(attestorsForCollection, completed)
 	}
 
