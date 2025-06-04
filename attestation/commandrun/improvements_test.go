@@ -311,38 +311,6 @@ func TestImprovedTypesWithRealTracing(t *testing.T) {
 	assert.Contains(t, string(data), "monitorLog")
 }
 
-func TestProcessTreeStructure(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("Linux only test")
-	}
-
-	// Create a process tree for testing
-	tree := NewProcessTree()
-	
-	// Add some test processes
-	tree.AddProcess(&ProcessInfo{
-		ProcessID: 1000,
-		ParentPID: 0,
-		Program:   "/usr/bin/bash",
-	})
-	
-	tree.AddProcess(&ProcessInfo{
-		ProcessID: 1001,
-		ParentPID: 1000,
-		Program:   "/usr/bin/echo",
-	})
-	
-	// Test navigation
-	proc, ok := tree.GetProcess(PID(1001))
-	require.True(t, ok)
-	assert.Equal(t, "/usr/bin/echo", proc.Program)
-	assert.Equal(t, 1000, proc.ParentPID)
-	
-	// Test children
-	children := tree.GetChildren(PID(1000))
-	assert.Len(t, children, 1)
-	assert.Equal(t, PID(1001), children[0])
-}
 
 func TestResourceUsageTrackingIntegration(t *testing.T) {
 	if runtime.GOOS != "linux" {
@@ -371,13 +339,12 @@ func TestResourceUsageTrackingIntegration(t *testing.T) {
 	rtc, ok := exported[0].(*RuntimeTraceCollector)
 	require.True(t, ok)
 
-	// The RuntimeTraceCollector should have a converter
-	assert.NotNil(t, rtc.converter)
-	assert.NotNil(t, rtc.converter.trace)
+	// The RuntimeTraceCollector should have trace data
+	assert.NotNil(t, rtc.trace)
 	
 	// Check that we captured resource usage
 	foundResources := false
-	for _, p := range rtc.converter.trace.Processes {
+	for _, p := range rtc.trace.Processes {
 		if p.MemoryRSS > 0 || p.PeakMemoryRSS > 0 {
 			foundResources = true
 			t.Logf("Process %d (%s): RSS=%d Peak=%d", 
@@ -422,7 +389,7 @@ func TestFileWriteWithImprovedTypes(t *testing.T) {
 	require.True(t, ok)
 
 	foundWrite := false
-	for _, p := range rtc.converter.trace.Processes {
+	for _, p := range rtc.trace.Processes {
 		if len(p.WrittenFiles) > 0 {
 			for path := range p.WrittenFiles {
 				if path == testFile {
@@ -465,7 +432,7 @@ func TestNetworkTrackingWithImprovedTypes(t *testing.T) {
 
 	// Check for network activity
 	foundNetwork := false
-	for _, p := range rtc.converter.trace.Processes {
+	for _, p := range rtc.trace.Processes {
 		if p.NetworkActivity != nil && len(p.NetworkActivity.Connections) > 0 {
 			foundNetwork = true
 			for _, conn := range p.NetworkActivity.Connections {

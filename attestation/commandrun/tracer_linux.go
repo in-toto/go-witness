@@ -862,6 +862,16 @@ func getCPUTimeFromStat(stat []byte) (time.Duration, time.Duration, error) {
 	// Convert jiffies to duration (typically 100 Hz, so 1 jiffy = 10ms)
 	// Use sysconf to get the actual clock tick rate
 	clockTicks := uint64(100) // Default, should use sysconf(_SC_CLK_TCK)
+	
+	// Check for overflow before converting to int64
+	const maxDuration = uint64(^time.Duration(0) >> 1)
+	if utime > maxDuration/uint64(time.Second)*clockTicks {
+		utime = maxDuration / uint64(time.Second) * clockTicks
+	}
+	if stime > maxDuration/uint64(time.Second)*clockTicks {
+		stime = maxDuration / uint64(time.Second) * clockTicks
+	}
+	
 	userTime := time.Duration(utime) * time.Second / time.Duration(clockTicks)
 	sysTime := time.Duration(stime) * time.Second / time.Duration(clockTicks)
 	

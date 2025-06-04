@@ -1263,7 +1263,7 @@ func TestProcessInfoParsing(t *testing.T) {
 // ==================== Status Parsing Tests (from tracing_linux_test.go) ====================
 
 const (
-	status = `
+	testStatusContent = `
 Name:   blkcg_punt_bio
 Umask:  0000
 State:  I (idle)
@@ -1305,7 +1305,7 @@ nonvoluntary_ctxt_switches:     0
 )
 
 func Test_getPPIDFromStatus(t *testing.T) {
-	byteStatus := []byte(status)
+	byteStatus := []byte(testStatusContent)
 
 	ppid, err := getPPIDFromStatus(byteStatus)
 	if err != nil {
@@ -1320,7 +1320,7 @@ func Test_getPPIDFromStatus(t *testing.T) {
 }
 
 func Test_getSpecBypassIsVulnFromStatus(t *testing.T) {
-	byteStatus := []byte(status)
+	byteStatus := []byte(testStatusContent)
 
 	isVuln := getSpecBypassIsVulnFromStatus(byteStatus)
 
