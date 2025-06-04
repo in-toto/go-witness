@@ -98,7 +98,8 @@ func New(opts ...Option) *CommandRun {
 	return cr
 }
 
-// NetworkActivity represents network operations performed by a process
+// NetworkActivity represents network operations performed by a process.
+// This is an optional feature controlled by TracerOptions.EnableNetworkTrace.
 type NetworkActivity struct {
 	// Sockets created by the process
 	Sockets []SocketInfo `json:"sockets,omitempty"`
@@ -135,10 +136,15 @@ type ProcessInfo struct {
 	ProcessID        int                             `json:"processid"`
 	ParentPID        int                             `json:"parentpid"`
 	ProgramDigest    cryptoutil.DigestSet            `json:"programdigest,omitempty"`
+	// Deprecated: Comm is a Linux-specific truncated process name (max 16 chars) from /proc/[pid]/comm.
+	// This field is redundant with Program and will be removed in a future version.
 	Comm             string                          `json:"comm,omitempty"`
 	Cmdline          string                          `json:"cmdline,omitempty"`
 	ExeDigest        cryptoutil.DigestSet            `json:"exedigest,omitempty"`
 	OpenedFiles      map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
+	// Deprecated: Environ exposes potentially sensitive environment variables.
+	// Use the dedicated environment attestation instead. This field will be removed in a future version.
+	// SECURITY WARNING: This field may contain secrets like API keys and passwords.
 	Environ          string                          `json:"environ,omitempty"`
 	// Deprecated: SpecBypassIsVuln tracks a specific 2018 CPU vulnerability (Spectre v4).
 	// This field will be removed in a future version as it's not relevant for supply chain attestation.
@@ -157,6 +163,8 @@ type ProcessInfo struct {
 	NetworkActivity  *NetworkActivity                `json:"networkactivity,omitempty"`
 	
 	// Resource usage
+	// NOTE: These performance metrics may be deprecated in a future version as they're
+	// not directly relevant for supply chain attestation. Consider if you really need these.
 	CPUTimeUser      *time.Duration                 `json:"cputimeuser,omitempty"`
 	CPUTimeSystem    *time.Duration                 `json:"cputimesystem,omitempty"`
 	MemoryRSS        uint64                         `json:"memoryrss,omitempty"`      // in bytes
