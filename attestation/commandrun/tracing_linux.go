@@ -311,8 +311,12 @@ func getPPIDFromStatus(status []byte) (int, error) {
 	for _, line := range lines {
 		if strings.Contains(line, "PPid:") {
 			parts := strings.Split(line, ":")
-			ppid := strings.TrimSpace(parts[1])
-			return strconv.Atoi(ppid)
+			if len(parts) >= 2 {
+				ppid := strings.TrimSpace(parts[1])
+				if ppid != "" {
+					return strconv.Atoi(ppid)
+				}
+			}
 		}
 	}
 
