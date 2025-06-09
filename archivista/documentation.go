@@ -16,10 +16,10 @@ package archivista
 
 // Documentation provides structured documentation for the archivista package
 type Documentation struct {
-	Summary     string              `json:"summary" jsonschema:"title=Summary,description=Brief description of the package"`
-	Description string              `json:"description" jsonschema:"title=Description,description=Detailed description of the package functionality"`
-	Usage       []string            `json:"usage" jsonschema:"title=Usage,description=Common use cases and scenarios"`
-	Examples    map[string]Example  `json:"examples" jsonschema:"title=Examples,description=Code examples demonstrating package usage"`
+	Summary     string             `json:"summary" jsonschema:"title=Summary,description=Brief description of the package"`
+	Description string             `json:"description" jsonschema:"title=Description,description=Detailed description of the package functionality"`
+	Usage       []string           `json:"usage" jsonschema:"title=Usage,description=Common use cases and scenarios"`
+	Examples    map[string]Example `json:"examples" jsonschema:"title=Examples,description=Code examples demonstrating package usage"`
 }
 
 // Example represents a code example with explanation

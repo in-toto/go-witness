@@ -23,10 +23,10 @@ type Documenter interface {
 type Documentation struct {
 	// Short one-line description
 	Summary string
-	
+
 	// When to use this attestor (1-3 key use cases)
 	Usage []string
-	
+
 	// Simple example command
 	Example string
 }
