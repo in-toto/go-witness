@@ -16,10 +16,10 @@ package policy
 
 // Documentation provides structured documentation for the policy package
 type Documentation struct {
-	Summary     string              `json:"summary" jsonschema:"title=Summary,description=Brief description of the package"`
-	Description string              `json:"description" jsonschema:"title=Description,description=Detailed description of the package functionality"`
-	Usage       []string            `json:"usage" jsonschema:"title=Usage,description=Common use cases and scenarios"`
-	Examples    map[string]Example  `json:"examples" jsonschema:"title=Examples,description=Code examples demonstrating package usage"`
+	Summary     string             `json:"summary" jsonschema:"title=Summary,description=Brief description of the package"`
+	Description string             `json:"description" jsonschema:"title=Description,description=Detailed description of the package functionality"`
+	Usage       []string           `json:"usage" jsonschema:"title=Usage,description=Common use cases and scenarios"`
+	Examples    map[string]Example `json:"examples" jsonschema:"title=Examples,description=Code examples demonstrating package usage"`
 }
 
 // Example represents a code example with explanation
@@ -103,9 +103,9 @@ func PackageDocumentation() Documentation {
 
 // StepDocumentation provides documentation specific to policy steps
 type StepDocumentation struct {
-	Overview     string   `json:"overview" jsonschema:"title=Overview,description=Overview of policy steps"`
-	StepTypes    []string `json:"stepTypes" jsonschema:"title=Step Types,description=Common types of steps in policies"`
-	Constraints  []string `json:"constraints" jsonschema:"title=Constraints,description=Types of constraints that can be applied"`
+	Overview    string   `json:"overview" jsonschema:"title=Overview,description=Overview of policy steps"`
+	StepTypes   []string `json:"stepTypes" jsonschema:"title=Step Types,description=Common types of steps in policies"`
+	Constraints []string `json:"constraints" jsonschema:"title=Constraints,description=Types of constraints that can be applied"`
 }
 
 // GetStepDocumentation returns documentation for policy steps
