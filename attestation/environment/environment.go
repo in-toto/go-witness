@@ -52,10 +52,10 @@ func init() {
 }
 
 type Attestor struct {
-	OS        string            `json:"os"`
-	Hostname  string            `json:"hostname"`
-	Username  string            `json:"username"`
-	Variables map[string]string `json:"variables,omitempty"`
+	OS        string            `json:"os" jsonschema:"title=Operating System,description=Operating system platform (e.g. linux, darwin, windows)"`
+	Hostname  string            `json:"hostname" jsonschema:"title=Hostname,description=System hostname"`
+	Username  string            `json:"username" jsonschema:"title=Username,description=Current user's username"`
+	Variables map[string]string `json:"variables,omitempty" jsonschema:"title=Environment Variables,description=Captured environment variables based on policy"`
 
 	osEnviron func() []string
 }
@@ -112,6 +112,18 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.Variables = ctx.EnvironmentCapturer().Capture(a.osEnviron())
 
 	return nil
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Captures build environment details including OS, hostname, user, and environment variables",
+		Usage: []string{
+			"Record build environment for reproducibility",
+			"Capture CI/CD environment variables",
+			"Audit build platform information",
+		},
+		Example: "witness run -s test -k key.pem -a environment -- pytest",
+	}
 }
 
 func (a *Attestor) Data() *Attestor {

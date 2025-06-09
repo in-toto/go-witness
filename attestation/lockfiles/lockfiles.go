@@ -51,14 +51,14 @@ func NewLockfilesAttestor() attestation.Attestor {
 
 // Attestor implements the lockfiles attestation type
 type Attestor struct {
-	Lockfiles []LockfileInfo `json:"lockfiles"`
+	Lockfiles []LockfileInfo `json:"lockfiles" jsonschema:"title=Lockfiles,description=List of discovered dependency lockfiles"`
 }
 
 // LockfileInfo stores information about a lockfile
 type LockfileInfo struct {
-	Filename string               `json:"filename"`
-	Content  string               `json:"content"`
-	Digest   cryptoutil.DigestSet `json:"digest"`
+	Filename string               `json:"filename" jsonschema:"title=Filename,description=Name of the lockfile (e.g. package-lock.json go.sum)"`
+	Content  string               `json:"content" jsonschema:"title=Content,description=Full content of the lockfile"`
+	Digest   cryptoutil.DigestSet `json:"digest" jsonschema:"title=Digest,description=Cryptographic digests of the lockfile content"`
 }
 
 // Name returns the name of the attestation type
@@ -140,4 +140,16 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		subjects[subjectName] = lockfile.Digest
 	}
 	return subjects
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Captures dependency lockfiles from various package managers to ensure reproducible builds",
+		Usage: []string{
+			"Track exact dependency versions used in builds",
+			"Detect dependency changes between builds",
+			"Ensure build reproducibility across environments",
+		},
+		Example: "witness run -s install -k key.pem -a lockfiles -- npm ci",
+	}
 }

@@ -84,9 +84,9 @@ type Attestor struct {
 	hashes    []cryptoutil.DigestValue
 	session   session.Session
 	conf      *aws.Config
-	RawIID    string `json:"rawiid"`
-	RawSig    string `json:"rawsig"`
-	PublicKey string `json:"publickey"`
+	RawIID    string `json:"rawiid" jsonschema:"title=Raw Instance Identity Document,description=Base64 encoded raw instance identity document from AWS"`
+	RawSig    string `json:"rawsig" jsonschema:"title=Raw Signature,description=Base64 encoded signature of the instance identity document"`
+	PublicKey string `json:"publickey" jsonschema:"title=Public Key,description=Public key used to verify the instance identity document signature"`
 }
 
 func New() *Attestor {
@@ -226,6 +226,19 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	}
 
 	return subjects
+}
+
+// Documentation implements attestation.Documenter
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Captures AWS EC2 instance identity information including instance ID, region, and account details",
+		Usage: []string{
+			"Verify builds ran on specific AWS infrastructure",
+			"Enforce infrastructure-based security policies",
+			"Track which AWS resources produced artifacts",
+		},
+		Example: "witness run -s deploy -k key.pem -a aws -- terraform apply",
+	}
 }
 
 func getAWSCAPublicKey() (*rsa.PublicKey, error) {

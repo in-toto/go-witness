@@ -70,44 +70,44 @@ var defaultEphemeralAnnotations = []string{
 
 // RecordedObject stores ephemeral-cleaned doc details.
 type RecordedObject struct {
-	FilePath       string          `json:"filepath"`
-	Kind           string          `json:"kind"`
-	Name           string          `json:"name"`
-	Data           json.RawMessage `json:"data"`
-	SubjectKey     string          `json:"subjectkey"`
-	RecordedImages []RecordedImage `json:"recordedimages"`
+	FilePath       string          `json:"filepath" jsonschema:"title=File Path,description=Path to the Kubernetes manifest file"`
+	Kind           string          `json:"kind" jsonschema:"title=Kind,description=Kubernetes resource type (e.g. Deployment Pod Service)"`
+	Name           string          `json:"name" jsonschema:"title=Name,description=Name of the Kubernetes resource"`
+	Data           json.RawMessage `json:"data" jsonschema:"title=Data,description=Cleaned manifest data with ephemeral fields removed"`
+	SubjectKey     string          `json:"subjectkey" jsonschema:"title=Subject Key,description=Unique key for this resource used as attestation subject"`
+	RecordedImages []RecordedImage `json:"recordedimages" jsonschema:"title=Recorded Images,description=Container images found in the manifest"`
 }
 
 type ClusterInfo struct {
-	Server        string                  `json:"server"`
-	RecordedNodes map[string]RecordedNode `json:"nodes"`
+	Server        string                  `json:"server" jsonschema:"title=Server,description=Kubernetes API server URL"`
+	RecordedNodes map[string]RecordedNode `json:"nodes" jsonschema:"title=Nodes,description=Information about cluster nodes"`
 }
 
 type RecordedNode struct {
-	Name     string                `json:"name"`
-	Labels   map[string]string     `json:"labels"`
-	NodeInfo corev1.NodeSystemInfo `json:"nodeInfo"`
+	Name     string                `json:"name" jsonschema:"title=Name,description=Name of the Kubernetes node"`
+	Labels   map[string]string     `json:"labels" jsonschema:"title=Labels,description=Node labels"`
+	NodeInfo corev1.NodeSystemInfo `json:"nodeInfo" jsonschema:"title=Node Info,description=System information about the node"`
 }
 
 // Recorded image stores the details of images found in kubernetes manifests
 type RecordedImage struct {
-	Reference string            `json:"reference"`
-	Digest    map[string]string `json:"digest"`
+	Reference string            `json:"reference" jsonschema:"title=Reference,description=Container image reference"`
+	Digest    map[string]string `json:"digest" jsonschema:"title=Digest,description=Image digest if available"`
 }
 
 // Attestor implements the Witness Attestor interface for Kubernetes manifests.
 type Attestor struct {
-	ServerSideDryRun  bool     `json:"serversidedryrun,omitempty"`
-	RecordClusterInfo bool     `json:"recordclusterinfo,omitempty"`
-	KubeconfigPath    string   `json:"kubeconfig,omitempty"`
-	KubeContext       string   `json:"kubecontext,omitempty"`
-	IgnoreFields      []string `json:"ignorefields,omitempty" jsonschema:"title=ignorefields"`
-	IgnoreAnnotations []string `json:"ignoreannotations,omitempty"`
+	ServerSideDryRun  bool     `json:"serversidedryrun,omitempty" jsonschema:"title=Server Side Dry Run,description=Perform server-side dry-run to normalize resource defaults"`
+	RecordClusterInfo bool     `json:"recordclusterinfo,omitempty" jsonschema:"title=Record Cluster Info,description=Record information about the Kubernetes cluster"`
+	KubeconfigPath    string   `json:"kubeconfig,omitempty" jsonschema:"title=Kubeconfig Path,description=Path to kubeconfig file"`
+	KubeContext       string   `json:"kubecontext,omitempty" jsonschema:"title=Context,description=Kubernetes context to use"`
+	IgnoreFields      []string `json:"ignorefields,omitempty" jsonschema:"title=Ignore Fields,description=Additional ephemeral fields to remove"`
+	IgnoreAnnotations []string `json:"ignoreannotations,omitempty" jsonschema:"title=Ignore Annotations,description=Additional ephemeral annotations to remove"`
 	ephemeralFields   []string
 	ephemeralAnn      []string
-	RecordedDocs      []RecordedObject `json:"recordeddocs,omitempty"`
+	RecordedDocs      []RecordedObject `json:"recordeddocs,omitempty" jsonschema:"title=Recorded Docs,description=Kubernetes manifests with ephemeral data removed"`
 	subjectDigests    sync.Map
-	ClusterInfo       ClusterInfo `json:"clusterinfo"`
+	ClusterInfo       ClusterInfo `json:"clusterinfo" jsonschema:"title=Cluster Info,description=Information about the Kubernetes cluster"`
 }
 
 var (
@@ -737,4 +737,16 @@ func newRecordedImage(image string) RecordedImage {
 	}
 
 	return rc
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Processes Kubernetes manifests to capture resource definitions with ephemeral data removed",
+		Usage: []string{
+			"Capture Kubernetes deployment configurations",
+			"Track container images used in deployments",
+			"Ensure manifest consistency across environments",
+		},
+		Example: "witness run -s deploy -k key.pem -a k8smanifest -- kubectl apply -f manifests/",
+	}
 }

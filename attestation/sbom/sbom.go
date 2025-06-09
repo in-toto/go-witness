@@ -80,7 +80,7 @@ func WithExport(export bool) Option {
 }
 
 type SBOMAttestor struct {
-	SBOMDocument  interface{}
+	SBOMDocument  interface{} `jsonschema:"title=SBOM Document,description=The Software Bill of Materials document (SPDX or CycloneDX format)"`
 	predicateType string
 	export        bool
 	subjects      map[string]cryptoutil.DigestSet
@@ -143,6 +143,14 @@ func (a *SBOMAttestor) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+func (a *SBOMAttestor) Documentation() string {
+	return `
+Processes Software Bill of Materials (SBOM) files in SPDX or CycloneDX formats.
+Extracts document metadata and creates subjects for package verification.
+Supports JSON-formatted SPDX and CycloneDX documents.
+`
 }
 
 func (a *SBOMAttestor) getCandidate(ctx *attestation.AttestationContext) error {

@@ -52,13 +52,13 @@ func (e ErrInvalidToken) Error() string {
 type Option func(a *Attestor)
 
 type VerificationInfo struct {
-	JWKSUrl string          `json:"jwksUrl"`
-	JWK     jose.JSONWebKey `json:"jwk"`
+	JWKSUrl string          `json:"jwksUrl" jsonschema:"title=JWKS URL,description=URL where the JSON Web Key Set can be found"`
+	JWK     jose.JSONWebKey `json:"jwk" jsonschema:"title=JWK,description=The JSON Web Key used to verify the token"`
 }
 
 type Attestor struct {
-	Claims     map[string]interface{} `json:"claims"`
-	VerifiedBy VerificationInfo       `json:"verifiedBy,omitempty"`
+	Claims     map[string]interface{} `json:"claims" jsonschema:"title=Claims,description=JWT claims extracted from the token"`
+	VerifiedBy VerificationInfo       `json:"verifiedBy,omitempty" jsonschema:"title=Verified By,description=Information about how the JWT was verified"`
 	jwksUrl    string
 	token      string
 }
@@ -148,4 +148,16 @@ func (a *Attestor) Type() string {
 
 func (a *Attestor) RunType() attestation.RunType {
 	return RunType
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Verifies and records JWT token claims for workload identity",
+		Usage: []string{
+			"Verify OIDC tokens for workload identity",
+			"Extract claims from JWT tokens",
+			"Foundation for other JWT-based attestors",
+		},
+		Example: "witness run -s verify -k key.pem -a jwt -- kubectl apply -f deployment.yaml",
+	}
 }

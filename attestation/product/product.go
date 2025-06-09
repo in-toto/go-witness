@@ -110,11 +110,11 @@ func WithExcludeGlob(glob string) Option {
 }
 
 type Attestor struct {
-	products            map[string]attestation.Product
+	products            map[string]attestation.Product   `jsonschema:"title=Products,description=Map of file paths to product information including MIME type and digests"`
 	baseArtifacts       map[string]cryptoutil.DigestSet
-	includeGlob         string
+	includeGlob         string                           `jsonschema:"title=Include Pattern,description=Glob pattern for files to include as subjects"`
 	compiledIncludeGlob glob.Glob
-	excludeGlob         string
+	excludeGlob         string                           `jsonschema:"title=Exclude Pattern,description=Glob pattern for files to exclude as subjects"`
 	compiledExcludeGlob glob.Glob
 }
 
@@ -264,6 +264,18 @@ func IsSPDXJson(buf []byte) bool {
 func IsCycloneDXJson(buf []byte) bool {
 	header := buf[:500]
 	return bytes.Contains(header, []byte(`"bomFormat":"CycloneDX"`)) || bytes.Contains(header, []byte(`"bomFormat": "CycloneDX"`))
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Records cryptographic digests and metadata of files created or modified during execution",
+		Usage: []string{
+			"Capture build outputs and artifacts",
+			"Track files produced by compilation or packaging",
+			"Record SBOM, SPDX, and other structured output formats",
+		},
+		Example: "witness run -s package -k key.pem -a product -- npm run build",
+	}
 }
 
 func getFileContentType(fileName string) (string, error) {

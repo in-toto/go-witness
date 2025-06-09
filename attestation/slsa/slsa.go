@@ -87,7 +87,7 @@ func WithExport(export bool) Option {
 }
 
 type Provenance struct {
-	PbProvenance prov.Provenance
+	PbProvenance prov.Provenance `jsonschema:"title=SLSA Provenance,description=SLSA v1.0 provenance predicate containing build information"`
 	products     map[string]attestation.Product
 	subjects     map[string]cryptoutil.DigestSet
 	export       bool
@@ -266,6 +266,15 @@ func (p *Provenance) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+func (p *Provenance) Documentation() string {
+	return `
+Generates SLSA v1.0 provenance statements from witness attestation data.
+Aggregates information from various attestors (git, environment, command-run)
+to create comprehensive build provenance. Supports GitHub Actions, GitLab CI,
+and Jenkins as build platforms.
+`
 }
 
 func (p *Provenance) Subjects() map[string]cryptoutil.DigestSet {

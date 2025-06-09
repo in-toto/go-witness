@@ -57,7 +57,7 @@ func init() {
 type Option func(*Attestor)
 
 type Attestor struct {
-	materials map[string]cryptoutil.DigestSet
+	materials map[string]cryptoutil.DigestSet `jsonschema:"title=Materials,description=Map of file paths to their cryptographic digests before execution"`
 }
 
 func (a *Attestor) Name() string {
@@ -111,6 +111,18 @@ func (a *Attestor) UnmarshalJSON(data []byte) error {
 
 	a.materials = mats
 	return nil
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Records cryptographic digests of files present before command execution",
+		Usage: []string{
+			"Capture source code state before build",
+			"Record input artifacts for transformation steps",
+			"Establish baseline for detecting file modifications",
+		},
+		Example: "witness run -s build -k key.pem -a material -- cargo build --release",
+	}
 }
 
 func (a *Attestor) Materials() map[string]cryptoutil.DigestSet {

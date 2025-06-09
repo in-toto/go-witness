@@ -69,16 +69,16 @@ func (e ErrNotJenkins) Error() string {
 }
 
 type Attestor struct {
-	BuildID        string `json:"buildid"`
-	BuildNumber    string `json:"buildnumber"`
-	BuildTag       string `json:"buildtag"`
-	PipelineUrl    string `json:"pipelineurl"`
-	ExecutorNumber string `json:"executornumber"`
-	JavaHome       string `json:"javahome"`
-	JenkinsUrl     string `json:"jenkinsurl"`
-	JobName        string `json:"jobname"`
-	NodeName       string `json:"nodename"`
-	Workspace      string `json:"workspace"`
+	BuildID        string `json:"buildid" jsonschema:"title=Build ID,description=Unique build identifier from Jenkins"`
+	BuildNumber    string `json:"buildnumber" jsonschema:"title=Build Number,description=Sequential build number for the job"`
+	BuildTag       string `json:"buildtag" jsonschema:"title=Build Tag,description=Unique tag combining job name and build number"`
+	PipelineUrl    string `json:"pipelineurl" jsonschema:"title=Pipeline URL,description=URL to the Jenkins build pipeline"`
+	ExecutorNumber string `json:"executornumber" jsonschema:"title=Executor Number,description=Jenkins executor number running the build"`
+	JavaHome       string `json:"javahome" jsonschema:"title=Java Home,description=Java installation path on the Jenkins node"`
+	JenkinsUrl     string `json:"jenkinsurl" jsonschema:"title=Jenkins URL,description=Base URL of the Jenkins server"`
+	JobName        string `json:"jobname" jsonschema:"title=Job Name,description=Name of the Jenkins job"`
+	NodeName       string `json:"nodename" jsonschema:"title=Node Name,description=Name of the Jenkins node executing the build"`
+	Workspace      string `json:"workspace" jsonschema:"title=Workspace,description=Path to the job workspace directory"`
 }
 
 func New() *Attestor {
@@ -152,4 +152,16 @@ func (a *Attestor) BackRefs() map[string]cryptoutil.DigestSet {
 	}
 
 	return backRefs
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Captures Jenkins CI/CD pipeline metadata including build ID, job name, and workspace information",
+		Usage: []string{
+			"Verify builds ran in Jenkins CI/CD pipeline",
+			"Track build provenance and executor details",
+			"Audit Jenkins job configurations and environments",
+		},
+		Example: "witness run -s build -k key.pem -a jenkins -- mvn clean package",
+	}
 }

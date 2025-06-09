@@ -255,3 +255,15 @@ func verificationSummaryFromResults(ctx *attestation.AttestationContext, policyE
 		VerificationResult: verificationResult,
 	}, nil
 }
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Verifies a Witness policy and generates a SLSA verification summary attestation",
+		Usage: []string{
+			"Verify complex supply chain policies",
+			"Generate verification summaries for compliance",
+			"Create attestations of policy verification results",
+		},
+		Example: "witness verify -p policy.json -k policy-key.pem -a policyverify --subjects build.tar.gz",
+	}
+}

@@ -91,9 +91,9 @@ func (e ErrUnsupportedHash) Error() string {
 }
 
 type DigestValue struct {
-	crypto.Hash
-	GitOID  bool
-	DirHash bool
+	crypto.Hash `json:"hash" jsonschema:"title=Hash Algorithm,description=Cryptographic hash function to use,enum=SHA1;SHA256;SHA384;SHA512"`
+	GitOID      bool `json:"gitoid" jsonschema:"title=Git OID,description=Whether to calculate Git Object ID format,default=false"`
+	DirHash     bool `json:"dirhash" jsonschema:"title=Directory Hash,description=Whether to calculate directory hash using Go module dirhash format,default=false"`
 }
 
 func (dv DigestValue) New() hash.Hash {
@@ -104,6 +104,7 @@ func (dv DigestValue) New() hash.Hash {
 	return dv.Hash.New()
 }
 
+// DigestSet represents a collection of digests calculated using different hash algorithms
 type DigestSet map[DigestValue]string
 
 func HashToString(h crypto.Hash) (string, error) {
