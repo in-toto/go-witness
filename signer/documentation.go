@@ -16,10 +16,10 @@ package signer
 
 // Documentation provides structured documentation for the signer package
 type Documentation struct {
-	Summary     string              `json:"summary" jsonschema:"title=Summary,description=Brief description of the package"`
-	Description string              `json:"description" jsonschema:"title=Description,description=Detailed description of the package functionality"`
-	Usage       []string            `json:"usage" jsonschema:"title=Usage,description=Common use cases and scenarios"`
-	Examples    map[string]Example  `json:"examples" jsonschema:"title=Examples,description=Code examples demonstrating package usage"`
+	Summary     string                 `json:"summary" jsonschema:"title=Summary,description=Brief description of the package"`
+	Description string                 `json:"description" jsonschema:"title=Description,description=Detailed description of the package functionality"`
+	Usage       []string               `json:"usage" jsonschema:"title=Usage,description=Common use cases and scenarios"`
+	Examples    map[string]Example     `json:"examples" jsonschema:"title=Examples,description=Code examples demonstrating package usage"`
 	Providers   map[string]ProviderDoc `json:"providers" jsonschema:"title=Providers,description=Documentation for available signer providers"`
 }
 
@@ -31,9 +31,9 @@ type Example struct {
 
 // ProviderDoc documents a specific signer provider
 type ProviderDoc struct {
-	Summary     string            `json:"summary" jsonschema:"title=Summary,description=Brief description of the provider"`
-	Options     map[string]string `json:"options" jsonschema:"title=Options,description=Configuration options for this provider"`
-	Example     string            `json:"example" jsonschema:"title=Example,description=Example usage of this provider"`
+	Summary string            `json:"summary" jsonschema:"title=Summary,description=Brief description of the provider"`
+	Options map[string]string `json:"options" jsonschema:"title=Options,description=Configuration options for this provider"`
+	Example string            `json:"example" jsonschema:"title=Example,description=Example usage of this provider"`
 }
 
 // PackageDocumentation returns the documentation for the signer package
@@ -102,8 +102,8 @@ signer, err := provider.Signer(ctx)`,
 			"file": {
 				Summary: "Signs with private keys stored in local files",
 				Options: map[string]string{
-					"key-path":          "Path to private key file (PEM format)",
-					"cert-path":         "Path to certificate file (optional)",
+					"key-path":           "Path to private key file (PEM format)",
+					"cert-path":          "Path to certificate file (optional)",
 					"intermediate-paths": "Paths to intermediate certificates (optional)",
 				},
 				Example: "witness run -s build --signer-file-key-path key.pem -- make",
@@ -138,10 +138,10 @@ signer, err := provider.Signer(ctx)`,
 			"vault": {
 				Summary: "HashiCorp Vault signing",
 				Options: map[string]string{
-					"url":       "Vault server URL",
-					"token":     "Vault authentication token",
-					"pki-path":  "Path to PKI secrets engine",
-					"role":      "PKI role name",
+					"url":      "Vault server URL",
+					"token":    "Vault authentication token",
+					"pki-path": "Path to PKI secrets engine",
+					"role":     "PKI role name",
 				},
 				Example: "witness run -s build --signer-vault-url https://vault.example.com --signer-vault-token s.abc123 -- make",
 			},
