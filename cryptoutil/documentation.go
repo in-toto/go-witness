@@ -16,10 +16,10 @@ package cryptoutil
 
 // Documentation provides structured documentation for the cryptoutil package
 type Documentation struct {
-	Summary     string              `json:"summary" jsonschema:"title=Summary,description=Brief description of the package"`
-	Description string              `json:"description" jsonschema:"title=Description,description=Detailed description of the package functionality"`
-	Usage       []string            `json:"usage" jsonschema:"title=Usage,description=Common use cases and scenarios"`
-	Examples    map[string]Example  `json:"examples" jsonschema:"title=Examples,description=Code examples demonstrating package usage"`
+	Summary     string             `json:"summary" jsonschema:"title=Summary,description=Brief description of the package"`
+	Description string             `json:"description" jsonschema:"title=Description,description=Detailed description of the package functionality"`
+	Usage       []string           `json:"usage" jsonschema:"title=Usage,description=Common use cases and scenarios"`
+	Examples    map[string]Example `json:"examples" jsonschema:"title=Examples,description=Code examples demonstrating package usage"`
 }
 
 // Example represents a code example with explanation
@@ -87,9 +87,9 @@ signature, err := signer.Sign(bytes.NewReader(message))`,
 
 // DigestSetDocumentation provides documentation specific to DigestSet usage
 type DigestSetDocumentation struct {
-	Overview           string   `json:"overview" jsonschema:"title=Overview,description=Overview of DigestSet functionality"`
+	Overview            string   `json:"overview" jsonschema:"title=Overview,description=Overview of DigestSet functionality"`
 	SupportedAlgorithms []string `json:"supportedAlgorithms" jsonschema:"title=Supported Algorithms,description=List of supported hash algorithms"`
-	SpecialFormats     []string `json:"specialFormats" jsonschema:"title=Special Formats,description=Special digest formats like gitoid and dirhash"`
+	SpecialFormats      []string `json:"specialFormats" jsonschema:"title=Special Formats,description=Special digest formats like gitoid and dirhash"`
 }
 
 // GetDigestSetDocumentation returns documentation for DigestSet

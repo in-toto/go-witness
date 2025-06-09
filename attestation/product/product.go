@@ -110,11 +110,11 @@ func WithExcludeGlob(glob string) Option {
 }
 
 type Attestor struct {
-	products            map[string]attestation.Product   `jsonschema:"title=Products,description=Map of file paths to product information including MIME type and digests"`
+	products            map[string]attestation.Product `jsonschema:"title=Products,description=Map of file paths to product information including MIME type and digests"`
 	baseArtifacts       map[string]cryptoutil.DigestSet
-	includeGlob         string                           `jsonschema:"title=Include Pattern,description=Glob pattern for files to include as subjects"`
+	includeGlob         string `jsonschema:"title=Include Pattern,description=Glob pattern for files to include as subjects"`
 	compiledIncludeGlob glob.Glob
-	excludeGlob         string                           `jsonschema:"title=Exclude Pattern,description=Glob pattern for files to exclude as subjects"`
+	excludeGlob         string `jsonschema:"title=Exclude Pattern,description=Glob pattern for files to exclude as subjects"`
 	compiledExcludeGlob glob.Glob
 }
 
