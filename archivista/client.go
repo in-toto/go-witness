@@ -21,8 +21,8 @@ import (
 )
 
 type Client struct {
-	url     string
-	headers http.Header
+	url     string      `json:"url" jsonschema:"title=URL,description=Archivista server URL,example=https://archivista.example.com"`
+	headers http.Header `json:"headers,omitempty" jsonschema:"title=Headers,description=Custom HTTP headers to include in requests"`
 }
 
 type Option func(*Client)

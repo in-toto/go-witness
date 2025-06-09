@@ -52,19 +52,19 @@ func init() {
 }
 
 type Attestor struct {
-	Products map[string]DockerProduct `json:"products"`
+	Products map[string]DockerProduct `json:"products" jsonschema:"title=Docker Products,description=Map of Docker image digests to product information"`
 }
 
 type DockerProduct struct {
-	Materials       map[string][]Material `json:"materials"`
-	ImageReferences []string              `json:"imagereferences"`
-	ImageDigest     cryptoutil.DigestSet  `json:"imagedigest"`
+	Materials       map[string][]Material `json:"materials" jsonschema:"title=Build Materials,description=Materials used to build the image by architecture"`
+	ImageReferences []string              `json:"imagereferences" jsonschema:"title=Image References,description=Docker image names and tags"`
+	ImageDigest     cryptoutil.DigestSet  `json:"imagedigest" jsonschema:"title=Image Digest,description=Content-addressable digest of the Docker image"`
 }
 
 type Material struct {
-	URI          string               `json:"uri"`
-	Architecture string               `json:"architecture"`
-	Digest       cryptoutil.DigestSet `json:"digest"`
+	URI          string               `json:"uri" jsonschema:"title=Material URI,description=URI of the build material"`
+	Architecture string               `json:"architecture" jsonschema:"title=Architecture,description=Target architecture for this material"`
+	Digest       cryptoutil.DigestSet `json:"digest" jsonschema:"title=Material Digest,description=Cryptographic digest of the material"`
 }
 
 type Manifest struct {
@@ -207,6 +207,18 @@ func (a *Attestor) getDockerCandidates(ctx *attestation.AttestationContext) ([]d
 	}
 
 	return mets, nil
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Captures Docker image build metadata including digests, materials, and provenance",
+		Usage: []string{
+			"Record Docker buildx metadata for supply chain verification",
+			"Track multi-architecture build materials and dependencies",
+			"Link Docker images to their build inputs",
+		},
+		Example: "witness run -s package -k key.pem -a docker -- docker build -t myapp:latest .",
+	}
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
