@@ -18,7 +18,7 @@ require (
 	github.com/go-jose/go-jose/v3 v3.0.4
 	github.com/google/go-containerregistry v0.20.5
 	github.com/in-toto/archivista v0.9.3
-	github.com/in-toto/attestation v1.1.1
+	github.com/in-toto/attestation v1.1.2
 	github.com/invopop/jsonschema v0.12.0
 	github.com/jellydator/ttlcache/v3 v3.3.0
 	github.com/mattn/go-isatty v0.0.20
