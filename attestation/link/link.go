@@ -74,7 +74,7 @@ func WithExport(export bool) Option {
 }
 
 type Link struct {
-	PbLink   v0.Link
+	PbLink   v0.Link `jsonschema:"title=Link,description=In-toto link attestation containing materials and products"`
 	products map[string]attestation.Product
 	export   bool
 }
@@ -149,6 +149,18 @@ func (l *Link) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+func (l *Link) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Creates in-toto link attestations aggregating materials, products, commands, and environment",
+		Usage: []string{
+			"Generate in-toto compatible attestations",
+			"Aggregate data from other attestors",
+			"Export as standalone attestation",
+		},
+		Example: "witness run -s release -k key.pem -a link --attestor-link-name=build -- make release",
+	}
 }
 
 func (l *Link) Subjects() map[string]cryptoutil.DigestSet {

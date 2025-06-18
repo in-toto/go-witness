@@ -26,29 +26,29 @@ import (
 
 // +kubebuilder:object:generate=true
 type Step struct {
-	Name          string        `json:"name"`
-	Functionaries []Functionary `json:"functionaries"`
-	Attestations  []Attestation `json:"attestations"`
-	ArtifactsFrom []string      `json:"artifactsFrom,omitempty"`
+	Name          string        `json:"name" jsonschema:"title=Name,description=Unique name for this step in the policy"`
+	Functionaries []Functionary `json:"functionaries" jsonschema:"title=Functionaries,description=List of identities allowed to perform this step"`
+	Attestations  []Attestation `json:"attestations" jsonschema:"title=Attestations,description=Required attestations that must be present for this step"`
+	ArtifactsFrom []string      `json:"artifactsFrom,omitempty" jsonschema:"title=Artifacts From,description=Names of previous steps whose artifacts are inputs to this step"`
 }
 
 // +kubebuilder:object:generate=true
 type Functionary struct {
-	Type           string         `json:"type"`
-	CertConstraint CertConstraint `json:"certConstraint,omitempty"`
-	PublicKeyID    string         `json:"publickeyid,omitempty"`
+	Type           string         `json:"type" jsonschema:"title=Type,description=Type of functionary (publickey or root)"`
+	CertConstraint CertConstraint `json:"certConstraint,omitempty" jsonschema:"title=Certificate Constraint,description=Constraints for certificate-based functionaries"`
+	PublicKeyID    string         `json:"publickeyid,omitempty" jsonschema:"title=Public Key ID,description=ID of the public key for publickey functionaries"`
 }
 
 // +kubebuilder:object:generate=true
 type Attestation struct {
-	Type         string       `json:"type"`
-	RegoPolicies []RegoPolicy `json:"regopolicies"`
+	Type         string       `json:"type" jsonschema:"title=Type,description=Type of attestation (e.g. https://witness.dev/attestations/git/v0.1)"`
+	RegoPolicies []RegoPolicy `json:"regopolicies" jsonschema:"title=Rego Policies,description=Rego policies to evaluate against the attestation"`
 }
 
 // +kubebuilder:object:generate=true
 type RegoPolicy struct {
-	Module []byte `json:"module"`
-	Name   string `json:"name"`
+	Module []byte `json:"module" jsonschema:"title=Module,description=Rego policy module content"`
+	Name   string `json:"name" jsonschema:"title=Name,description=Name of the Rego policy"`
 }
 
 // StepResult contains information about the verified collections for each step.
