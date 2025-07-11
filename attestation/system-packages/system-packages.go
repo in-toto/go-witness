@@ -41,17 +41,17 @@ func init() {
 }
 
 type Attestor struct {
-	OS           string               `json:"os"`
-	Distribution string               `json:"distribution"`
-	Version      string               `json:"version"`
-	Packages     []Package            `json:"packages"`
-	Digest       cryptoutil.DigestSet `json:"digest"`
+	OS           string               `json:"os" jsonschema:"title=OS,description=Operating system type (e.g. linux)"`
+	Distribution string               `json:"distribution" jsonschema:"title=Distribution,description=Linux distribution (e.g. ubuntu debian fedora)"`
+	Version      string               `json:"version" jsonschema:"title=Version,description=Distribution version"`
+	Packages     []Package            `json:"packages" jsonschema:"title=Packages,description=List of installed system packages"`
+	Digest       cryptoutil.DigestSet `json:"digest" jsonschema:"title=Digest,description=Cryptographic digest of the package list"`
 	backend      Backend
 }
 
 type Package struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
+	Name    string `json:"name" jsonschema:"title=Name,description=Package name"`
+	Version string `json:"version" jsonschema:"title=Version,description=Package version"`
 }
 
 type Backend interface {
@@ -182,4 +182,16 @@ func (a *Attestor) Schema() *jsonschema.Schema {
 // Type implements attestation.Attestor.
 func (a *Attestor) Type() string {
 	return Type
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Captures installed system packages from the operating system package manager",
+		Usage: []string{
+			"Track system-level dependencies",
+			"Ensure consistent build environments",
+			"Audit system package versions for security",
+		},
+		Example: "witness run -s setup -k key.pem -a system-packages -- apt-get update",
+	}
 }

@@ -67,18 +67,18 @@ func (e ErrNotGCPIIT) Error() string {
 }
 
 type Attestor struct {
-	JWT                       *jwt.Attestor `json:"jwt"`
-	ProjectID                 string        `json:"project_id"`
-	ProjectNumber             string        `json:"project_number"`
-	InstanceZone              string        `json:"zone"`
-	InstanceID                string        `json:"instance_id"`
-	InstanceHostname          string        `json:"instance_hostname"`
-	InstanceCreationTimestamp string        `json:"instance_creation_timestamp"`
-	InstanceConfidentiality   string        `json:"instance_confidentiality"`
-	LicenceID                 []string      `json:"licence_id"`
-	ClusterName               string        `json:"cluster_name"`
-	ClusterUID                string        `json:"cluster_uid"`
-	ClusterLocation           string        `json:"cluster_location"`
+	JWT                       *jwt.Attestor `json:"jwt" jsonschema:"title=JWT,description=The underlying JWT attestation containing the GCP instance identity token"`
+	ProjectID                 string        `json:"project_id" jsonschema:"title=Project ID,description=GCP project ID,example=my-project-123"`
+	ProjectNumber             string        `json:"project_number" jsonschema:"title=Project Number,description=GCP project number,example=123456789"`
+	InstanceZone              string        `json:"zone" jsonschema:"title=Zone,description=GCP zone where the instance is running,example=us-central1-a"`
+	InstanceID                string        `json:"instance_id" jsonschema:"title=Instance ID,description=Unique ID of the GCP instance,example=1234567890123456789"`
+	InstanceHostname          string        `json:"instance_hostname" jsonschema:"title=Instance Hostname,description=Hostname of the GCP instance"`
+	InstanceCreationTimestamp string        `json:"instance_creation_timestamp" jsonschema:"title=Creation Timestamp,description=Timestamp when the instance was created"`
+	InstanceConfidentiality   string        `json:"instance_confidentiality" jsonschema:"title=Confidentiality,description=Instance confidentiality settings"`
+	LicenceID                 []string      `json:"licence_id" jsonschema:"title=License IDs,description=List of license IDs associated with the instance"`
+	ClusterName               string        `json:"cluster_name" jsonschema:"title=Cluster Name,description=GKE cluster name (if running in GKE)"`
+	ClusterUID                string        `json:"cluster_uid" jsonschema:"title=Cluster UID,description=GKE cluster unique identifier"`
+	ClusterLocation           string        `json:"cluster_location" jsonschema:"title=Cluster Location,description=GKE cluster location"`
 
 	isWorkloadIdentity bool
 }
@@ -256,6 +256,18 @@ func identityTokenURL(host, serviceAccount string) string {
 		RawQuery: query.Encode(),
 	}
 	return url.String()
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Captures Google Cloud Platform (GCP) instance identity information",
+		Usage: []string{
+			"Automatically captures GCP instance metadata when running on GCP compute instances",
+			"Provides instance identity verification through JWT tokens from the metadata service",
+			"Supports both standard GCP instances and GKE workload identity configurations",
+		},
+		Example: "witness run -s deploy -k key.pem -a gcp-iit -- gcloud app deploy",
+	}
 }
 
 func parseJWTProjectInfo(jwt *jwt.Attestor) (string, string, error) {
