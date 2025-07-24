@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: release
-on: 
+on:
   push:
     tags:
       - v*
@@ -22,8 +22,6 @@ on:
   pull_request:
     branches:
       - main
-    paths-ignore:
-      - "**.md"
 
 permissions:
   contents: read
@@ -37,7 +35,7 @@ jobs:
     with:
       pull_request: ${{ github.event_name == 'pull_request' }}
       step: fmt
-      attestations: "git github environment"
+      attestations: 'git github environment'
       command: go fmt ./...
 
   sast:
@@ -49,7 +47,7 @@ jobs:
     with:
       pull_request: ${{ github.event_name == 'pull_request' }}
       step: sast
-      attestations: "git github environment"
+      attestations: 'git github environment'
       command: go vet ./...
 
   unit-test:
@@ -61,19 +59,7 @@ jobs:
     with:
       pull_request: ${{ github.event_name == 'pull_request' }}
       step: unit-test
-      attestations: "git github environment"
+      attestations: 'git github environment'
       command: go test -v -coverprofile=profile.cov -covermode=atomic ./...
       artifact-upload-name: profile.cov
       artifact-upload-path: profile.cov
-
-  release:
-    needs: [fmt, sast, unit-test]
-    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # This is required for the action to work correctly
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Release
-        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
