@@ -49,9 +49,9 @@ func init() {
 }
 
 type Attestor struct {
-	sarif.Report    `json:"report"`
-	ReportFile      string               `json:"reportFileName"`
-	ReportDigestSet cryptoutil.DigestSet `json:"reportDigestSet"`
+	sarif.Report    `json:"report" jsonschema:"title=SARIF Report,description=Static Analysis Results Interchange Format report"`
+	ReportFile      string               `json:"reportFileName" jsonschema:"title=Report File Name,description=Path to the SARIF report file"`
+	ReportDigestSet cryptoutil.DigestSet `json:"reportDigestSet" jsonschema:"title=Report Digest Set,description=Cryptographic digests of the SARIF report file"`
 }
 
 func New() *Attestor {
@@ -81,6 +81,14 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	return nil
+}
+
+func (a *Attestor) Documentation() string {
+	return `
+Processes Static Analysis Results Interchange Format (SARIF) reports.
+Extracts and verifies static analysis results from security scanning tools.
+Supports standard SARIF JSON format used by various code analysis tools.
+`
 }
 
 func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {

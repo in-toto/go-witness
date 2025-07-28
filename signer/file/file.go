@@ -73,9 +73,9 @@ func init() {
 }
 
 type FileSignerProvider struct {
-	KeyPath           string
-	CertPath          string
-	IntermediatePaths []string
+	KeyPath           string   `json:"keyPath" jsonschema:"title=Key Path,description=Path to the private key file in PEM format,example=/path/to/private.key"`
+	CertPath          string   `json:"certPath,omitempty" jsonschema:"title=Certificate Path,description=Path to the certificate file for the private key,example=/path/to/cert.pem"`
+	IntermediatePaths []string `json:"intermediatePaths,omitempty" jsonschema:"title=Intermediate Paths,description=Paths to intermediate certificate files in the trust chain"`
 }
 
 type Option func(fsp *FileSignerProvider)
