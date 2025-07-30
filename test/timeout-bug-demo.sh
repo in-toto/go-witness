@@ -1,10 +1,10 @@
 #!/bin/bash
-# Script to demonstrate the 2-minute timeout bug in witness
+# Script to demonstrate the 2-minute timeout bug in witness library
 
 set -e
 
-echo "=== Witness Timeout Bug Demonstration ==="
-echo "This script shows how witness times out after 2 minutes with long-running commands"
+echo "=== Witness Library Timeout Bug Demonstration ==="
+echo "This script shows how the Fulcio signer times out after 2 minutes"
 echo
 
 # Colors for output
@@ -12,92 +12,61 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
-# Check if we're in GitHub Actions
-if [ "$GITHUB_ACTIONS" = "true" ]; then
-    echo "Running in GitHub Actions - OIDC token should be available"
-    echo "ACTIONS_ID_TOKEN_REQUEST_URL is set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
-    echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN is set: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+yes}"
-else
-    echo "Not running in GitHub Actions - setting up test environment"
-fi
+# Create a test program that uses the library
+cat > /tmp/timeout_demo.go << 'EOF'
+package main
 
-# Build witness if not already built
-if [ ! -f "./bin/witness" ]; then
-    echo "Building witness..."
-    make build
-fi
-
-echo
-echo "Testing with a command that takes 150 seconds (2.5 minutes)..."
-echo "If the bug exists, this will timeout after exactly 120 seconds"
-echo
-
-# Record start time
-START_TIME=$(date +%s)
-
-# Run witness with a long command
-set +e  # Don't exit on error
-timeout 180 ./bin/witness run \
-    -s timeout-test-$(date +%s) \
-    --enable-archivist=false \
-    --signer-fulcio-url=https://fulcio.sigstore.dev \
-    --signer-fulcio-oidc-issuer=https://oauth2.sigstore.dev/auth \
-    --signer-fulcio-oidc-client-id=sigstore \
-    --attestor-product-exclude-glob="*" \
-    -o /tmp/timeout-test-attestation.json \
-    -- bash -c '
-        echo "Command started at: $(date)"
-        echo "This command will run for 150 seconds..."
-        
-        # Progress indicator
-        for i in $(seq 1 15); do
-            echo "Progress: $i/15 ($(($i * 10)) seconds elapsed)"
-            sleep 10
-        done
-        
-        echo "Command completed at: $(date)"
-    '
-
-EXIT_CODE=$?
-set -e
-
-# Record end time
-END_TIME=$(date +%s)
-ELAPSED=$((END_TIME - START_TIME))
-
-echo
-echo "========================================="
-echo "Exit code: $EXIT_CODE"
-echo "Elapsed time: $ELAPSED seconds"
-echo "========================================="
-echo
-
-# Analyze the result
-if [ $EXIT_CODE -eq 124 ]; then
-    echo -e "${RED}✗ Command was killed by timeout${NC}"
-    if [ $ELAPSED -ge 118 ] && [ $ELAPSED -le 125 ]; then
-        echo -e "${RED}✗ TIMEOUT BUG CONFIRMED!${NC}"
-        echo "The command timed out after ~2 minutes, confirming the OAuth timeout bug"
-        exit 1
-    fi
-elif [ $EXIT_CODE -eq 0 ]; then
-    echo -e "${GREEN}✓ Command completed successfully${NC}"
-    if [ $ELAPSED -ge 140 ]; then
-        echo -e "${GREEN}✓ No timeout bug - command ran for full duration${NC}"
-    fi
+import (
+    "context"
+    "fmt"
+    "os"
+    "time"
     
-    # Check if attestation was created
-    if [ -f /tmp/timeout-test-attestation.json ]; then
-        echo -e "${GREEN}✓ Attestation created successfully${NC}"
-    fi
-else
-    echo -e "${RED}✗ Command failed with exit code $EXIT_CODE${NC}"
-    echo "This might indicate a different issue"
-fi
+    "github.com/in-toto/go-witness/signer/fulcio"
+)
 
-# Show any error logs
-if [ $EXIT_CODE -ne 0 ] && [ -f /tmp/witness-error.log ]; then
-    echo
-    echo "Error details:"
-    cat /tmp/witness-error.log
-fi
+func main() {
+    fmt.Println("Creating Fulcio signer in non-interactive mode...")
+    fmt.Println("This will timeout after exactly 2 minutes if the bug exists")
+    
+    // Ensure we're in non-interactive mode
+    if oldStdin := os.Stdin; oldStdin != nil {
+        os.Stdin = nil
+        defer func() { os.Stdin = oldStdin }()
+    }
+    
+    fsp := fulcio.New(
+        fulcio.WithFulcioURL("https://fulcio.sigstore.dev"),
+        fulcio.WithOidcIssuer("https://oauth2.sigstore.dev/auth"),
+        fulcio.WithOidcClientID("sigstore"),
+    )
+    
+    ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+    defer cancel()
+    
+    start := time.Now()
+    _, err := fsp.Signer(ctx)
+    elapsed := time.Since(start)
+    
+    fmt.Printf("\nElapsed time: %v\n", elapsed)
+    
+    if elapsed >= 119*time.Second && elapsed <= 121*time.Second {
+        fmt.Printf("\n%s✗ TIMEOUT BUG CONFIRMED!%s\n", "\033[0;31m", "\033[0m")
+        fmt.Println("The OAuth flow timed out after exactly 2 minutes")
+        os.Exit(1)
+    }
+    
+    if err != nil {
+        fmt.Printf("Error (expected): %v\n", err)
+    }
+}
+EOF
+
+echo "Running demonstration..."
+echo
+
+# Run the demo
+cd /tmp
+go mod init timeout-demo 2>/dev/null || true
+go get github.com/in-toto/go-witness@main
+go run timeout_demo.go
