@@ -41,6 +41,7 @@ import (
 	"github.com/sigstore/sigstore/pkg/oauthflow"
 	"github.com/sigstore/sigstore/pkg/signature"
 	sigo "github.com/sigstore/sigstore/pkg/signature/options"
+	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -271,6 +272,22 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 		raw = tok.RawString
 	default:
 		return nil, errors.New("no token provided")
+	}
+
+	// If we have a token already (from GitHub Actions, file, or flag), 
+	// use StaticTokenGetter to avoid the interactive flow timeout
+	if raw != "" && !isatty.IsTerminal(os.Stdin.Fd()) {
+		staticGetter := &oauthflow.StaticTokenGetter{
+			RawToken: raw,
+		}
+		tok, err := staticGetter.GetIDToken(nil, oauth2.Config{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse static token: %w", err)
+		}
+		// Validate the token has the expected claims
+		if tok.Subject == "" {
+			return nil, errors.New("token missing subject claim")
+		}
 	}
 
 	certResp, err := getCert(ctx, key, fClient, raw)

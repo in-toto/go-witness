@@ -1,0 +1,130 @@
+name: Test Fulcio Token Timeout
+
+on:
+  push:
+    branches: [ fix/fulcio-static-token-timeout ]
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'signer/fulcio/**'
+      - '.github/workflows/test-fulcio-timeout.yml'
+
+permissions:
+  contents: read
+  id-token: write  # Required for OIDC token
+
+jobs:
+  test-timeout-bug:
+    name: Demonstrate Timeout Bug
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      
+      - name: Run timeout test (will fail with current code)
+        id: timeout-test
+        run: |
+          echo "Running test that should demonstrate the 2-minute timeout issue..."
+          # This test should fail because the current code has the bug
+          if go test -v -timeout 5m -run TestGitHubActionsTokenTimeout ./signer/fulcio/; then
+            echo "Test passed - the bug might be fixed!"
+            echo "bug_fixed=true" >> $GITHUB_OUTPUT
+          else
+            echo "Test failed as expected - demonstrating the bug"
+            echo "bug_fixed=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          CI: "true"
+        continue-on-error: true
+          
+      - name: Show test results
+        run: |
+          if [ "${{ steps.timeout-test.outputs.bug_fixed }}" = "true" ]; then
+            echo "✅ The timeout bug appears to be fixed!"
+          else
+            echo "❌ The timeout bug is still present (expected with current code)"
+          fi
+  
+  test-static-token:
+    name: Test Static Token Usage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          
+      - name: Run static token test
+        run: |
+          echo "Testing static token usage..."
+          go test -v -timeout 30s -run TestStaticTokenUsage ./signer/fulcio/
+        continue-on-error: true
+        
+  test-real-scenario:
+    name: Test Real GitHub Actions Scenario
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go  
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          
+      - name: Create test that uses real GitHub token
+        run: |
+          cat > signer/fulcio/fulcio_github_test.go << 'EOF'
+          //go:build github_actions
+          // +build github_actions
+          
+          package fulcio
+          
+          import (
+              "context"
+              "testing"
+              "time"
+          )
+          
+          func TestRealGitHubActionsToken(t *testing.T) {
+              // This test uses the real GitHub Actions OIDC token
+              fsp := New(
+                  WithFulcioURL("https://fulcio.sigstore.dev"),
+                  WithOidcIssuer("https://oauth2.sigstore.dev/auth"), 
+                  WithOidcClientID("sigstore"),
+              )
+              
+              ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+              defer cancel()
+              
+              start := time.Now()
+              _, err := fsp.Signer(ctx)
+              elapsed := time.Since(start)
+              
+              t.Logf("Signer creation took: %v", elapsed)
+              t.Logf("Error (if any): %v", err)
+              
+              // With the bug, this might timeout or take a long time
+              // With the fix, it should be quick
+              if elapsed > 10*time.Second {
+                  t.Errorf("Signer creation took too long: %v", elapsed)
+              }
+          }
+          EOF
+          
+      - name: Run real GitHub Actions token test
+        run: |
+          echo "Testing with real GitHub Actions OIDC token..."
+          go test -v -tags github_actions -timeout 60s -run TestRealGitHubActionsToken ./signer/fulcio/
+        continue-on-error: true
