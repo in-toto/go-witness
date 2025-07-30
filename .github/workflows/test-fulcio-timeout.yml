@@ -14,11 +14,13 @@ permissions:
   id-token: write  # Required for OIDC token
 
 jobs:
-  test-timeout-bug:
-    name: Demonstrate Timeout Bug
+  test-timeout-bug-on-main:
+    name: Demonstrate Timeout Bug on Main Branch
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main  # Check out main branch to show the bug
       
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -26,17 +28,21 @@ jobs:
           go-version-file: go.mod
           cache: true
       
-      - name: Run timeout test (will fail with current code)
+      - name: Add test to main branch
+        run: |
+          # Copy our test file to demonstrate the bug
+          curl -s https://raw.githubusercontent.com/in-toto/go-witness/fix/fulcio-static-token-timeout/signer/fulcio/fulcio_timeout_test.go > signer/fulcio/fulcio_timeout_test.go
+      
+      - name: Run timeout test on main (should demonstrate bug)
         id: timeout-test
         run: |
-          echo "Running test that should demonstrate the 2-minute timeout issue..."
-          # This test should fail because the current code has the bug
+          echo "Running test on main branch - should demonstrate the timeout issue..."
           if go test -v -timeout 5m -run TestGitHubActionsTokenTimeout ./signer/fulcio/; then
-            echo "Test passed - the bug might be fixed!"
-            echo "bug_fixed=true" >> $GITHUB_OUTPUT
+            echo "Test passed unexpectedly on main branch"
+            echo "bug_exists=false" >> $GITHUB_OUTPUT
           else
-            echo "Test failed as expected - demonstrating the bug"
-            echo "bug_fixed=false" >> $GITHUB_OUTPUT
+            echo "Test failed as expected - demonstrating the bug exists in main"
+            echo "bug_exists=true" >> $GITHUB_OUTPUT
           fi
         env:
           CI: "true"
@@ -44,11 +50,31 @@ jobs:
           
       - name: Show test results
         run: |
-          if [ "${{ steps.timeout-test.outputs.bug_fixed }}" = "true" ]; then
-            echo "✅ The timeout bug appears to be fixed!"
+          if [ "${{ steps.timeout-test.outputs.bug_exists }}" = "true" ]; then
+            echo "✅ Successfully demonstrated the timeout bug exists in main branch"
           else
-            echo "❌ The timeout bug is still present (expected with current code)"
+            echo "❌ Could not demonstrate the bug - test passed on main branch"
           fi
+  
+  test-timeout-bug-with-fix:
+    name: Test Fix Works
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4  # This checks out our PR branch with the fix
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      
+      - name: Run timeout test with fix
+        run: |
+          echo "Running test with our fix - should pass quickly..."
+          go test -v -timeout 5m -run TestGitHubActionsTokenTimeout ./signer/fulcio/
+          echo "✅ Test passed with the fix!"
+        env:
+          CI: "true"
   
   test-static-token:
     name: Test Static Token Usage
