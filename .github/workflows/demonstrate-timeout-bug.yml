@@ -1,0 +1,152 @@
+name: Demonstrate 2-Minute Timeout Bug
+
+on:
+  push:
+    branches: [ fix/fulcio-static-token-timeout ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  demonstrate-bug-on-main:
+    name: Show 2-Minute Timeout on Main Branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      
+      - name: Add timeout demonstration test
+        run: |
+          cat > signer/fulcio/timeout_demo_test.go << 'EOF'
+          //go:build timeout_demo
+          // +build timeout_demo
+          
+          package fulcio
+          
+          import (
+              "context"
+              "os"
+              "testing"
+              "time"
+          )
+          
+          func TestTimeoutDemo(t *testing.T) {
+              // Ensure we're in non-interactive mode
+              oldStdin := os.Stdin
+              os.Stdin = nil
+              defer func() { os.Stdin = oldStdin }()
+              
+              // Don't provide any tokens
+              os.Unsetenv("GITHUB_ACTIONS")
+              
+              fsp := New(
+                  WithFulcioURL("https://fulcio.sigstore.dev"),
+                  WithOidcIssuer("https://oauth2.sigstore.dev/auth"),
+                  WithOidcClientID("sigstore"),
+              )
+              
+              ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+              defer cancel()
+              
+              start := time.Now()
+              _, err := fsp.Signer(ctx)
+              elapsed := time.Since(start)
+              
+              t.Logf("Elapsed: %v, Error: %v", elapsed, err)
+              
+              if elapsed >= 119*time.Second && elapsed <= 121*time.Second {
+                  t.Fatalf("HIT 2-MINUTE TIMEOUT BUG: %v", elapsed)
+              }
+          }
+          EOF
+      
+      - name: Run test to demonstrate timeout
+        run: |
+          echo "Starting test at $(date)"
+          echo "This should timeout after exactly 2 minutes if the bug exists..."
+          
+          # Run with timeout larger than 2 minutes to catch the OAuth timeout
+          if timeout 180 go test -v -tags timeout_demo -timeout 200s ./signer/fulcio/ -run TestTimeoutDemo; then
+            echo "Test passed - no timeout detected"
+          else
+            EXIT_CODE=$?
+            echo "Test failed with exit code: $EXIT_CODE"
+            if [ $EXIT_CODE -eq 124 ]; then
+              echo "Command killed by timeout command (3 minutes)"
+            else
+              echo "Test failed - possibly due to 2-minute timeout"
+            fi
+          fi
+          
+          echo "Ended at $(date)"
+        continue-on-error: true
+
+  demonstrate-fix:
+    name: Show Fix Works
+    runs-on: ubuntu-latest  
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          
+      - name: Run same test with fix
+        run: |
+          # Copy test file
+          cat > signer/fulcio/timeout_demo_test.go << 'EOF'
+          //go:build timeout_demo
+          // +build timeout_demo
+          
+          package fulcio
+          
+          import (
+              "context"
+              "os"
+              "testing"
+              "time"
+          )
+          
+          func TestTimeoutDemo(t *testing.T) {
+              // Ensure we're in non-interactive mode
+              oldStdin := os.Stdin
+              os.Stdin = nil
+              defer func() { os.Stdin = oldStdin }()
+              
+              // Don't provide any tokens
+              os.Unsetenv("GITHUB_ACTIONS")
+              
+              fsp := New(
+                  WithFulcioURL("https://fulcio.sigstore.dev"),
+                  WithOidcIssuer("https://oauth2.sigstore.dev/auth"),
+                  WithOidcClientID("sigstore"),
+              )
+              
+              ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+              defer cancel()
+              
+              start := time.Now()
+              _, err := fsp.Signer(ctx)
+              elapsed := time.Since(start)
+              
+              t.Logf("Elapsed: %v, Error: %v", elapsed, err)
+              
+              // With the fix, this should fail quickly with "no token provided"
+              if elapsed > 10*time.Second {
+                  t.Errorf("Took too long: %v", elapsed)
+              }
+          }
+          EOF
+          
+          echo "Running test with fix - should fail quickly with 'no token provided'"
+          go test -v -tags timeout_demo -timeout 30s ./signer/fulcio/ -run TestTimeoutDemo || true
