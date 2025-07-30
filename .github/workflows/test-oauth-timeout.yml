@@ -1,0 +1,116 @@
+name: Test OAuth 2-Minute Timeout
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to test on'
+        required: true
+        default: 'main'
+        type: choice
+        options:
+          - main
+          - fix/fulcio-static-token-timeout
+
+permissions:
+  contents: read
+
+jobs:
+  test-oauth-timeout:
+    name: Test OAuth Timeout
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          
+      - name: Create timeout test
+        run: |
+          # Create a simple test that will trigger the OAuth timeout
+          cat > timeout_test.go << 'EOF'
+          package main
+          
+          import (
+              "context"
+              "fmt"
+              "os"
+              "time"
+              
+              "github.com/sigstore/sigstore/pkg/oauthflow"
+              "golang.org/x/oauth2"
+          )
+          
+          func main() {
+              fmt.Println("Testing OAuth timeout...")
+              fmt.Println("This will open a browser and wait 2 minutes for callback")
+              
+              // Redirect browser opener to /dev/null to avoid actual browser
+              os.Setenv("BROWSER", "/bin/true")
+              
+              getter := &oauthflow.InteractiveIDTokenGetter{
+                  Input:  os.Stdin,
+                  Output: os.Stdout,
+              }
+              
+              cfg := oauth2.Config{
+                  ClientID: "test",
+                  Endpoint: oauth2.Endpoint{
+                      AuthURL:  "https://example.com/auth",
+                      TokenURL: "https://example.com/token",
+                  },
+                  RedirectURL: "http://localhost:0/callback",
+              }
+              
+              start := time.Now()
+              ctx := context.Background()
+              
+              // This should timeout after 120 seconds
+              _, err := getter.GetIDToken(nil, cfg)
+              
+              elapsed := time.Since(start)
+              fmt.Printf("Elapsed: %v\n", elapsed)
+              fmt.Printf("Error: %v\n", err)
+              
+              if elapsed >= 119*time.Second && elapsed <= 121*time.Second {
+                  fmt.Println("✅ CONFIRMED: Hit 2-minute timeout!")
+                  os.Exit(0)
+              } else {
+                  fmt.Printf("❌ Did not hit expected timeout (elapsed: %v)\n", elapsed)
+                  os.Exit(1)
+              }
+          }
+          EOF
+          
+      - name: Run timeout test
+        env:
+          BROWSER: /bin/true  # Prevent actual browser from opening
+        run: |
+          echo "Starting test at: $(date)"
+          echo "This will take 2 minutes to hit the timeout..."
+          
+          # First ensure dependencies are available
+          go mod download github.com/sigstore/sigstore
+          go mod download github.com/coreos/go-oidc/v3
+          go mod download golang.org/x/oauth2
+          
+          # Run the test
+          timeout 150 go run timeout_test.go || EXIT_CODE=$?
+          
+          echo "Ended at: $(date)"
+          echo "Exit code: ${EXIT_CODE:-0}"
+          
+          if [ "${EXIT_CODE:-0}" = "0" ]; then
+              echo "✅ Successfully demonstrated 2-minute timeout"
+          elif [ "${EXIT_CODE:-0}" = "124" ]; then
+              echo "❌ Hit our timeout command limit (should not happen)"
+          else
+              echo "❌ Test failed with exit code: ${EXIT_CODE}"
+          fi
