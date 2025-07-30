@@ -1,0 +1,205 @@
+name: Test Witness 2-Minute Timeout Bug
+
+on:
+  push:
+    branches: [ fix/fulcio-static-token-timeout ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  id-token: write  # Required for Fulcio signing
+
+jobs:
+  test-timeout-on-main:
+    name: Test Timeout Bug on Main Branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          
+      - name: Build witness from main
+        run: |
+          echo "Building witness from main branch..."
+          make build
+          ./bin/witness version
+          
+      - name: Test with 150-second command (will timeout at 120s)
+        id: long-command
+        run: |
+          echo "Running command that takes 150 seconds..."
+          echo "This should timeout after exactly 2 minutes if the bug exists"
+          
+          start_time=$(date +%s)
+          
+          # Run witness with a long command - this should timeout at 2 minutes
+          timeout 180 ./bin/witness run \
+            -s test-timeout \
+            --enable-archivist=false \
+            -o /tmp/attestation.json \
+            -- bash -c "
+              echo 'Task started at: $(date)'
+              echo 'Sleeping for 150 seconds...'
+              for i in {1..15}; do
+                echo \"Progress: \$i/15 (10 seconds elapsed)\"
+                sleep 10
+              done
+              echo 'Task completed at: $(date)'
+            " || EXIT_CODE=$?
+          
+          end_time=$(date +%s)
+          elapsed=$((end_time - start_time))
+          
+          echo "Command finished with exit code: ${EXIT_CODE:-0}"
+          echo "Elapsed time: $elapsed seconds"
+          
+          # Check if it timed out around 2 minutes
+          if [ "$elapsed" -ge 118 ] && [ "$elapsed" -le 125 ]; then
+            echo "✅ Bug confirmed! Command timed out after ~2 minutes ($elapsed seconds)"
+            echo "bug_confirmed=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Unexpected result - elapsed time: $elapsed seconds"
+            echo "bug_confirmed=false" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+        
+      - name: Show timeout evidence
+        if: always()
+        run: |
+          if [ "${{ steps.long-command.outputs.bug_confirmed }}" = "true" ]; then
+            echo "### ✅ Successfully demonstrated the 2-minute timeout bug in main branch"
+          else
+            echo "### ❌ Could not demonstrate the timeout bug"
+          fi
+
+  test-fix-works:
+    name: Test Fix Resolves Timeout
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout PR branch with fix
+        uses: actions/checkout@v4
+          
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          
+      - name: Build witness with fix
+        run: |
+          echo "Building witness with the fix..."
+          make build
+          ./bin/witness version
+          
+      - name: Test with 150-second command (should complete)
+        run: |
+          echo "Running command that takes 150 seconds..."
+          echo "With the fix, this should complete successfully"
+          
+          start_time=$(date +%s)
+          
+          # Run witness with a long command - should complete successfully
+          ./bin/witness run \
+            -s test-no-timeout \
+            --enable-archivist=false \
+            -o /tmp/attestation-fixed.json \
+            -- bash -c "
+              echo 'Task started at: $(date)'
+              echo 'Sleeping for 150 seconds...'
+              for i in {1..15}; do
+                echo \"Progress: \$i/15 (10 seconds elapsed)\"
+                sleep 10
+              done
+              echo 'Task completed at: $(date)'
+            "
+          
+          end_time=$(date +%s)
+          elapsed=$((end_time - start_time))
+          
+          echo "✅ Success! Command completed in $elapsed seconds"
+          echo "The fix works - no 2-minute timeout!"
+          
+          # Verify attestation was created
+          if [ -f /tmp/attestation-fixed.json ]; then
+            echo "✅ Attestation file created successfully"
+            jq '.subject' /tmp/attestation-fixed.json || true
+          fi
+
+  test-witness-run-action-scenario:
+    name: Test witness-run-action Scenario
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          
+      - name: Build witness
+        run: make build
+        
+      - name: Simulate witness-run-action with long test suite
+        id: simulate-action
+        run: |
+          echo "Simulating a test suite that takes more than 2 minutes..."
+          
+          # Create a mock test script
+          cat > /tmp/long-test-suite.sh << 'EOF'
+          #!/bin/bash
+          echo "Starting test suite..."
+          echo "Running unit tests..."
+          sleep 30
+          echo "✓ Unit tests passed"
+          
+          echo "Running integration tests..."
+          sleep 60
+          echo "✓ Integration tests passed"
+          
+          echo "Running end-to-end tests..."
+          sleep 40
+          echo "✓ E2E tests passed"
+          
+          echo "All tests completed successfully!"
+          EOF
+          
+          chmod +x /tmp/long-test-suite.sh
+          
+          # This simulates what witness-run-action does
+          timeout 180 ./bin/witness run \
+            -s test-suite \
+            --enable-archivist=false \
+            --signer-fulcio-url=https://fulcio.sigstore.dev \
+            --signer-fulcio-oidc-issuer=https://oauth2.sigstore.dev/auth \
+            --signer-fulcio-oidc-client-id=sigstore \
+            -o /tmp/test-attestation.json \
+            -- /tmp/long-test-suite.sh || EXIT_CODE=$?
+            
+          if [ "${EXIT_CODE:-0}" = "124" ]; then
+            echo "❌ Test suite was killed by timeout - this is the bug!"
+            echo "This demonstrates what happens in real CI pipelines"
+          else
+            echo "Exit code: ${EXIT_CODE:-0}"
+          fi
+        continue-on-error: true
