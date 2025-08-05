@@ -15,6 +15,7 @@
 package aws_iid
 
 import (
+	"context"
 	"crypto"
 	"crypto/sha256"
 	"encoding/hex"
@@ -22,8 +23,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/stretchr/testify/require"
@@ -55,7 +55,8 @@ type testresp struct {
 func GetTestResponses() []testresp {
 	return []testresp{
 		{"/latest/dynamic/instance-identity/document", iid},
-		{"/latest/dynamic/instance-identity/signature", "test"},
+		{"/latest/dynamic/instance-identity/signature", ""},
+		{"/latest/api/token", "testtoken"},
 	}
 }
 
@@ -101,15 +102,13 @@ func TestAttestor_Attest(t *testing.T) {
 	defer server.Close()
 
 	endpoint := server.URL + "/latest"
-	conf := aws.NewConfig().WithEndpoint(endpoint)
-	sess, err := session.NewSession()
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithEC2IMDSEndpoint(endpoint))
 	if err != nil {
-		t.Error(err)
+		t.Fatalf("failed to load AWS config: %v", err)
 	}
 
 	a := &Attestor{
-		session: *sess,
-		conf:    conf,
+		cfg: cfg,
 	}
 
 	ctx, err := attestation.NewContext("test", []attestation.Attestor{a})
@@ -123,15 +122,13 @@ func TestAttestor_getIID(t *testing.T) {
 	defer server.Close()
 
 	endpoint := server.URL + "/latest"
-	conf := aws.NewConfig().WithEndpoint(endpoint)
-	sess, err := session.NewSession()
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithEC2IMDSEndpoint(endpoint))
 	if err != nil {
-		t.Error(err)
+		t.Fatalf("failed to load AWS config: %v", err)
 	}
 
 	a := &Attestor{
-		session: *sess,
-		conf:    conf,
+		cfg: cfg,
 	}
 
 	err = a.getIID()
@@ -144,13 +141,13 @@ func TestAttestor_Subjects(t *testing.T) {
 	defer server.Close()
 
 	endpoint := server.URL + "/latest"
-	conf := aws.NewConfig().WithEndpoint(endpoint)
-	sess, err := session.NewSession()
-	require.NoError(t, err)
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithEC2IMDSEndpoint(endpoint))
+	if err != nil {
+		t.Fatalf("failed to load AWS config: %v", err)
+	}
 
 	a := &Attestor{
-		session: *sess,
-		conf:    conf,
+		cfg: cfg,
 	}
 
 	ctx, err := attestation.NewContext("test", []attestation.Attestor{a})
