@@ -46,9 +46,9 @@ func init() {
 }
 
 type Attestor struct {
-	VEXDocument     vex.VEX              `json:"vexDocument"`
-	ReportFile      string               `json:"reportFileName,omitempty"`
-	ReportDigestSet cryptoutil.DigestSet `json:"reportDigestSet,omitempty"`
+	VEXDocument     vex.VEX              `json:"vexDocument" jsonschema:"title=VEX Document,description=Vulnerability Exploitability eXchange document containing vulnerability assessments"`
+	ReportFile      string               `json:"reportFileName,omitempty" jsonschema:"title=Report File,description=Path to the VEX report file"`
+	ReportDigestSet cryptoutil.DigestSet `json:"reportDigestSet,omitempty" jsonschema:"title=Report Digest Set,description=Cryptographic digests of the VEX report file"`
 }
 
 func New() *Attestor {
@@ -119,4 +119,16 @@ func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 		return nil
 	}
 	return fmt.Errorf("no VEX file found")
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Processes Vulnerability Exploitability eXchange (VEX) documents to capture vulnerability assessment data",
+		Usage: []string{
+			"Include vulnerability assessments in attestations",
+			"Track vulnerability status and mitigations",
+			"Comply with VEX document standards",
+		},
+		Example: "witness run -s assess -k key.pem -a vex -- vexctl create --product pkg:oci/myimage@sha256:abc...",
+	}
 }
