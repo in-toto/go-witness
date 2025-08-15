@@ -250,3 +250,16 @@ func init() {
 		),
 	)
 }
+
+// Documentation returns documentation for the secretscan attestor
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Scans products and attestations for secrets and sensitive information using Gitleaks",
+		Usage: []string{
+			"Detect accidental secret exposure in build artifacts",
+			"Enforce security policies by failing builds with secrets",
+			"Scan for encoded or obfuscated sensitive data",
+		},
+		Example: "witness run -s scan -k key.pem -a secretscan -- go test ./...",
+	}
+}

@@ -84,17 +84,17 @@ func (e ErrNotGitHub) Error() string {
 
 // Attestor is a struct that holds the necessary information for github attestation.
 type Attestor struct {
-	JWT          *jwt.Attestor `json:"jwt,omitempty"`
-	CIConfigPath string        `json:"ciconfigpath"`
-	PipelineID   string        `json:"pipelineid"`
-	PipelineName string        `json:"pipelinename"`
-	PipelineUrl  string        `json:"pipelineurl"`
-	ProjectUrl   string        `json:"projecturl"`
-	RunnerID     string        `json:"runnerid"`
-	CIHost       string        `json:"cihost"`
-	CIServerUrl  string        `json:"ciserverurl"`
-	RunnerArch   string        `json:"runnerarch"`
-	RunnerOS     string        `json:"runneros"`
+	JWT          *jwt.Attestor `json:"jwt,omitempty" jsonschema:"title=JWT,description=The underlying JWT attestation containing the GitHub OIDC token"`
+	CIConfigPath string        `json:"ciconfigpath" jsonschema:"title=CI Config Path,description=Path to the GitHub Actions workflow file"`
+	PipelineID   string        `json:"pipelineid" jsonschema:"title=Pipeline ID,description=GitHub Actions run ID,example=1234567890"`
+	PipelineName string        `json:"pipelinename" jsonschema:"title=Pipeline Name,description=Name of the GitHub workflow"`
+	PipelineUrl  string        `json:"pipelineurl" jsonschema:"title=Pipeline URL,description=URL to the GitHub Actions run"`
+	ProjectUrl   string        `json:"projecturl" jsonschema:"title=Project URL,description=URL to the GitHub repository"`
+	RunnerID     string        `json:"runnerid" jsonschema:"title=Runner ID,description=Name of the GitHub Actions runner"`
+	CIHost       string        `json:"cihost" jsonschema:"title=CI Host,description=GitHub server hostname"`
+	CIServerUrl  string        `json:"ciserverurl" jsonschema:"title=CI Server URL,description=GitHub server URL,example=https://github.com"`
+	RunnerArch   string        `json:"runnerarch" jsonschema:"title=Runner Architecture,description=Architecture of the runner,example=X64"`
+	RunnerOS     string        `json:"runneros" jsonschema:"title=Runner OS,description=Operating system of the runner,example=Linux"`
 
 	jwksURL  string
 	tokenURL string
@@ -247,6 +247,18 @@ func fetchToken(tokenURL string, bearer string, audience string) (string, error)
 type GithubTokenResponse struct {
 	Count int    `json:"count"`
 	Value string `json:"value"`
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Captures GitHub Actions workflow execution context",
+		Usage: []string{
+			"Automatically captures GitHub Actions context when GITHUB_ACTIONS=true",
+			"Requires GitHub OIDC token endpoint to be available (GitHub Actions only)",
+			"Provides cryptographic proof of workflow execution through JWT verification",
+		},
+		Example: "witness run -s build -k key.pem -a github -- npm test",
+	}
 }
 
 // readResponseBody reads the response body and returns it as a byte slice.
