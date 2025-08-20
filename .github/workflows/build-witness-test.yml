@@ -1,0 +1,29 @@
+name: Build Witness CLI Test
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  build-witness:
+    name: Build Witness CLI with local code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Build Witness CLI with local code
+        run: |
+          # In CI we'll use the checked out copy of go-witness
+          make build-witness GO_WITNESS_PATH=$GITHUB_WORKSPACE
+          
+          # List available attestors
+          echo "Available attestors:"
+          /tmp/witness-build-test/witness attestors list
