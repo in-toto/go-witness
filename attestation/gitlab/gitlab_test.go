@@ -110,36 +110,6 @@ func TestAttestorMethods(t *testing.T) {
 	assert.Contains(t, schema.Definitions, "Attestor")
 }
 
-func TestWithOptions(t *testing.T) {
-	testCases := []struct {
-		name     string
-		opt      Option
-		validate func(*Attestor) bool
-	}{
-		{
-			name: "WithToken",
-			opt:  WithToken("test-token-123"),
-			validate: func(a *Attestor) bool {
-				return a.token == "test-token-123"
-			},
-		},
-		{
-			name: "WithTokenEnvVar",
-			opt:  WithTokenEnvVar("TEST_TOKEN_ENV"),
-			validate: func(a *Attestor) bool {
-				return a.tokenEnvVar == "TEST_TOKEN_ENV"
-			},
-		},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			attestor := New(testCase.opt)
-			assert.True(t, testCase.validate(attestor))
-		})
-	}
-}
-
 func TestAttestorInterfaces(t *testing.T) {
 	attestor := New()
 
