@@ -66,38 +66,38 @@ func init() {
 }
 
 type Status struct {
-	Staging  string `json:"staging,omitempty"`
-	Worktree string `json:"worktree,omitempty"`
+	Staging  string `json:"staging,omitempty" jsonschema:"title=Staging Status,description=Status of staged files in git index"`
+	Worktree string `json:"worktree,omitempty" jsonschema:"title=Worktree Status,description=Status of working directory files"`
 }
 
 type Tag struct {
-	Name         string `json:"name"`
-	TaggerName   string `json:"taggername"`
-	TaggerEmail  string `json:"taggeremail"`
-	When         string `json:"when"`
-	PGPSignature string `json:"pgpsignature"`
-	Message      string `json:"message"`
+	Name         string `json:"name" jsonschema:"title=Tag Name,description=Name of the git tag"`
+	TaggerName   string `json:"taggername" jsonschema:"title=Tagger Name,description=Name of person who created the tag"`
+	TaggerEmail  string `json:"taggeremail" jsonschema:"title=Tagger Email,description=Email of person who created the tag"`
+	When         string `json:"when" jsonschema:"title=Tag Date,description=When the tag was created"`
+	PGPSignature string `json:"pgpsignature" jsonschema:"title=PGP Signature,description=PGP signature of the tag if signed"`
+	Message      string `json:"message" jsonschema:"title=Tag Message,description=Tag annotation message"`
 }
 
 type Attestor struct {
-	GitTool        string               `json:"gittool"`
-	GitBinPath     string               `json:"gitbinpath,omitempty"`
-	GitBinHash     cryptoutil.DigestSet `json:"gitbinhash,omitempty"`
-	CommitHash     string               `json:"commithash"`
-	Author         string               `json:"author"`
-	AuthorEmail    string               `json:"authoremail"`
-	CommitterName  string               `json:"committername"`
-	CommitterEmail string               `json:"committeremail"`
-	CommitDate     string               `json:"commitdate"`
-	CommitMessage  string               `json:"commitmessage"`
-	Status         map[string]Status    `json:"status,omitempty"`
-	CommitDigest   cryptoutil.DigestSet `json:"commitdigest,omitempty"`
-	Signature      string               `json:"signature,omitempty"`
-	ParentHashes   []string             `json:"parenthashes,omitempty"`
-	TreeHash       string               `json:"treehash,omitempty"`
-	Refs           []string             `json:"refs,omitempty"`
-	Remotes        []string             `json:"remotes,omitempty"`
-	Tags           []Tag                `json:"tags,omitempty"`
+	GitTool        string               `json:"gittool" jsonschema:"title=Git Tool,description=Git implementation used (go-git or git binary)"`
+	GitBinPath     string               `json:"gitbinpath,omitempty" jsonschema:"title=Git Binary Path,description=Path to git binary if using git binary implementation"`
+	GitBinHash     cryptoutil.DigestSet `json:"gitbinhash,omitempty" jsonschema:"title=Git Binary Hash,description=Hash of git binary if using git binary implementation"`
+	CommitHash     string               `json:"commithash" jsonschema:"title=Commit Hash,description=SHA hash of the current HEAD commit,example=d3adb33f"`
+	Author         string               `json:"author" jsonschema:"title=Author Name,description=Name of the commit author"`
+	AuthorEmail    string               `json:"authoremail" jsonschema:"title=Author Email,description=Email of the commit author,format=email"`
+	CommitterName  string               `json:"committername" jsonschema:"title=Committer Name,description=Name of the person who committed"`
+	CommitterEmail string               `json:"committeremail" jsonschema:"title=Committer Email,description=Email of the person who committed,format=email"`
+	CommitDate     string               `json:"commitdate" jsonschema:"title=Commit Date,description=Timestamp when the commit was created"`
+	CommitMessage  string               `json:"commitmessage" jsonschema:"title=Commit Message,description=Full commit message"`
+	Status         map[string]Status    `json:"status,omitempty" jsonschema:"title=Repository Status,description=Status of files in staging and worktree"`
+	CommitDigest   cryptoutil.DigestSet `json:"commitdigest,omitempty" jsonschema:"title=Commit Digest,description=Digest of the commit object"`
+	Signature      string               `json:"signature,omitempty" jsonschema:"title=Commit Signature,description=GPG signature of the commit if signed"`
+	ParentHashes   []string             `json:"parenthashes,omitempty" jsonschema:"title=Parent Hashes,description=SHA hashes of parent commits"`
+	TreeHash       string               `json:"treehash,omitempty" jsonschema:"title=Tree Hash,description=SHA hash of the git tree object"`
+	Refs           []string             `json:"refs,omitempty" jsonschema:"title=References,description=Git references (branches and tags) pointing to this commit"`
+	Remotes        []string             `json:"remotes,omitempty" jsonschema:"title=Remote URLs,description=URLs of configured git remotes"`
+	Tags           []Tag                `json:"tags,omitempty" jsonschema:"title=Tags,description=Git tags associated with this commit"`
 	RefNameShort   string               `json:"branch,omitempty"`
 }
 
@@ -295,6 +295,19 @@ func GoGitGetStatus(repo *git.Repository) (map[string]Status, error) {
 
 func (a *Attestor) Data() *Attestor {
 	return a
+}
+
+// Documentation implements attestation.Documenter
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Records git repository state including commit info, branches, and working directory status",
+		Usage: []string{
+			"Establish source code provenance for builds",
+			"Detect uncommitted changes that could affect reproducibility",
+			"Link artifacts to specific git commits",
+		},
+		Example: "witness run -s build -k key.pem -a git -- go build ./...",
+	}
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {

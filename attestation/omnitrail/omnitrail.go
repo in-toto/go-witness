@@ -35,7 +35,7 @@ func init() {
 }
 
 type Attestor struct {
-	Envelope *ot.Envelope `json:"Envelope"`
+	Envelope *ot.Envelope `json:"Envelope" jsonschema:"title=Envelope,description=Omnitrail envelope containing artifact trail information"`
 }
 
 func NewOmnitrailAttestor() *Attestor {
@@ -71,4 +71,16 @@ func (o *Attestor) Schema() *jsonschema.Schema {
 // Type implements attestation.Attestor.
 func (o *Attestor) Type() string {
 	return Type
+}
+
+func (o *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Captures Omnitrail artifact provenance information including manifests, mappings, and trail data",
+		Usage: []string{
+			"Track artifact dependencies and relationships",
+			"Generate software bill of materials (SBOM) data",
+			"Create artifact provenance trails",
+		},
+		Example: "witness run -s trace -k key.pem -a omnitrail -- make all",
+	}
 }
