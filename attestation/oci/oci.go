@@ -66,20 +66,20 @@ func init() {
 }
 
 type Attestor struct {
-	TarDigest      cryptoutil.DigestSet   `json:"tardigest"`
-	Manifest       []Manifest             `json:"manifest"`
-	ImageTags      []string               `json:"imagetags"`
-	LayerDiffIDs   []cryptoutil.DigestSet `json:"diffids"`
-	ImageID        cryptoutil.DigestSet   `json:"imageid"`
-	ManifestRaw    []byte                 `json:"manifestraw"`
-	ManifestDigest cryptoutil.DigestSet   `json:"manifestdigest"`
+	TarDigest      cryptoutil.DigestSet   `json:"tardigest" jsonschema:"title=TAR Digest,description=Digest of the OCI image TAR file"`
+	Manifest       []Manifest             `json:"manifest" jsonschema:"title=Manifest,description=OCI image manifest information"`
+	ImageTags      []string               `json:"imagetags" jsonschema:"title=Image Tags,description=Tags associated with the OCI image"`
+	LayerDiffIDs   []cryptoutil.DigestSet `json:"diffids" jsonschema:"title=Layer Diff IDs,description=Diff IDs for each layer in the image"`
+	ImageID        cryptoutil.DigestSet   `json:"imageid" jsonschema:"title=Image ID,description=Digest of the image configuration"`
+	ManifestRaw    []byte                 `json:"manifestraw" jsonschema:"title=Raw Manifest,description=Raw manifest.json content"`
+	ManifestDigest cryptoutil.DigestSet   `json:"manifestdigest" jsonschema:"title=Manifest Digest,description=Digest of the manifest.json file"`
 	tarFilePath    string                 `json:"-"`
 }
 
 type Manifest struct {
-	Config   string   `json:"Config"`
-	RepoTags []string `json:"RepoTags"`
-	Layers   []string `json:"Layers"`
+	Config   string   `json:"Config" jsonschema:"title=Config,description=Path to the image configuration file"`
+	RepoTags []string `json:"RepoTags" jsonschema:"title=Repository Tags,description=Repository tags for the image"`
+	Layers   []string `json:"Layers" jsonschema:"title=Layers,description=Paths to layer TAR files"`
 }
 
 func (m *Manifest) getImageID(ctx *attestation.AttestationContext, tarFilePath string) (cryptoutil.DigestSet, error) {
@@ -268,6 +268,14 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		subj[fmt.Sprintf("layerdiffid%02d:%s", layer, a.LayerDiffIDs[layer][cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.LayerDiffIDs[layer]
 	}
 	return subj
+}
+
+func (a *Attestor) Documentation() string {
+	return `
+Extracts metadata from OCI image TAR archives. Records image configuration,
+manifest details, layer information, and generates subjects for image
+verification. Supports standard OCI/Docker image formats.
+`
 }
 
 func (m *Manifest) getLayerDIFFIDs(ctx *attestation.AttestationContext, tarFilePath string) ([]cryptoutil.DigestSet, error) {
