@@ -15,6 +15,7 @@
 package aws_iid
 
 import (
+	"context"
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -23,10 +24,11 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
@@ -80,25 +82,23 @@ func init() {
 }
 
 type Attestor struct {
-	ec2metadata.EC2InstanceIdentityDocument
+	imds.InstanceIdentityDocument
 	hashes    []cryptoutil.DigestValue
-	session   session.Session
-	conf      *aws.Config
+	cfg       aws.Config
 	RawIID    string `json:"rawiid"`
 	RawSig    string `json:"rawsig"`
 	PublicKey string `json:"publickey"`
 }
 
 func New() *Attestor {
-	sess, err := session.NewSession()
+	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
+		log.Errorf("failed to load AWS config: %v", err)
 		return nil
 	}
 
-	conf := &aws.Config{}
 	return &Attestor{
-		session: *sess,
-		conf:    conf,
+		cfg: cfg,
 	}
 }
 
@@ -135,23 +135,33 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func (a *Attestor) getIID() error {
-	svc := ec2metadata.New(&a.session, a.conf)
-	iid, err := svc.GetDynamicData(docPath)
+	client := imds.NewFromConfig(a.cfg)
+
+	iid, err := client.GetDynamicData(context.TODO(), &imds.GetDynamicDataInput{Path: docPath})
 	if err != nil {
 		return fmt.Errorf("failed to get instance identity document: %w", err)
 	}
 
-	sig, err := svc.GetDynamicData(sigPath)
+	content, err := io.ReadAll(iid.Content)
 	if err != nil {
-		return fmt.Errorf("failed to get signature: %w", err)
+		return fmt.Errorf("failed to read instance identity document: %w", err)
+	}
+	a.RawIID = string(content)
+
+	sig, err := client.GetDynamicData(context.TODO(), &imds.GetDynamicDataInput{Path: sigPath})
+	if err != nil {
+		return fmt.Errorf("failed to get instance identity signature: %w", err)
 	}
 
-	a.RawIID = iid
-	a.RawSig = sig
-
-	err = json.Unmarshal([]byte(a.RawIID), &a.EC2InstanceIdentityDocument)
+	content, err = io.ReadAll(sig.Content)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal iid: %w", err)
+		return fmt.Errorf("failed to read instance identity document: %w", err)
+	}
+	a.RawSig = string(content)
+
+	err = json.Unmarshal([]byte(a.RawIID), &a.InstanceIdentityDocument)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal instance identity document: %w", err)
 	}
 
 	return nil
@@ -182,17 +192,12 @@ func (a *Attestor) Verify() error {
 		Type:  "PUBLIC KEY",
 		Bytes: pubKeyBytes,
 	})
-
 	a.PublicKey = string(pem)
-
-	if err != nil {
-		return fmt.Errorf("failed to encode public key: %w", err)
-	}
 
 	err = rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, docHash[:], sigBytes)
 	if err != nil {
 		log.Debugf("(attestation/aws-iid) failed to verify signature: %w", err)
-		return nil
+		return err
 	}
 
 	return nil
