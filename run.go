@@ -138,7 +138,8 @@ func run(stepName string, opts []RunOption) ([]RunResult, error) {
 	errs := make([]error, 0)
 	for _, r := range runCtx.CompletedAttestors() {
 		if r.Error != nil {
-			errs = append(errs, r.Error)
+			wrappedErr := fmt.Errorf("attestor %s failed: %w", r.Attestor.Name(), r.Error)
+			errs = append(errs, wrappedErr)
 		} else {
 			// Check if this is a MultiExporter first
 			if multiExporter, ok := r.Attestor.(attestation.MultiExporter); ok {
