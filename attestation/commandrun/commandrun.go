@@ -90,24 +90,24 @@ func New(opts ...Option) *CommandRun {
 }
 
 type ProcessInfo struct {
-	Program          string                          `json:"program,omitempty"`
-	ProcessID        int                             `json:"processid"`
-	ParentPID        int                             `json:"parentpid"`
-	ProgramDigest    cryptoutil.DigestSet            `json:"programdigest,omitempty"`
-	Comm             string                          `json:"comm,omitempty"`
-	Cmdline          string                          `json:"cmdline,omitempty"`
-	ExeDigest        cryptoutil.DigestSet            `json:"exedigest,omitempty"`
-	OpenedFiles      map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
-	Environ          string                          `json:"environ,omitempty"`
-	SpecBypassIsVuln bool                            `json:"specbypassisvuln,omitempty"`
+	Program          string                          `json:"program,omitempty" jsonschema:"title=Program Path,description=Path to the executed program"`
+	ProcessID        int                             `json:"processid" jsonschema:"title=Process ID,description=Process identifier"`
+	ParentPID        int                             `json:"parentpid" jsonschema:"title=Parent Process ID,description=Parent process identifier"`
+	ProgramDigest    cryptoutil.DigestSet            `json:"programdigest,omitempty" jsonschema:"title=Program Digest,description=Cryptographic digest of the program binary"`
+	Comm             string                          `json:"comm,omitempty" jsonschema:"title=Command Name,description=Command name from /proc/[pid]/comm"`
+	Cmdline          string                          `json:"cmdline,omitempty" jsonschema:"title=Command Line,description=Full command line from /proc/[pid]/cmdline"`
+	ExeDigest        cryptoutil.DigestSet            `json:"exedigest,omitempty" jsonschema:"title=Executable Digest,description=Cryptographic digest of the executable"`
+	OpenedFiles      map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty" jsonschema:"title=Opened Files,description=Files opened during execution with their digests"`
+	Environ          string                          `json:"environ,omitempty" jsonschema:"title=Environment,description=Process environment variables"`
+	SpecBypassIsVuln bool                            `json:"specbypassisvuln,omitempty" jsonschema:"title=Speculative Bypass Vulnerability,description=Whether CPU is vulnerable to speculative execution attacks"`
 }
 
 type CommandRun struct {
-	Cmd       []string      `json:"cmd"`
-	Stdout    string        `json:"stdout,omitempty"`
-	Stderr    string        `json:"stderr,omitempty"`
-	ExitCode  int           `json:"exitcode"`
-	Processes []ProcessInfo `json:"processes,omitempty"`
+	Cmd       []string      `json:"cmd" jsonschema:"title=Command,description=Command and arguments to execute"`
+	Stdout    string        `json:"stdout,omitempty" jsonschema:"title=Standard Output,description=Captured stdout from the command"`
+	Stderr    string        `json:"stderr,omitempty" jsonschema:"title=Standard Error,description=Captured stderr from the command"`
+	ExitCode  int           `json:"exitcode" jsonschema:"title=Exit Code,description=Command exit code"`
+	Processes []ProcessInfo `json:"processes,omitempty" jsonschema:"title=Process Information,description=Detailed process execution information when tracing is enabled"`
 
 	silent        bool
 	materials     map[string]cryptoutil.DigestSet
@@ -152,6 +152,18 @@ func (rc *CommandRun) RunType() attestation.RunType {
 
 func (rc *CommandRun) TracingEnabled() bool {
 	return rc.enableTracing
+}
+
+func (rc *CommandRun) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Records command execution details including exit code, stdout/stderr, and optional process tracing",
+		Usage: []string{
+			"Capture build command output and exit status",
+			"Trace system calls and file access during command execution",
+			"Record command execution for compliance and auditing",
+		},
+		Example: "witness run -s compile -k key.pem -- make build",
+	}
 }
 
 func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
