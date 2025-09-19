@@ -19,6 +19,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/registry"
@@ -38,6 +39,34 @@ func init() {
 				}
 
 				WithKeyPath(keyPath)(&ksp)
+				return ksp, nil
+			},
+		),
+		registry.StringConfigOption(
+			"key-passphrase",
+			"Passphrase to decrypt the private key (prefer key-passphrase-path).",
+			"",
+			func(sp signer.SignerProvider, pass string) (signer.SignerProvider, error) {
+				ksp, ok := sp.(FileSignerProvider)
+				if !ok {
+					return ksp, fmt.Errorf("provided signer provider is not a file signer provider")
+				}
+
+				WithKeyPassphrase(pass)(&ksp)
+				return ksp, nil
+			},
+		),
+		registry.StringConfigOption(
+			"key-passphrase-path",
+			"Path to a file containing the private key passphrase.",
+			"",
+			func(sp signer.SignerProvider, path string) (signer.SignerProvider, error) {
+				ksp, ok := sp.(FileSignerProvider)
+				if !ok {
+					return ksp, fmt.Errorf("provided signer provider is not a file signer provider")
+				}
+
+				WithKeyPassphrasePath(path)(&ksp)
 				return ksp, nil
 			},
 		),
@@ -76,6 +105,8 @@ type FileSignerProvider struct {
 	KeyPath           string
 	CertPath          string
 	IntermediatePaths []string
+	Passphrase        string
+	PassphrasePath    string
 }
 
 type Option func(fsp *FileSignerProvider)
@@ -98,6 +129,18 @@ func WithIntermediatePaths(intermediatePaths []string) Option {
 	}
 }
 
+func WithKeyPassphrase(pass string) Option {
+	return func(fsp *FileSignerProvider) {
+		fsp.Passphrase = pass
+	}
+}
+
+func WithKeyPassphrasePath(path string) Option {
+	return func(fsp *FileSignerProvider) {
+		fsp.PassphrasePath = path
+	}
+}
+
 func New(opts ...Option) FileSignerProvider {
 	fsp := FileSignerProvider{}
 	for _, opt := range opts {
@@ -114,7 +157,26 @@ func (fsp FileSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, er
 	}
 
 	defer keyFile.Close()
-	key, err := cryptoutil.TryParseKeyFromReader(keyFile)
+	// Resolve passphrase: explicit > file > env
+	var pass []byte
+	if fsp.Passphrase != "" {
+		pass = []byte(fsp.Passphrase)
+	} else if fsp.PassphrasePath != "" {
+		b, err := os.ReadFile(fsp.PassphrasePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read key passphrase file: %w", err)
+		}
+		// Accept a single trailing newline (CR/LF). Error on additional lines.
+		s := strings.TrimRight(string(b), "\r\n")
+		if strings.ContainsAny(s, "\r\n") {
+			return nil, fmt.Errorf("passphrase file must contain a single line")
+		}
+		pass = []byte(s)
+	} else if env := os.Getenv("WITNESS_KEY_PASSPHRASE"); env != "" {
+		pass = []byte(env)
+	}
+
+	key, err := cryptoutil.TryParseKeyFromReaderWithPassword(keyFile, pass)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load key: %w", err)
 	}
