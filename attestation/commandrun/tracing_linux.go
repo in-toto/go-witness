@@ -89,7 +89,7 @@ func (p *ptraceContext) runTrace() error {
 	}
 
 	procInfo := p.getProcInfo(p.parentPid)
-	procInfo.Program = p.mainProgram
+	procInfo.ProgramPath = p.mainProgram
 	if err := unix.PtraceSyscall(p.parentPid, 0); err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func (p *ptraceContext) retryOpenedFiles() {
 	// after tracing, look through opened files to try to resolve any newly created files
 	procInfo := p.getProcInfo(p.parentPid)
 
-	for file, digestSet := range procInfo.OpenedFiles {
+	for file, digestSet := range procInfo.FilesRead {
 		if digestSet != nil {
 			continue
 		}
@@ -135,11 +135,11 @@ func (p *ptraceContext) retryOpenedFiles() {
 		newDigest, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
 
 		if err != nil {
-			delete(procInfo.OpenedFiles, file)
+			delete(procInfo.FilesRead, file)
 			continue
 		}
 
-		procInfo.OpenedFiles[file] = newDigest
+		procInfo.FilesRead[file] = newDigest
 	}
 }
 
@@ -173,51 +173,40 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 
 		program, err := p.readSyscallReg(pid, argArray[0], MAX_PATH_LEN)
 		if err == nil {
-			procInfo.Program = program
+			procInfo.ProgramPath = program
 		}
 
-		exeLocation := fmt.Sprintf("/proc/%d/exe", procInfo.ProcessID)
-		commLocation := fmt.Sprintf("/proc/%d/comm", procInfo.ProcessID)
-		envinLocation := fmt.Sprintf("/proc/%d/environ", procInfo.ProcessID)
-		cmdlineLocation := fmt.Sprintf("/proc/%d/cmdline", procInfo.ProcessID)
-		status := fmt.Sprintf("/proc/%d/status", procInfo.ProcessID)
+		exeLocation := fmt.Sprintf("/proc/%d/exe", procInfo.PID)
+		commLocation := fmt.Sprintf("/proc/%d/comm", procInfo.PID)
+		envinLocation := fmt.Sprintf("/proc/%d/environ", procInfo.PID)
+		cmdlineLocation := fmt.Sprintf("/proc/%d/cmdline", procInfo.PID)
+		status := fmt.Sprintf("/proc/%d/status", procInfo.PID)
 
 		// read status file and set attributes on success
 		statusFile, err := os.ReadFile(status)
 		if err == nil {
-			procInfo.SpecBypassIsVuln = getSpecBypassIsVulnFromStatus(statusFile)
+			// Deprecated field - no longer collected
 			ppid, err := getPPIDFromStatus(statusFile)
 			if err == nil {
-				procInfo.ParentPID = ppid
+				procInfo.PPID = ppid
 			}
 		}
 
 		comm, err := os.ReadFile(commLocation)
 		if err == nil {
-			procInfo.Comm = cleanString(string(comm))
+			// Deprecated field Comm - no longer collected
 		}
 
-		environ, err := os.ReadFile(envinLocation)
-		if err == nil {
-			allVars := strings.Split(string(environ), "\x00")
-
-			env := make([]string, 0)
-			capturedEnv := p.environmentCapturer.Capture(allVars)
-			for k, v := range capturedEnv {
-				env = append(env, fmt.Sprintf("%s=%s", k, v))
-			}
-
-			procInfo.Environ = strings.Join(env, " ")
-		}
+		// Deprecated field Environ - no longer collected for security reasons
 
 		cmdline, err := os.ReadFile(cmdlineLocation)
 		if err == nil {
-			procInfo.Cmdline = cleanString(string(cmdline))
+			procInfo.CommandLine = cleanString(string(cmdline))
 		}
 
 		exeDigest, err := cryptoutil.CalculateDigestSetFromFile(exeLocation, p.hash)
 		if err == nil {
-			procInfo.ExeDigest = exeDigest
+			procInfo.ResolvedProgramDigest = exeDigest
 		}
 
 		if program != "" {
@@ -238,13 +227,13 @@ func (p *ptraceContext) handleSyscall(pid int, regs unix.PtraceRegs) error {
 		digestSet, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
 		if err != nil {
 			if _, isPathErr := err.(*os.PathError); isPathErr {
-				procInfo.OpenedFiles[file] = nil
+				procInfo.FilesRead[file] = nil
 			}
 
 			return err
 		}
 
-		procInfo.OpenedFiles[file] = digestSet
+		procInfo.FilesRead[file] = digestSet
 	}
 
 	return nil
@@ -254,8 +243,8 @@ func (ctx *ptraceContext) getProcInfo(pid int) *ProcessInfo {
 	procInfo, ok := ctx.processes[pid]
 	if !ok {
 		procInfo = &ProcessInfo{
-			ProcessID:   pid,
-			OpenedFiles: make(map[string]cryptoutil.DigestSet),
+			PID:       pid,
+			FilesRead: make(map[string]cryptoutil.DigestSet),
 		}
 
 		ctx.processes[pid] = procInfo
@@ -301,36 +290,3 @@ func (ctx *ptraceContext) readSyscallReg(pid int, addr uintptr, n int) (string, 
 	return string(data[:size]), nil
 }
 
-func cleanString(s string) string {
-	return strings.TrimSpace(strings.ReplaceAll(s, "\x00", " "))
-}
-
-func getPPIDFromStatus(status []byte) (int, error) {
-	statusStr := string(status)
-	lines := strings.Split(statusStr, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "PPid:") {
-			parts := strings.Split(line, ":")
-			ppid := strings.TrimSpace(parts[1])
-			return strconv.Atoi(ppid)
-		}
-	}
-
-	return 0, nil
-}
-
-func getSpecBypassIsVulnFromStatus(status []byte) bool {
-	statusStr := string(status)
-	lines := strings.Split(statusStr, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "Speculation_Store_Bypass:") {
-			parts := strings.Split(line, ":")
-			isVuln := strings.TrimSpace(parts[1])
-			if strings.Contains(isVuln, "vulnerable") {
-				return true
-			}
-		}
-	}
-
-	return false
-}
