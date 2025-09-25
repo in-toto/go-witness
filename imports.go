@@ -17,6 +17,7 @@ package witness
 // all of the following imports are here so that each of the package's init functions run appropriately
 import (
 	// attestors
+	_ "github.com/in-toto/go-witness/attestation/aws-codebuild"
 	_ "github.com/in-toto/go-witness/attestation/aws-iid"
 	_ "github.com/in-toto/go-witness/attestation/commandrun"
 	_ "github.com/in-toto/go-witness/attestation/docker"
@@ -33,6 +34,7 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/material"
 	_ "github.com/in-toto/go-witness/attestation/maven"
 	_ "github.com/in-toto/go-witness/attestation/oci"
+	_ "github.com/in-toto/go-witness/attestation/omnitrail"
 	_ "github.com/in-toto/go-witness/attestation/policyverify"
 	_ "github.com/in-toto/go-witness/attestation/product"
 	_ "github.com/in-toto/go-witness/attestation/sarif"
