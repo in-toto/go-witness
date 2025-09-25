@@ -83,54 +83,54 @@ type Attestor struct {
 // the secret was detected while ensuring the actual secret value is never stored.
 type Finding struct {
 	// RuleID identifies which detection rule triggered the finding
-	RuleID string `json:"ruleId"`
+	RuleID string `json:"ruleId" jsonschema:"title=Rule ID,description=Detection rule that found the secret"`
 
 	// Description provides a human-readable explanation of the finding
-	Description string `json:"description"`
+	Description string `json:"description" jsonschema:"title=Description,description=Human-readable explanation of the finding"`
 
 	// Location indicates where the secret was found in the form:
 	// "attestation:attestor-name" or "product:/path/to/file"
-	Location string `json:"location"`
+	Location string `json:"location" jsonschema:"title=Location,description=Where the secret was found (attestation:name or product:path)"`
 
 	// Line indicates the line number where the secret was found
-	Line int `json:"startLine"`
+	Line int `json:"startLine" jsonschema:"title=Line Number,description=Line number where the secret was found"`
 
 	// Secret contains multiple cryptographic hashes of the secret
 	// This allows for verification without exposing the actual secret value
-	Secret cryptoutil.DigestSet `json:"secret,omitempty"`
+	Secret cryptoutil.DigestSet `json:"secret,omitempty" jsonschema:"title=Secret Digest,description=Cryptographic hashes of the detected secret"`
 
 	// Match contains a redacted snippet showing context around the secret
 	// The actual secret is truncated to prevent exposure
-	Match string `json:"match,omitempty"`
+	Match string `json:"match,omitempty" jsonschema:"title=Match Context,description=Redacted snippet showing context around the secret"`
 
 	// Entropy is the information density score (higher values indicate
 	// more random/high-entropy content likely to be secrets)
-	Entropy float32 `json:"entropy,omitempty"`
+	Entropy float32 `json:"entropy,omitempty" jsonschema:"title=Entropy,description=Information density score (higher indicates more random content)"`
 
 	// EncodingPath tracks the sequence of encodings that were applied to
 	// hide the secret, listed from outermost to innermost layer
-	EncodingPath []string `json:"encodingPath,omitempty"`
+	EncodingPath []string `json:"encodingPath,omitempty" jsonschema:"title=Encoding Path,description=Sequence of encodings applied to hide the secret"`
 
 	// LocationApproximate indicates if the line number is approximate
 	// This is true for secrets found in decoded content since the
 	// original line number cannot be precisely determined
-	LocationApproximate bool `json:"locationApproximate,omitempty"`
+	LocationApproximate bool `json:"locationApproximate,omitempty" jsonschema:"title=Location Approximate,description=Whether the line number is approximate"`
 }
 
 // AllowList defines patterns that should be ignored during secret scanning.
 // It helps reduce false positives by excluding known safe patterns.
 type AllowList struct {
 	// Description explains the purpose of this allowlist
-	Description string `json:"description,omitempty"`
+	Description string `json:"description,omitempty" jsonschema:"title=Description,description=Purpose of this allowlist"`
 
 	// Paths are file path patterns to ignore (regex format)
-	Paths []string `json:"paths,omitempty"`
+	Paths []string `json:"paths,omitempty" jsonschema:"title=Paths,description=File path patterns to ignore (regex format)"`
 
 	// Regexes are content patterns to ignore (regex format)
-	Regexes []string `json:"regexes,omitempty"`
+	Regexes []string `json:"regexes,omitempty" jsonschema:"title=Regexes,description=Content patterns to ignore (regex format)"`
 
 	// StopWords are specific strings to ignore (exact match)
-	StopWords []string `json:"stopWords,omitempty"`
+	StopWords []string `json:"stopWords,omitempty" jsonschema:"title=Stop Words,description=Specific strings to ignore (exact match)"`
 }
 
 // matchInfo holds information about a pattern match in content

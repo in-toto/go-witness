@@ -65,20 +65,20 @@ func init() {
 
 type Attestor struct {
 	XMLName      xml.Name          `xml:"project" json:"-"`
-	GroupId      string            `xml:"groupId" json:"groupid"`
-	ArtifactId   string            `xml:"artifactId" json:"artifactid"`
-	Version      string            `xml:"version" json:"version"`
-	ProjectName  string            `xml:"name" json:"projectname"`
-	Dependencies []MavenDependency `xml:"dependencies>dependency" json:"dependencies"`
+	GroupId      string            `xml:"groupId" json:"groupid" jsonschema:"title=Group ID,description=Maven group identifier for the project"`
+	ArtifactId   string            `xml:"artifactId" json:"artifactid" jsonschema:"title=Artifact ID,description=Maven artifact identifier for the project"`
+	Version      string            `xml:"version" json:"version" jsonschema:"title=Version,description=Project version"`
+	ProjectName  string            `xml:"name" json:"projectname" jsonschema:"title=Project Name,description=Human-readable project name"`
+	Dependencies []MavenDependency `xml:"dependencies>dependency" json:"dependencies" jsonschema:"title=Dependencies,description=List of Maven dependencies"`
 
 	pomPath string
 }
 
 type MavenDependency struct {
-	GroupId    string `xml:"groupId" json:"groupid"`
-	ArtifactId string `xml:"artifactId" json:"artifactid"`
-	Version    string `xml:"version" json:"version"`
-	Scope      string `xml:"scope" json:"scope"`
+	GroupId    string `xml:"groupId" json:"groupid" jsonschema:"title=Group ID,description=Dependency group identifier"`
+	ArtifactId string `xml:"artifactId" json:"artifactid" jsonschema:"title=Artifact ID,description=Dependency artifact identifier"`
+	Version    string `xml:"version" json:"version" jsonschema:"title=Version,description=Dependency version"`
+	Scope      string `xml:"scope" json:"scope" jsonschema:"title=Scope,description=Dependency scope (compile test runtime etc)"`
 }
 
 type Option func(*Attestor)
@@ -134,6 +134,14 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	return nil
+}
+
+func (a *Attestor) Documentation() string {
+	return `
+Extracts project information from Maven POM files. Records project coordinates
+(groupId, artifactId, version) and dependencies. Creates subjects for build
+verification and dependency tracking.
+`
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {

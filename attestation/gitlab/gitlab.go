@@ -72,20 +72,20 @@ func (e ErrNotGitlab) Error() string {
 type Option func(a *Attestor)
 
 type Attestor struct {
-	JWT          *jwt.Attestor `json:"jwt,omitempty"`
-	CIConfigPath string        `json:"ciconfigpath"`
-	JobID        string        `json:"jobid"`
-	JobImage     string        `json:"jobimage"`
-	JobName      string        `json:"jobname"`
-	JobStage     string        `json:"jobstage"`
-	JobUrl       string        `json:"joburl"`
-	PipelineID   string        `json:"pipelineid"`
-	PipelineUrl  string        `json:"pipelineurl"`
-	ProjectID    string        `json:"projectid"`
-	ProjectUrl   string        `json:"projecturl"`
-	RunnerID     string        `json:"runnerid"`
-	CIHost       string        `json:"cihost"`
-	CIServerUrl  string        `json:"ciserverurl"`
+	JWT          *jwt.Attestor `json:"jwt,omitempty" jsonschema:"title=JWT,description=The underlying JWT attestation containing the GitLab CI job token"`
+	CIConfigPath string        `json:"ciconfigpath" jsonschema:"title=CI Config Path,description=Path to the GitLab CI configuration file"`
+	JobID        string        `json:"jobid" jsonschema:"title=Job ID,description=GitLab CI job ID,example=1234567890"`
+	JobImage     string        `json:"jobimage" jsonschema:"title=Job Image,description=Docker image used for the job"`
+	JobName      string        `json:"jobname" jsonschema:"title=Job Name,description=Name of the GitLab CI job"`
+	JobStage     string        `json:"jobstage" jsonschema:"title=Job Stage,description=Stage of the GitLab CI job,example=build"`
+	JobUrl       string        `json:"joburl" jsonschema:"title=Job URL,description=URL to the GitLab CI job"`
+	PipelineID   string        `json:"pipelineid" jsonschema:"title=Pipeline ID,description=GitLab CI pipeline ID"`
+	PipelineUrl  string        `json:"pipelineurl" jsonschema:"title=Pipeline URL,description=URL to the GitLab CI pipeline"`
+	ProjectID    string        `json:"projectid" jsonschema:"title=Project ID,description=GitLab project ID"`
+	ProjectUrl   string        `json:"projecturl" jsonschema:"title=Project URL,description=URL to the GitLab project"`
+	RunnerID     string        `json:"runnerid" jsonschema:"title=Runner ID,description=ID of the GitLab runner"`
+	CIHost       string        `json:"cihost" jsonschema:"title=CI Host,description=GitLab server hostname"`
+	CIServerUrl  string        `json:"ciserverurl" jsonschema:"title=CI Server URL,description=GitLab server URL,example=https://gitlab.com"`
 	token        string
 	tokenEnvVar  string
 }
@@ -201,6 +201,18 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	}
 
 	return subjects
+}
+
+func (a *Attestor) Documentation() attestation.Documentation {
+	return attestation.Documentation{
+		Summary: "Captures GitLab CI/CD pipeline execution context",
+		Usage: []string{
+			"Automatically captures GitLab CI context when GITLAB_CI=true",
+			"Supports JWT verification using CI_JOB_JWT token (GitLab < 17.0)",
+			"Can be configured with custom tokens using WithToken or WithTokenEnvVar options",
+		},
+		Example: "witness run -s test -k key.pem -a gitlab -- gradle test",
+	}
 }
 
 func (a *Attestor) BackRefs() map[string]cryptoutil.DigestSet {
