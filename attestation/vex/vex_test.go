@@ -32,7 +32,6 @@ const vexDocumentExpected = `{
     "@id": "https://openvex.dev/docs/public/vex-0f3be8817faafa24e4bfb3d17eaf619efb1fe54923b9c42c57b156a936b91431",
     "author": "John Doe",
     "role": "Senior Trusted Vex Issuer",
-    "timestamp": "1970-01-01T00:00:00Z",
     "version": 1,
     "statements": [
       {
@@ -46,7 +45,8 @@ const vexDocumentExpected = `{
         ],
         "status": "fixed"
       }
-    ]
+    ],
+    "timestamp": "1970-01-01T00:00:00Z"
   }
 }`
 
