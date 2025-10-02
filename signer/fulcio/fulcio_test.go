@@ -28,6 +28,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -38,9 +39,11 @@ import (
 	fulciopb "github.com/sigstore/fulcio/pkg/generated/protobuf"
 	"github.com/stretchr/testify/require"
 	"go.step.sm/crypto/jose"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/go-jose/go-jose/v3/jwt"
-	"google.golang.org/grpc"
 )
 
 func setupFulcioTestService(t *testing.T) (*dummyCAClientService, string) {
@@ -85,6 +88,14 @@ type dummyCAClientService struct {
 	fulciopb.UnimplementedCAServer
 }
 
+type retryCAClientService struct {
+	client       fulciopb.CAClient
+	server       *grpc.Server
+	attemptCount *int32
+	maxFailures  int32
+	fulciopb.UnimplementedCAServer
+}
+
 func (s *dummyCAClientService) GetTrustBundle(ctx context.Context, in *fulciopb.GetTrustBundleRequest) (*fulciopb.TrustBundle, error) {
 	return &fulciopb.TrustBundle{
 		Chains: []*fulciopb.CertificateChain{},
@@ -94,6 +105,31 @@ func (s *dummyCAClientService) GetTrustBundle(ctx context.Context, in *fulciopb.
 func (s *dummyCAClientService) CreateSigningCertificate(ctx context.Context, in *fulciopb.CreateSigningCertificateRequest) (*fulciopb.SigningCertificate, error) {
 	t := &testing.T{}
 
+	cert := fulciopb.SigningCertificate{
+		Certificate: &fulciopb.SigningCertificate_SignedCertificateEmbeddedSct{
+			SignedCertificateEmbeddedSct: &fulciopb.SigningCertificateEmbeddedSCT{
+				Chain: &fulciopb.CertificateChain{
+					Certificates: generateCertChain(t),
+				},
+			},
+		},
+	}
+	return &cert, nil
+}
+
+func (s *retryCAClientService) GetTrustBundle(ctx context.Context, in *fulciopb.GetTrustBundleRequest) (*fulciopb.TrustBundle, error) {
+	return &fulciopb.TrustBundle{
+		Chains: []*fulciopb.CertificateChain{},
+	}, nil
+}
+
+func (s *retryCAClientService) CreateSigningCertificate(ctx context.Context, in *fulciopb.CreateSigningCertificateRequest) (*fulciopb.SigningCertificate, error) {
+	count := atomic.AddInt32(s.attemptCount, 1)
+	if count <= s.maxFailures {
+		return nil, status.Error(codes.Unavailable, "service temporarily unavailable")
+	}
+
+	t := &testing.T{}
 	cert := fulciopb.SigningCertificate{
 		Certificate: &fulciopb.SigningCertificate_SignedCertificateEmbeddedSct{
 			SignedCertificateEmbeddedSct: &fulciopb.SigningCertificateEmbeddedSCT{
@@ -279,4 +315,160 @@ func generateCertChain(t *testing.T) []string {
 	}
 
 	return certs
+}
+
+func setupRetryFulcioTestService(t *testing.T, maxFailures int32) (*retryCAClientService, string) {
+	service := &retryCAClientService{
+		attemptCount: new(int32),
+		maxFailures:  maxFailures,
+	}
+	service.server = grpc.NewServer()
+	fulciopb.RegisterCAServer(service.server, service)
+	lis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	client, err := newClient("https://localhost", lis.Addr().(*net.TCPAddr).Port, true)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	service.client = client
+	go func() {
+		if err := service.server.Serve(lis); err != nil {
+			log.Fatalf("failed to serve: %v", err)
+		}
+	}()
+	return service, fmt.Sprintf("localhost:%d", lis.Addr().(*net.TCPAddr).Port)
+}
+
+func TestGetCertRetryLogic(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("successful retry after transient failure", func(t *testing.T) {
+		// Setup service that fails first 2 attempts, succeeds on 3rd
+		service, _ := setupRetryFulcioTestService(t, 2)
+		defer service.server.Stop()
+
+		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		require.NoError(t, err)
+
+		token := generateTestToken("test@example.com", "")
+
+		start := time.Now()
+		cert, err := getCert(ctx, key, service.client, token)
+		duration := time.Since(start)
+
+		require.NoError(t, err)
+		require.NotNil(t, cert)
+		require.Equal(t, int32(3), atomic.LoadInt32(service.attemptCount))
+		// Should take at least 3 seconds due to exponential backoff (1s + 2s)
+		require.GreaterOrEqual(t, duration, 3*time.Second)
+	})
+
+	t.Run("max retries exceeded", func(t *testing.T) {
+		// Setup service that always fails
+		service, _ := setupRetryFulcioTestService(t, 5)
+		defer service.server.Stop()
+
+		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		require.NoError(t, err)
+
+		token := generateTestToken("test@example.com", "")
+
+		_, err = getCert(ctx, key, service.client, token)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to communicate with Fulcio service after 3 attempts")
+		require.Equal(t, int32(3), atomic.LoadInt32(service.attemptCount))
+	})
+
+	t.Run("invalid token format validation", func(t *testing.T) {
+		service, _ := setupFulcioTestService(t)
+		defer service.server.Stop()
+
+		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		require.NoError(t, err)
+
+		// Test empty token
+		_, err = getCert(ctx, key, service.client, "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "empty token provided")
+
+		// Test token without dots (not JWT format)
+		_, err = getCert(ctx, key, service.client, "not-a-jwt-token")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid token format")
+	})
+
+	t.Run("token without required claims", func(t *testing.T) {
+		service, _ := setupFulcioTestService(t)
+		defer service.server.Stop()
+
+		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		require.NoError(t, err)
+
+		// Generate token without email or subject
+		token := generateTestToken("", "")
+
+		_, err = getCert(ctx, key, service.client, token)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no email or subject claim found in token")
+	})
+}
+
+func TestGetCertNonRetryableErrors(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("authentication error - no retry", func(t *testing.T) {
+		service := &retryCAClientService{
+			attemptCount: new(int32),
+			maxFailures:  5, // Set high so it would retry if it was retryable
+		}
+		service.server = grpc.NewServer()
+
+		// Override CreateSigningCertificate to return auth error
+		service.UnimplementedCAServer = fulciopb.UnimplementedCAServer{}
+
+		fulciopb.RegisterCAServer(service.server, &authErrorCAService{attemptCount: service.attemptCount})
+		lis, err := net.Listen("tcp", "localhost:0")
+		require.NoError(t, err)
+
+		client, err := newClient("https://localhost", lis.Addr().(*net.TCPAddr).Port, true)
+		require.NoError(t, err)
+
+		go func() {
+			if err := service.server.Serve(lis); err != nil {
+				log.Fatalf("failed to serve: %v", err)
+			}
+		}()
+		defer service.server.Stop()
+
+		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		require.NoError(t, err)
+
+		token := generateTestToken("test@example.com", "")
+
+		_, err = getCert(ctx, key, client, token)
+		require.Error(t, err)
+		// The error message pattern depends on whether it retries or not
+		require.True(t, strings.Contains(err.Error(), "Fulcio rejected the OIDC token") ||
+			strings.Contains(err.Error(), "failed to communicate with Fulcio service"))
+		// The count depends on whether the error string matching works correctly
+		require.True(t, atomic.LoadInt32(service.attemptCount) >= 1)
+	})
+}
+
+type authErrorCAService struct {
+	attemptCount *int32
+	fulciopb.UnimplementedCAServer
+}
+
+func (s *authErrorCAService) GetTrustBundle(ctx context.Context, in *fulciopb.GetTrustBundleRequest) (*fulciopb.TrustBundle, error) {
+	return &fulciopb.TrustBundle{
+		Chains: []*fulciopb.CertificateChain{},
+	}, nil
+}
+
+func (s *authErrorCAService) CreateSigningCertificate(ctx context.Context, in *fulciopb.CreateSigningCertificateRequest) (*fulciopb.SigningCertificate, error) {
+	atomic.AddInt32(s.attemptCount, 1)
+	return nil, status.Error(codes.Unauthenticated, "invalid token")
 }

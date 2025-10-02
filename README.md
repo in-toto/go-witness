@@ -17,6 +17,7 @@ This library is currently pre-1.0 and therefore the API may be subject to breaki
   - [OPA Rego policy language](https://www.openpolicyagent.org/docs/latest/policy-language/)
 - A growing list of attestor types defined under a common interface
 - A selection of attestation sources to search for attestation collections
+- Resilient Fulcio signer with automatic retry logic and improved error handling for GitHub Actions environments
 
 ## Documentation
 For more detail regarding the library itself, we recommend viewing [pkg.go.dev](https://pkg.go.dev/github.com/in-toto/go-witness). For
@@ -27,6 +28,24 @@ In order to effectively contribute to this library, you will need:
 - A Unix-compatible Operating System
 - GNU Make
 - Go 1.19
+
+## Fulcio Signer
+The Fulcio signer provides certificate-based signing using the [Sigstore Fulcio](https://github.com/sigstore/fulcio) certificate authority. It includes enhanced reliability features for CI/CD environments:
+
+### Retry Logic
+- **GitHub Actions OIDC Token Fetching**: Automatic retry with exponential backoff (up to 3 attempts) for transient network issues
+- **Fulcio Certificate Creation**: Resilient certificate requests with exponential backoff for service unavailability
+- **Smart Error Handling**: Non-retryable errors (authentication, authorization) are detected and fail fast
+
+### Error Handling
+- Comprehensive validation of OIDC tokens and certificate responses
+- Detailed error messages with context for troubleshooting
+- Detection and handling of common failure scenarios (HTML responses, empty responses, invalid tokens)
+
+### Security Improvements
+- Updated from SHA256 to SHA384 cryptographic hash for enhanced security
+- Validation of certificate chains to ensure all required certificates are present
+- Enhanced logging for certificate processing steps while protecting sensitive information
 
 ## Running Tests
 This repository uses Go tests for testing. You can run these tests by executing `make test`.
