@@ -19,7 +19,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -67,4 +69,95 @@ func TestFetchToken(t *testing.T) {
 	token, err := fetchToken(tokenURL, bearer, audience)
 	require.NoError(t, err)
 	require.Equal(t, "some-token", token)
+}
+
+func TestFetchTokenRetryLogic(t *testing.T) {
+	bearer := "some-bearer-token"
+	audience := "witness"
+
+	t.Run("successful retry after transient failure", func(t *testing.T) {
+		var attemptCount int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			count := atomic.AddInt32(&attemptCount, 1)
+			if count <= 2 {
+				// First two attempts fail with 500
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			// Third attempt succeeds
+			fmt.Fprintf(w, `{"count": 1, "value": "retry-success-token"}`)
+		}))
+		defer server.Close()
+
+		start := time.Now()
+		token, err := fetchToken(server.URL+"/token", bearer, audience)
+		duration := time.Since(start)
+
+		require.NoError(t, err)
+		require.Equal(t, "retry-success-token", token)
+		require.Equal(t, int32(3), atomic.LoadInt32(&attemptCount))
+		// Should take at least 3 seconds due to exponential backoff (1s + 2s)
+		require.GreaterOrEqual(t, duration, 3*time.Second)
+	})
+
+	t.Run("max retries exceeded", func(t *testing.T) {
+		var attemptCount int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&attemptCount, 1)
+			http.Error(w, "Persistent failure", http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		_, err := fetchToken(server.URL+"/token", bearer, audience)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to fetch GitHub Actions token after 3 attempts")
+		require.Equal(t, int32(3), atomic.LoadInt32(&attemptCount))
+	})
+
+	t.Run("HTML response handling", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprintf(w, "<html><body>Error page</body></html>")
+		}))
+		defer server.Close()
+
+		_, err := fetchToken(server.URL+"/token", bearer, audience)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "received HTML response instead of JSON")
+	})
+
+	t.Run("empty response handling", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Return empty body
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		_, err := fetchToken(server.URL+"/token", bearer, audience)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "received empty response")
+	})
+
+	t.Run("empty token value in response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"count": 1, "value": ""}`)
+		}))
+		defer server.Close()
+
+		_, err := fetchToken(server.URL+"/token", bearer, audience)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "received empty token value")
+	})
+
+	t.Run("malformed JSON response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"count": 1, "value": "token"`) // missing closing brace
+		}))
+		defer server.Close()
+
+		_, err := fetchToken(server.URL+"/token", bearer, audience)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to parse JSON response")
+	})
+
 }

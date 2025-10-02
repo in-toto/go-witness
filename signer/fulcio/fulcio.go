@@ -30,6 +30,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
@@ -247,10 +248,12 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 			return nil, errors.New("ACTIONS_ID_TOKEN_REQUEST_TOKEN is not set")
 		}
 
+		log.Infof("Fetching GitHub Actions OIDC token from %s", tokenURL)
 		raw, err = fetchToken(tokenURL, requestToken, "sigstore")
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to fetch GitHub Actions OIDC token: %w", err)
 		}
+		log.Infof("Successfully fetched GitHub Actions OIDC token")
 	// we want to fail if both flags used (they're mutually exclusive)
 	case fsp.TokenPath != "" && fsp.Token != "":
 		return nil, errors.New("only one of --fulcio-token-path or --fulcio-raw-token can be used")
@@ -273,10 +276,12 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 		return nil, errors.New("no token provided")
 	}
 
+	log.Infof("Requesting signing certificate from Fulcio at %s", scheme+"://"+u.Host)
 	certResp, err := getCert(ctx, key, fClient, raw)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to obtain certificate from Fulcio: %w", err)
 	}
+	log.Infof("Successfully received certificate response from Fulcio")
 
 	var chain *fulciopb.CertificateChain
 
@@ -293,29 +298,40 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 	var intermediateCerts []*x509.Certificate
 	var leafCert *x509.Certificate
 
-	for _, certPEM := range certs {
+	for i, certPEM := range certs {
 		certDER, _ := pem.Decode([]byte(certPEM))
 		if certDER == nil {
-			return nil, errors.New("failed to decode PEM block containing the certificate")
+			return nil, fmt.Errorf("failed to decode PEM block for certificate %d/%d", i+1, len(certs))
 		}
 
 		cert, err := x509.ParseCertificate(certDER.Bytes)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse certificate: %w", err)
+			return nil, fmt.Errorf("failed to parse certificate %d/%d: %w", i+1, len(certs), err)
 		}
 
 		if cert.IsCA {
 			if cert.Subject.CommonName == cert.Issuer.CommonName {
 				rootCACert = cert
+				log.Infof("Found root CA certificate: %s", cert.Subject.CommonName)
 			} else {
 				intermediateCerts = append(intermediateCerts, cert)
+				log.Infof("Found intermediate certificate: %s", cert.Subject.CommonName)
 			}
 		} else {
 			leafCert = cert
+			log.Infof("Found leaf certificate for subject: %s", cert.Subject.CommonName)
 		}
 	}
 
-	ss := cryptoutil.NewECDSASigner(key, crypto.SHA256)
+	if leafCert == nil {
+		return nil, errors.New("no leaf certificate found in Fulcio response")
+	}
+
+	if rootCACert == nil {
+		return nil, errors.New("no root CA certificate found in Fulcio response")
+	}
+
+	ss := cryptoutil.NewECDSASigner(key, crypto.SHA384)
 	if ss == nil {
 		return nil, errors.New("failed to create RSA signer")
 	}
@@ -329,8 +345,21 @@ func (fsp FulcioSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, 
 }
 
 func getCert(ctx context.Context, key *ecdsa.PrivateKey, fc fulciopb.CAClient, token string) (*fulciopb.SigningCertificate, error) {
+	// Validate token format before parsing
+	if token == "" {
+		return nil, errors.New("empty token provided to getCert")
+	}
+
+	if !strings.Contains(token, ".") {
+		return nil, fmt.Errorf("invalid token format: token does not appear to be a JWT (missing dots)")
+	}
+
 	t, err := jwt.ParseSigned(token)
 	if err != nil {
+		// Check if the error is due to invalid JSON in the token
+		if strings.Contains(err.Error(), "invalid character") {
+			return nil, fmt.Errorf("failed to parse JWT token: invalid JSON in token payload - %w. This may indicate the OIDC token endpoint returned an error response instead of a token", err)
+		}
 		return nil, fmt.Errorf("failed to parse jwt token for fulcio: %w", err)
 	}
 
@@ -341,7 +370,7 @@ func getCert(ctx context.Context, key *ecdsa.PrivateKey, fc fulciopb.CAClient, t
 	}
 
 	if err := t.UnsafeClaimsWithoutVerification(&claims); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to extract claims from JWT token: %w", err)
 	}
 
 	var tok *oauthflow.OIDCIDToken
@@ -351,15 +380,17 @@ func getCert(ctx context.Context, key *ecdsa.PrivateKey, fc fulciopb.CAClient, t
 			RawString: token,
 			Subject:   claims.Email,
 		}
+		log.Infof("Using email claim from token: %s", claims.Email)
 	} else if claims.Subject != "" {
 		tok = &oauthflow.OIDCIDToken{
 			RawString: token,
 			Subject:   claims.Subject,
 		}
+		log.Infof("Using subject claim from token: %s", claims.Subject)
 	}
 
 	if tok == nil || tok.Subject == "" {
-		return nil, errors.New("no email or subject claim found in token")
+		return nil, fmt.Errorf("no email or subject claim found in token. Claims: email=%q, subject=%q", claims.Email, claims.Subject)
 	}
 
 	msg := strings.NewReader(tok.Subject)
@@ -395,10 +426,47 @@ func getCert(ctx context.Context, key *ecdsa.PrivateKey, fc fulciopb.CAClient, t
 		},
 	}
 
-	sc, err := fc.CreateSigningCertificate(ctx, cscr)
-	if err != nil {
-		log.Info("Failed creating signing certificate")
-		return nil, err
+	// Retry logic with exponential backoff for Fulcio certificate creation
+	const maxRetries = 3
+	var lastErr error
+	var sc *fulciopb.SigningCertificate
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff: 1s, 2s, 4s
+			backoff := time.Duration(1<<uint(attempt-1)) * time.Second
+			log.Infof("Retrying Fulcio certificate request in %v (attempt %d/%d)", backoff, attempt+1, maxRetries)
+			time.Sleep(backoff)
+		}
+
+		log.Infof("Requesting signing certificate from Fulcio for subject: %s (attempt %d/%d)", tok.Subject, attempt+1, maxRetries)
+		sc, lastErr = fc.CreateSigningCertificate(ctx, cscr)
+		if lastErr == nil {
+			log.Infof("Successfully obtained signing certificate from Fulcio")
+			break
+		}
+
+		log.Errorf("Failed creating signing certificate from Fulcio (attempt %d/%d): %v", attempt+1, maxRetries, lastErr)
+
+		// Don't retry for certain types of errors that won't be resolved by retrying
+		if strings.Contains(lastErr.Error(), "invalid token") ||
+			strings.Contains(lastErr.Error(), "unauthorized") ||
+			strings.Contains(lastErr.Error(), "permission denied") ||
+			strings.Contains(lastErr.Error(), "unauthenticated") {
+			log.Infof("Non-retryable error detected, aborting retry attempts")
+			break
+		}
+	}
+
+	if lastErr != nil {
+		// Add more context to common Fulcio errors
+		if strings.Contains(lastErr.Error(), "rpc error") {
+			return nil, fmt.Errorf("failed to communicate with Fulcio service after %d attempts: %w. This may indicate a network issue or Fulcio service unavailability", maxRetries, lastErr)
+		}
+		if strings.Contains(lastErr.Error(), "invalid token") || strings.Contains(lastErr.Error(), "unauthorized") {
+			return nil, fmt.Errorf("fulcio rejected the OIDC token: %w. This may indicate token expiration or invalid issuer configuration", lastErr)
+		}
+		return nil, fmt.Errorf("failed to create signing certificate from Fulcio after %d attempts: %w", maxRetries, lastErr)
 	}
 
 	return sc, nil
