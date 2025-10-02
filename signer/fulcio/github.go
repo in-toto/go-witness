@@ -25,14 +25,21 @@ import (
 	"time"
 )
 
+var githubHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        10,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	},
+}
+
 func fetchToken(tokenURL string, bearer string, audience string) (string, error) {
 	if tokenURL == "" || bearer == "" || audience == "" {
 		return "", fmt.Errorf("tokenURL, bearer, and audience cannot be empty")
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	client := githubHTTPClient
 
 	//add audient "&audience=witness" to the end of the tokenURL, parse it, and then add it to the query
 	u, err := url.Parse(tokenURL)
@@ -71,8 +78,22 @@ func fetchToken(tokenURL string, bearer string, audience string) (string, error)
 
 		resp, err := client.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("failed to fetch token from GitHub Actions (attempt %d/%d): %w", attempt+1, maxRetries, err)
-			continue
+			// Check for HTTP/2 connection issues and fallback to HTTP/1.1
+			if strings.Contains(err.Error(), "HTTP_1_1_REQUIRED") {
+				http1transport := githubHTTPClient.Transport.(*http.Transport).Clone()
+				http1transport.ForceAttemptHTTP2 = false
+				client = &http.Client{
+					Transport: http1transport,
+					Timeout:   30 * time.Second,
+				}
+				// Retry immediately with HTTP/1.1
+				resp, err = client.Do(req)
+			}
+
+			if err != nil {
+				lastErr = fmt.Errorf("failed to fetch token from GitHub Actions (attempt %d/%d): %w", attempt+1, maxRetries, err)
+				continue
+			}
 		}
 
 		defer resp.Body.Close()
