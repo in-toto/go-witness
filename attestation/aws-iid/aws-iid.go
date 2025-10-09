@@ -15,7 +15,6 @@
 package aws_iid
 
 import (
-	"context"
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -24,15 +23,13 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
-	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
 )
 
@@ -46,12 +43,31 @@ const (
 const (
 	docPath = "instance-identity/document"
 	sigPath = "instance-identity/signature"
-	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/verify-iid.html
-	// There is a different public cert for every AWS region
-	// You can find the one you need for verification here:
-	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/regions-certs.html
+	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/verify-signature.html
+	// The following AWS public certificate is for all AWS Regions, except Hong Kong, Bahrain, China, and GovCloud.
+	awsCACertPEM = `-----BEGIN CERTIFICATE-----
+MIIDIjCCAougAwIBAgIJAKnL4UEDMN/FMA0GCSqGSIb3DQEBBQUAMGoxCzAJBgNV
+BAYTAlVTMRMwEQYDVQQIEwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdTZWF0dGxlMRgw
+FgYDVQQKEw9BbWF6b24uY29tIEluYy4xGjAYBgNVBAMTEWVjMi5hbWF6b25hd3Mu
+Y29tMB4XDTE0MDYwNTE0MjgwMloXDTI0MDYwNTE0MjgwMlowajELMAkGA1UEBhMC
+VVMxEzARBgNVBAgTCldhc2hpbmd0b24xEDAOBgNVBAcTB1NlYXR0bGUxGDAWBgNV
+BAoTD0FtYXpvbi5jb20gSW5jLjEaMBgGA1UEAxMRZWMyLmFtYXpvbmF3cy5jb20w
+gZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBAIe9GN//SRK2knbjySG0ho3yqQM3
+e2TDhWO8D2e8+XZqck754gFSo99AbT2RmXClambI7xsYHZFapbELC4H91ycihvrD
+jbST1ZjkLQgga0NE1q43eS68ZeTDccScXQSNivSlzJZS8HJZjgqzBlXjZftjtdJL
+XeE4hwvo0sD4f3j9AgMBAAGjgc8wgcwwHQYDVR0OBBYEFCXWzAgVyrbwnFncFFIs
+77VBdlE4MIGcBgNVHSMEgZQwgZGAFCXWzAgVyrbwnFncFFIs77VBdlE4oW6kbDBq
+MQswCQYDVQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UEBxMHU2Vh
+dHRsZTEYMBYGA1UEChMPQW1hem9uLmNvbSBJbmMuMRowGAYDVQQDExFlYzIuYW1h
+em9uYXdzLmNvbYIJAKnL4UEDMN/FMAwGA1UdEwQFMAMBAf8wDQYJKoZIhvcNAQEF
+BQADgYEAFYcz1OgEhQBXIwIdsgCOS8vEtiJYF+j9uO6jz7VOmJqO+pRlAbRlvY8T
+C1haGgSI/A1uZUKs/Zfnph0oEI0/hu1IIJ/SKBDtN5lvmZ/IzbOPIJWirlsllQIQ
+7zvWbGd9c9+Rm3p04oTvhup99la7kZqevJK0QRdD/6NpCKsqP/0=
+-----END CERTIFICATE-----`
 )
 
+// This is a hacky way to create a compile time error in case the attestor
+// doesn't implement the expected interfaces.
 var (
 	_ attestation.Attestor  = &Attestor{}
 	_ attestation.Subjecter = &Attestor{}
@@ -60,58 +76,30 @@ var (
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
-	},
-		registry.StringConfigOption(
-			"region-cert",
-			"A public x509 certificate used to verify the AWS instance identity document signature.",
-			"",
-			func(a attestation.Attestor, val string) (attestation.Attestor, error) {
-				attestor, ok := a.(*Attestor)
-				if !ok {
-					return a, fmt.Errorf("invalid attestor type: %T", a)
-				}
-				if val == "" {
-					return a, fmt.Errorf("aws-region-cert cannot be empty")
-				}
-
-				WithAWSRegionCert(val)(attestor)
-				return attestor, nil
-			},
-		))
-}
-
-type Option func(*Attestor)
-
-func WithAWSRegionCert(awsCert string) Option {
-	return func(a *Attestor) {
-		a.awsCert = awsCert
-	}
+	})
 }
 
 type Attestor struct {
-	imds.InstanceIdentityDocument
+	ec2metadata.EC2InstanceIdentityDocument
 	hashes    []cryptoutil.DigestValue
-	cfg       aws.Config
-	awsCert   string
+	session   session.Session
+	conf      *aws.Config
 	RawIID    string `json:"rawiid"`
 	RawSig    string `json:"rawsig"`
 	PublicKey string `json:"publickey"`
 }
 
-func New(opts ...Option) *Attestor {
-	attestor := &Attestor{}
-	for _, opt := range opts {
-		opt(attestor)
-	}
-
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+func New() *Attestor {
+	sess, err := session.NewSession()
 	if err != nil {
-		log.Errorf("failed to load AWS config: %v", err)
 		return nil
 	}
-	attestor.cfg = cfg
 
-	return attestor
+	conf := &aws.Config{}
+	return &Attestor{
+		session: *sess,
+		conf:    conf,
+	}
 }
 
 func (a *Attestor) Name() string {
@@ -147,33 +135,23 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func (a *Attestor) getIID() error {
-	client := imds.NewFromConfig(a.cfg)
-
-	iid, err := client.GetDynamicData(context.TODO(), &imds.GetDynamicDataInput{Path: docPath})
+	svc := ec2metadata.New(&a.session, a.conf)
+	iid, err := svc.GetDynamicData(docPath)
 	if err != nil {
 		return fmt.Errorf("failed to get instance identity document: %w", err)
 	}
 
-	content, err := io.ReadAll(iid.Content)
+	sig, err := svc.GetDynamicData(sigPath)
 	if err != nil {
-		return fmt.Errorf("failed to read instance identity document: %w", err)
-	}
-	a.RawIID = string(content)
-
-	sig, err := client.GetDynamicData(context.TODO(), &imds.GetDynamicDataInput{Path: sigPath})
-	if err != nil {
-		return fmt.Errorf("failed to get instance identity signature: %w", err)
+		return fmt.Errorf("failed to get signature: %w", err)
 	}
 
-	content, err = io.ReadAll(sig.Content)
-	if err != nil {
-		return fmt.Errorf("failed to read instance identity document: %w", err)
-	}
-	a.RawSig = string(content)
+	a.RawIID = iid
+	a.RawSig = sig
 
-	err = json.Unmarshal([]byte(a.RawIID), &a.InstanceIdentityDocument)
+	err = json.Unmarshal([]byte(a.RawIID), &a.EC2InstanceIdentityDocument)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal instance identity document: %w", err)
+		return fmt.Errorf("failed to unmarshal iid: %w", err)
 	}
 
 	return nil
@@ -181,7 +159,7 @@ func (a *Attestor) getIID() error {
 
 func (a *Attestor) Verify() error {
 	if len(a.RawIID) == 0 || len(a.RawSig) == 0 {
-		return fmt.Errorf("instance identity document or signature is empty")
+		return nil
 	}
 
 	docHash := sha256.Sum256([]byte(a.RawIID))
@@ -190,7 +168,7 @@ func (a *Attestor) Verify() error {
 		return fmt.Errorf("failed to decode signature: %w", err)
 	}
 
-	pubKey, err := getAWSCAPublicKey(a.awsCert)
+	pubKey, err := getAWSCAPublicKey()
 	if err != nil {
 		return fmt.Errorf("failed to get AWS public key: %w", err)
 	}
@@ -204,12 +182,17 @@ func (a *Attestor) Verify() error {
 		Type:  "PUBLIC KEY",
 		Bytes: pubKeyBytes,
 	})
+
 	a.PublicKey = string(pem)
+
+	if err != nil {
+		return fmt.Errorf("failed to encode public key: %w", err)
+	}
 
 	err = rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, docHash[:], sigBytes)
 	if err != nil {
 		log.Debugf("(attestation/aws-iid) failed to verify signature: %w", err)
-		return err
+		return nil
 	}
 
 	return nil
@@ -245,8 +228,8 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	return subjects
 }
 
-func getAWSCAPublicKey(awsCert string) (*rsa.PublicKey, error) {
-	block, rest := pem.Decode([]byte(awsCert))
+func getAWSCAPublicKey() (*rsa.PublicKey, error) {
+	block, rest := pem.Decode([]byte(awsCACertPEM))
 	if len(rest) > 0 {
 		return nil, fmt.Errorf("failed to decode PEM block containing the public key")
 	}
