@@ -25,6 +25,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -72,6 +73,15 @@ func init() {
 				}
 				if val == "" {
 					return a, fmt.Errorf("aws-region-cert cannot be empty")
+				}
+
+				// Detect if `val` is a path to a file
+				if fi, err := os.Stat(val); err == nil && !fi.IsDir() {
+					data, err := os.ReadFile(val)
+					if err != nil {
+						return a, fmt.Errorf("failed to read region cert file %q: %w", val, err)
+					}
+					val = string(data)
 				}
 
 				WithAWSRegionCert(val)(attestor)
