@@ -34,3 +34,7 @@ lint: ## Run the linter
 	@golangci-lint run
 	@go fmt ./...
 	@go vet ./...
+
+.PHONY: check-aws-certs
+check-aws-certs: ## Check the AWS public keys used to verify AWS IID documents
+	GOWORK=off go run -C ./attestation/aws-iid/check-certs/ . ../aws-certs.go
