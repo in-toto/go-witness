@@ -68,6 +68,22 @@ T2KEmoohLmK2mQz8NAu0xaOrKMDX6gyJGacw7ig6qjDNsUz3Sjl4NBkEe9cc2wXc
 kHPb0HdH2xJYhM7T
 -----END CERTIFICATE-----`
 
+const expiredCert = `-----BEGIN CERTIFICATE-----
+MIICZjCCAc+gAwIBAgIULTjRElgYD3XgFLpeTuhQTfQ4JOswDQYJKoZIhvcNAQEL
+BQAwRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDAeFw0xNjAxMDYwNzEzMTFaFw0xNzAx
+MDYwNzEzMTFaMEUxCzAJBgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEw
+HwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQwgZ8wDQYJKoZIhvcNAQEB
+BQADgY0AMIGJAoGBAK6jsX5XP35jTDYoWKgtEkWv5hUiFyq0fTw43pnJmvnGIj2X
+LdT20v6OzJQJwWUpx8vT0/IhcMvYjJ2A5E/2LvN3FJu0OxBWljVt3609V2YtbesC
+LNG3nYiXvEIScCJoPvCYGdzBAZAfpjfXxfg2sYC7V/jrKHyOr8j3kpPbFMXjAgMB
+AAGjUzBRMB0GA1UdDgQWBBSn/vtoYG9spomwZb6Ed+WR2qRQtTAfBgNVHSMEGDAW
+gBSn/vtoYG9spomwZb6Ed+WR2qRQtTAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3
+DQEBCwUAA4GBAJNw9iyseAmri+so2SEYTx2Vf6uSEjyWREd4T+Qm81bi/dsoFXP1
+1kR/Zls+0RxEey1W6rbwrvViYdHcvPIXJlR7AZcWW4UPYSvqL5VPNSzPD9oQK2Np
+7bK/6lhsQS8dWIZsVsI02NCHE4j2YQhKsT9GsGqHUmWka/4i3/QqZX/2
+-----END CERTIFICATE-----`
+
 type testresp struct {
 	path string
 	resp string
@@ -246,9 +262,25 @@ func TestAttestor_Subjects(t *testing.T) {
 }
 
 func Test_getAWSPublicKey(t *testing.T) {
-	key, err := getAWSCAPublicKey(testCert)
+	key, err := getAWSCAPublicKey("", testCert)
 	require.NoError(t, err)
 	if key == nil {
 		t.Error("Expected key to not be nil")
+	}
+
+	key, err = getAWSCAPublicKey("", expiredCert)
+	require.Error(t, err)
+	if key != nil {
+		t.Error("Expected key to be nil")
+	}
+}
+
+func Test_validateRegionalCerts(t *testing.T) {
+	for region := range awsRegionCerts {
+		key, err := getAWSCAPublicKey(region, "")
+		require.NoError(t, err, "failed to get public key for region %s: %v", region, err)
+		if key == nil {
+			t.Errorf("Expected key to not be nil for region %s", region)
+		}
 	}
 }
