@@ -208,7 +208,7 @@ func TestAttestor_Attest(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		a := New(WithAWSRegionCert(testCert))
+		a := New(WithAWSRegionCert(test.cert))
 
 		t.Run(test.name, func(t *testing.T) {
 			server := initTestServer(t, test.resp)

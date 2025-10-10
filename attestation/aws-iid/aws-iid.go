@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -72,15 +73,6 @@ func init() {
 					return a, fmt.Errorf("aws-region-cert cannot be empty")
 				}
 
-				// Detect if `val` is a path to a file
-				if fi, err := os.Stat(val); err == nil && !fi.IsDir() {
-					data, err := os.ReadFile(val)
-					if err != nil {
-						return a, fmt.Errorf("failed to read region cert file %q: %w", val, err)
-					}
-					val = string(data)
-				}
-
 				WithAWSRegionCert(val)(attestor)
 				return attestor, nil
 			},
@@ -91,6 +83,18 @@ type Option func(*Attestor)
 
 func WithAWSRegionCert(awsCert string) Option {
 	return func(a *Attestor) {
+		// Detect if `awsCert` is a path to a file
+		if fi, err := os.Stat(awsCert); err == nil && !fi.IsDir() {
+			data, err := os.ReadFile(awsCert)
+			if err != nil {
+				// If we can't read the file, just use the value as-is
+				// This maintains backward compatibility
+				a.awsCert = awsCert
+				return
+			}
+			a.awsCert = strings.TrimSpace(string(data))
+			return
+		}
 		a.awsCert = awsCert
 	}
 }
