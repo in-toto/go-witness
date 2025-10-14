@@ -25,6 +25,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -46,10 +47,6 @@ const (
 const (
 	docPath = "instance-identity/document"
 	sigPath = "instance-identity/signature"
-	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/verify-iid.html
-	// There is a different public cert for every AWS region
-	// You can find the one you need for verification here:
-	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/regions-certs.html
 )
 
 var (
@@ -70,10 +67,6 @@ func init() {
 				if !ok {
 					return a, fmt.Errorf("invalid attestor type: %T", a)
 				}
-				if val == "" {
-					return a, fmt.Errorf("aws-region-cert cannot be empty")
-				}
-
 				WithAWSRegionCert(val)(attestor)
 				return attestor, nil
 			},
@@ -190,7 +183,14 @@ func (a *Attestor) Verify() error {
 		return fmt.Errorf("failed to decode signature: %w", err)
 	}
 
-	pubKey, err := getAWSCAPublicKey(a.awsCert)
+	// use the region from config if possible,
+	// otherwise fall back to the region from the IID
+	region := a.cfg.Region
+	if region == "" {
+		region = a.Region
+	}
+
+	pubKey, err := getAWSCAPublicKey(region, a.awsCert)
 	if err != nil {
 		return fmt.Errorf("failed to get AWS public key: %w", err)
 	}
@@ -245,7 +245,15 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	return subjects
 }
 
-func getAWSCAPublicKey(awsCert string) (*rsa.PublicKey, error) {
+func getAWSCAPublicKey(awsRegion, awsCert string) (*rsa.PublicKey, error) {
+	if awsCert == "" {
+		var err error
+		awsCert, err = getRegionCert(awsRegion)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	block, rest := pem.Decode([]byte(awsCert))
 	if len(rest) > 0 {
 		return nil, fmt.Errorf("failed to decode PEM block containing the public key")
@@ -254,6 +262,15 @@ func getAWSCAPublicKey(awsCert string) (*rsa.PublicKey, error) {
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	if time.Now().Before(cert.NotBefore) || time.Now().After(cert.NotAfter) {
+		return nil, fmt.Errorf("%s: certificate is not valid at the current time", awsRegion)
+	}
+	log.Infof("(attestation/aws-iid) using AWS public key issued by %s, valid from %s to %s", cert.Issuer.CommonName, cert.NotBefore, cert.NotAfter)
+
+	if cert.PublicKeyAlgorithm != x509.RSA {
+		return nil, fmt.Errorf("%s: unexpected public key algorithm: %v", awsRegion, cert.PublicKeyAlgorithm)
 	}
 
 	return cert.PublicKey.(*rsa.PublicKey), nil
