@@ -309,3 +309,10 @@ func Test_validateRegionalCerts(t *testing.T) {
 		}
 	}
 }
+
+func Test_getAWSCAPublicKey_UnknownRegion(t *testing.T) {
+	key, err := getAWSCAPublicKey("invalid-region-1", "")
+	require.Error(t, err)
+	require.Nil(t, key)
+	require.Contains(t, err.Error(), "AWS region invalid-region-1 cert must be provided")
+}
