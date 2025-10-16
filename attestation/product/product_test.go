@@ -170,16 +170,10 @@ func TestIncludeExcludeGlobs(t *testing.T) {
 	assertSubjsMatch := func(t *testing.T, subjects map[string]cryptoutil.DigestSet, expected []string) {
 		subjectPaths := make([]string, 0, len(subjects))
 		for path := range subjects {
-			// On Windows, file paths use backslashes (`\`), while on Unix-like systems,
-			// paths use forward slashes (`/`).
-			// Convert all paths to forward slashes using `filepath.ToSlash` before comparison.
-			subjectPaths = append(subjectPaths, filepath.ToSlash(strings.TrimPrefix(path, "file:")))
+			subjectPaths = append(subjectPaths, strings.TrimPrefix(path, "file:"))
 		}
-		expectedSlash := make([]string, len(expected))
-		for i, p := range expected {
-			expectedSlash[i] = filepath.ToSlash(p)
-		}
-		assert.ElementsMatch(t, subjectPaths, expectedSlash)
+
+		assert.ElementsMatch(t, subjectPaths, expected)
 	}
 
 	t.Run("default include all", func(t *testing.T) {
