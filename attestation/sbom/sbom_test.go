@@ -16,6 +16,7 @@ package sbom
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -100,11 +101,21 @@ func TestAttest(t *testing.T) {
 				t.Errorf("expected SBOM type %s, got %s", test.expectedType, sbom.predicateType)
 			}
 
+			// On Unix systems, line breaks use '\n', but on Windows, files often contain
+			// '\r\n'. When unmarshaling JSON with invalid newlines, the Go JSON parser
+			// reports '\r' instead of '\n', which causes test mismatches.
+			//
+			// This normalization ensures the test remains consistent across platforms.
+			expectedErr := test.expectedError
+			if runtime.GOOS == "windows" {
+				expectedErr = strings.ReplaceAll(expectedErr, "\n", "\r")
+			}
+
 			for _, a := range ctx.CompletedAttestors() {
 				if a.Attestor.Name() == sbom.Name() {
 					if a.Error != nil &&
-						!strings.HasPrefix(a.Error.Error(), test.expectedError) {
-						t.Errorf("expected error: %s, got %s", test.expectedError, a.Error.Error())
+						!strings.HasPrefix(a.Error.Error(), expectedErr) {
+						t.Errorf("expected error: %s, got %s", expectedErr, a.Error.Error())
 					}
 				}
 			}
