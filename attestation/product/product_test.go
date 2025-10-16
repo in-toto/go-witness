@@ -77,14 +77,14 @@ func TestGetFileContentType(t *testing.T) {
 	// Create a temporary text file.
 	textFile, err := os.CreateTemp(tempDir, "test-*.txt")
 	require.NoError(t, err)
-	defer os.Remove(textFile.Name())
+	defer func() { textFile.Close(); os.Remove(textFile.Name()) }()
 	_, err = textFile.WriteString("This is a test file.")
 	require.NoError(t, err)
 
 	// Create a temporary PDF file with extension.
 	pdfFile, err := os.CreateTemp(tempDir, "test-*")
 	require.NoError(t, err)
-	defer os.Remove(pdfFile.Name())
+	defer func() { pdfFile.Close(); os.Remove(pdfFile.Name()) }()
 
 	//write to pdf so it has correct file signature 25 50 44 46 2D
 	_, err = pdfFile.WriteAt([]byte{0x25, 0x50, 0x44, 0x46, 0x2D}, 0)
@@ -94,7 +94,7 @@ func TestGetFileContentType(t *testing.T) {
 	// Create a temporary tar file with no extension.
 	tarFile, err := os.CreateTemp(tempDir, "test-*")
 	require.NoError(t, err)
-	defer os.Remove(tarFile.Name())
+	defer func() { tarFile.Close(); os.Remove(tarFile.Name()) }()
 	tarBuffer := new(bytes.Buffer)
 	writer := tar.NewWriter(tarBuffer)
 	header := &tar.Header{
@@ -111,7 +111,7 @@ func TestGetFileContentType(t *testing.T) {
 	// Open the temporary tar file using os.Open.
 	tarFile, err = os.Open(tarFile.Name())
 	require.NoError(t, err)
-
+	defer tarFile.Close()
 	// Define the test cases.
 	tests := []struct {
 		name     string
@@ -167,10 +167,16 @@ func TestIncludeExcludeGlobs(t *testing.T) {
 	assertSubjsMatch := func(t *testing.T, subjects map[string]cryptoutil.DigestSet, expected []string) {
 		subjectPaths := make([]string, 0, len(subjects))
 		for path := range subjects {
-			subjectPaths = append(subjectPaths, strings.TrimPrefix(path, "file:"))
+			// On Windows, file paths use backslashes (`\`), while on Unix-like systems,
+			// paths use forward slashes (`/`).
+			// Convert all paths to forward slashes using `filepath.ToSlash` before comparison.
+			subjectPaths = append(subjectPaths, filepath.ToSlash(strings.TrimPrefix(path, "file:")))
 		}
-
-		assert.ElementsMatch(t, subjectPaths, expected)
+		expectedSlash := make([]string, len(expected))
+		for i, p := range expected {
+			expectedSlash[i] = filepath.ToSlash(p)
+		}
+		assert.ElementsMatch(t, subjectPaths, expectedSlash)
 	}
 
 	t.Run("default include all", func(t *testing.T) {
