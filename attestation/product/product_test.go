@@ -161,8 +161,8 @@ func TestIncludeExcludeGlobs(t *testing.T) {
 		{"match all", "*", "", []string{"test.txt", "test.exe", filepath.Join("subdir", "test.txt"), filepath.Join("subdir", "test.exe")}},
 		{"include only exes", "*.exe", "", []string{"test.exe", filepath.Join("subdir", "test.exe")}},
 		{"exclude exes", "*", "*.exe", []string{"test.txt", filepath.Join("subdir", "test.txt")}},
-		{"include only files in subdir", filepath.Join("subdir", "*"), "", []string{filepath.Join("subdir", "test.txt"), filepath.Join("subdir", "test.exe")}},
-		{"exclude files in subdir", "*", filepath.Join("subdir", "*"), []string{"test.txt", "test.exe"}},
+		{"include only files in subdir", "subdir/*", "", []string{filepath.Join("subdir", "test.txt"), filepath.Join("subdir", "test.exe")}},
+		{"exclude files in subdir", "*", "subdir/*", []string{"test.txt", "test.exe"}},
 		{"include nothing", "", "", []string{}},
 		{"exclude everything", "", "*", []string{}},
 	}
