@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.2
 
 require (
-	cloud.google.com/go/kms v1.21.1
+	cloud.google.com/go/kms v1.21.2
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.1
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.4.0
 	github.com/CycloneDX/cyclonedx-go v0.9.3
