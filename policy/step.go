@@ -26,10 +26,11 @@ import (
 
 // +kubebuilder:object:generate=true
 type Step struct {
-	Name          string        `json:"name"`
-	Functionaries []Functionary `json:"functionaries"`
-	Attestations  []Attestation `json:"attestations"`
-	ArtifactsFrom []string      `json:"artifactsFrom,omitempty"`
+	Name             string        `json:"name"`
+	Functionaries    []Functionary `json:"functionaries"`
+	Attestations     []Attestation `json:"attestations"`
+	ArtifactsFrom    []string      `json:"artifactsFrom,omitempty"`
+	AttestationsFrom []string      `json:"attestationsFrom,omitempty"`
 }
 
 // +kubebuilder:object:generate=true
@@ -139,7 +140,8 @@ func (f Functionary) Validate(verifier cryptoutil.Verifier, trustBundles map[str
 
 // validateAttestations will test each collection against to ensure the expected attestations
 // appear in the collection as well as that any rego policies pass for the step.
-func (s Step) validateAttestations(collectionResults []source.CollectionVerificationResult) StepResult {
+// stepContext contains data from dependent steps (via AttestationsFrom) for cross-step validation.
+func (s Step) validateAttestations(collectionResults []source.CollectionVerificationResult, stepContext map[string]interface{}) StepResult {
 	result := StepResult{Step: s.Name}
 	if len(collectionResults) <= 0 {
 		return result
@@ -175,7 +177,8 @@ func (s Step) validateAttestations(collectionResults []source.CollectionVerifica
 				}.Error())
 			}
 
-			if err := EvaluateRegoPolicy(attestor, expected.RegoPolicies); err != nil {
+			// Pass step context to Rego evaluation for cross-step data access
+			if err := EvaluateRegoPolicy(attestor, expected.RegoPolicies, stepContext); err != nil {
 				passed = false
 				reasons = append(reasons, err.Error())
 			}
@@ -194,4 +197,62 @@ func (s Step) validateAttestations(collectionResults []source.CollectionVerifica
 	}
 
 	return result
+}
+
+// buildStepContext extracts attestation data from verified dependent steps
+// and builds a context map for Rego policy evaluation.
+// Only data from steps with at least one PASSED collection is included.
+func buildStepContext(resultsByStep map[string]StepResult, dependencies []string) map[string]interface{} {
+	steps := make(map[string]interface{})
+
+	for _, depName := range dependencies {
+		result, exists := resultsByStep[depName]
+		if !exists || len(result.Passed) == 0 {
+			// Dependency not verified - exclude from context
+			continue
+		}
+
+		stepData := make(map[string]interface{})
+		attestations := make(map[string]interface{})
+
+		// Extract ALL attestations from PASSED collections
+		for _, coll := range result.Passed {
+			for _, att := range coll.Collection.Attestations {
+				// Store ALL attestations keyed by their type URL for full access
+				// This allows Rego to access any attestation type:
+				// input.steps.build.attestations["https://witness.dev/attestations/lockfiles/v0.1"]
+				attestations[att.Type] = att.Attestation
+
+				// Also provide convenience access for common patterns using interface detection
+				// This allows simpler Rego: input.steps.build.products["file"].digest.sha256
+				if producer, ok := att.Attestation.(attestation.Producer); ok {
+					stepData["products"] = producer
+				}
+				if materialer, ok := att.Attestation.(attestation.Materialer); ok {
+					stepData["materials"] = materialer
+				}
+			}
+		}
+
+		// Add the full attestations map to step data
+		if len(attestations) > 0 {
+			stepData["attestations"] = attestations
+		}
+
+		steps[depName] = stepData
+	}
+
+	return steps
+}
+
+// checkDependencies verifies that all required dependencies have been verified
+// (i.e., have at least one PASSED collection).
+func (s Step) checkDependencies(results map[string]StepResult) error {
+	for _, dep := range s.AttestationsFrom {
+		result, exists := results[dep]
+		if !exists || len(result.Passed) == 0 {
+			return ErrDependencyNotVerified{Step: dep}
+		}
+	}
+	return nil
 }

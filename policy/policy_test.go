@@ -496,6 +496,168 @@ func TestPubKeyVerifiers(t *testing.T) {
 	}
 }
 
+func TestCircularDependencyDetection(t *testing.T) {
+	tests := []struct {
+		name        string
+		steps       map[string]Step
+		expectError bool
+		errorType   interface{}
+	}{
+		{
+			name: "no cycle - linear chain",
+			steps: map[string]Step{
+				"build":   {Name: "build"},
+				"test":    {Name: "test", AttestationsFrom: []string{"build"}},
+				"package": {Name: "package", AttestationsFrom: []string{"test"}},
+			},
+			expectError: false,
+		},
+		{
+			name: "no cycle - diamond dependency",
+			steps: map[string]Step{
+				"build":   {Name: "build"},
+				"test":    {Name: "test", AttestationsFrom: []string{"build"}},
+				"package": {Name: "package", AttestationsFrom: []string{"build"}},
+				"deploy":  {Name: "deploy", AttestationsFrom: []string{"test", "package"}},
+			},
+			expectError: false,
+		},
+		{
+			name: "self-reference",
+			steps: map[string]Step{
+				"build": {Name: "build", AttestationsFrom: []string{"build"}},
+			},
+			expectError: true,
+			errorType:   ErrSelfReference{},
+		},
+		{
+			name: "direct cycle - two steps",
+			steps: map[string]Step{
+				"build":   {Name: "build", AttestationsFrom: []string{"package"}},
+				"package": {Name: "package", AttestationsFrom: []string{"build"}},
+			},
+			expectError: true,
+			errorType:   ErrCircularDependency{},
+		},
+		{
+			name: "indirect cycle - three steps",
+			steps: map[string]Step{
+				"build":  {Name: "build", AttestationsFrom: []string{"deploy"}},
+				"test":   {Name: "test", AttestationsFrom: []string{"build"}},
+				"deploy": {Name: "deploy", AttestationsFrom: []string{"test"}},
+			},
+			expectError: true,
+			errorType:   ErrCircularDependency{},
+		},
+		{
+			name: "complex indirect cycle",
+			steps: map[string]Step{
+				"step1": {Name: "step1", AttestationsFrom: []string{"step2"}},
+				"step2": {Name: "step2", AttestationsFrom: []string{"step3"}},
+				"step3": {Name: "step3", AttestationsFrom: []string{"step4"}},
+				"step4": {Name: "step4", AttestationsFrom: []string{"step1"}},
+			},
+			expectError: true,
+			errorType:   ErrCircularDependency{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Policy{Steps: tt.steps}
+			err := p.Validate()
+			if tt.expectError {
+				assert.Error(t, err, "expected an error but got none")
+				if tt.errorType != nil {
+					assert.IsType(t, tt.errorType, err)
+				}
+			} else {
+				assert.NoError(t, err, "unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestTopologicalSort(t *testing.T) {
+	tests := []struct {
+		name          string
+		steps         map[string]Step
+		expectError   bool
+		validateOrder func([]string) bool
+	}{
+		{
+			name: "linear chain",
+			steps: map[string]Step{
+				"build":   {Name: "build"},
+				"test":    {Name: "test", AttestationsFrom: []string{"build"}},
+				"package": {Name: "package", AttestationsFrom: []string{"test"}},
+			},
+			expectError: false,
+			validateOrder: func(order []string) bool {
+				buildIdx := indexOf(order, "build")
+				testIdx := indexOf(order, "test")
+				packageIdx := indexOf(order, "package")
+				return buildIdx < testIdx && testIdx < packageIdx
+			},
+		},
+		{
+			name: "diamond dependency",
+			steps: map[string]Step{
+				"build":   {Name: "build"},
+				"test":    {Name: "test", AttestationsFrom: []string{"build"}},
+				"package": {Name: "package", AttestationsFrom: []string{"build"}},
+				"deploy":  {Name: "deploy", AttestationsFrom: []string{"test", "package"}},
+			},
+			expectError: false,
+			validateOrder: func(order []string) bool {
+				buildIdx := indexOf(order, "build")
+				testIdx := indexOf(order, "test")
+				packageIdx := indexOf(order, "package")
+				deployIdx := indexOf(order, "deploy")
+				return buildIdx < testIdx && buildIdx < packageIdx &&
+					testIdx < deployIdx && packageIdx < deployIdx
+			},
+		},
+		{
+			name: "independent steps",
+			steps: map[string]Step{
+				"build": {Name: "build"},
+				"test":  {Name: "test"},
+				"lint":  {Name: "lint"},
+			},
+			expectError: false,
+			validateOrder: func(order []string) bool {
+				return len(order) == 3
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Policy{Steps: tt.steps}
+			order, err := p.topologicalSort()
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Len(t, order, len(tt.steps))
+				if tt.validateOrder != nil {
+					assert.True(t, tt.validateOrder(order), "invalid ordering: %v", order)
+				}
+			}
+		})
+	}
+}
+
+func indexOf(slice []string, item string) int {
+	for i, v := range slice {
+		if v == item {
+			return i
+		}
+	}
+	return -1
+}
+
 func TestCheckFunctionaries(t *testing.T) {
 	signers := []cryptoutil.Signer{}
 	verifiers := []cryptoutil.Verifier{}

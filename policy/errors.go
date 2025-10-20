@@ -125,3 +125,27 @@ type ErrInvalidOption struct {
 func (e ErrInvalidOption) Error() string {
 	return fmt.Sprintf("invalid option (%v): %v", e.Option, e.Reason)
 }
+
+type ErrCircularDependency struct {
+	Steps []string
+}
+
+func (e ErrCircularDependency) Error() string {
+	return fmt.Sprintf("circular dependency detected: %v", strings.Join(e.Steps, " -> "))
+}
+
+type ErrSelfReference struct {
+	Step string
+}
+
+func (e ErrSelfReference) Error() string {
+	return fmt.Sprintf("step '%v' cannot depend on itself", e.Step)
+}
+
+type ErrDependencyNotVerified struct {
+	Step string
+}
+
+func (e ErrDependencyNotVerified) Error() string {
+	return fmt.Sprintf("dependency '%v' not verified - cannot evaluate dependent step", e.Step)
+}
