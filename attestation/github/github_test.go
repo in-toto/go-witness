@@ -123,24 +123,24 @@ func TestSubjects(t *testing.T) {
 
 func TestJWKSURLOverride(t *testing.T) {
 	testCases := []struct {
-		name               string
-		jwksURLEnv         string
-		expectedJWKSURL    string
+		name            string
+		jwksURLEnv      string
+		expectedJWKSURL string
 	}{
 		{
-			name:               "default JWKS URL when no override",
-			jwksURLEnv:         "",
-			expectedJWKSURL:    jwksURL,
+			name:            "default JWKS URL when no override",
+			jwksURLEnv:      "",
+			expectedJWKSURL: jwksURL,
 		},
 		{
-			name:               "custom JWKS URL when override set",
-			jwksURLEnv:         "http://localhost:8081/.well-known/jwks",
-			expectedJWKSURL:    "http://localhost:8081/.well-known/jwks",
+			name:            "custom JWKS URL when override set",
+			jwksURLEnv:      "http://localhost:8081/.well-known/jwks",
+			expectedJWKSURL: "http://localhost:8081/.well-known/jwks",
 		},
 		{
-			name:               "custom JWKS URL with different port",
-			jwksURLEnv:         "https://test-server.example.com:9090/jwks",
-			expectedJWKSURL:    "https://test-server.example.com:9090/jwks",
+			name:            "custom JWKS URL with different port",
+			jwksURLEnv:      "https://test-server.example.com:9090/jwks",
+			expectedJWKSURL: "https://test-server.example.com:9090/jwks",
 		},
 	}
 

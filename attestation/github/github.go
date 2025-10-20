@@ -108,7 +108,7 @@ func New() *Attestor {
 	if customJWKSURL == "" {
 		customJWKSURL = jwksURL // use default
 	}
-	
+
 	return &Attestor{
 		aud:      tokenAudience,
 		jwksURL:  customJWKSURL,

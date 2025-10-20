@@ -137,28 +137,28 @@ func TestSubjectsEmpty(t *testing.T) {
 
 func TestJWKSURLOverride(t *testing.T) {
 	testCases := []struct {
-		name               string
-		jwksURLEnv         string
-		ciServerURL        string
-		expectedJWKSURL    string
+		name            string
+		jwksURLEnv      string
+		ciServerURL     string
+		expectedJWKSURL string
 	}{
 		{
-			name:               "default JWKS URL when no override",
-			jwksURLEnv:         "",
-			ciServerURL:        "https://gitlab.example.com",
-			expectedJWKSURL:    "https://gitlab.example.com/oauth/discovery/keys",
+			name:            "default JWKS URL when no override",
+			jwksURLEnv:      "",
+			ciServerURL:     "https://gitlab.example.com",
+			expectedJWKSURL: "https://gitlab.example.com/oauth/discovery/keys",
 		},
 		{
-			name:               "custom JWKS URL when override set",
-			jwksURLEnv:         "http://localhost:8081/.well-known/jwks",
-			ciServerURL:        "https://gitlab.example.com",
-			expectedJWKSURL:    "http://localhost:8081/.well-known/jwks",
+			name:            "custom JWKS URL when override set",
+			jwksURLEnv:      "http://localhost:8081/.well-known/jwks",
+			ciServerURL:     "https://gitlab.example.com",
+			expectedJWKSURL: "http://localhost:8081/.well-known/jwks",
 		},
 		{
-			name:               "custom JWKS URL with different port",
-			jwksURLEnv:         "https://test-server.example.com:9090/jwks",
-			ciServerURL:        "https://gitlab.internal.com",
-			expectedJWKSURL:    "https://test-server.example.com:9090/jwks",
+			name:            "custom JWKS URL with different port",
+			jwksURLEnv:      "https://test-server.example.com:9090/jwks",
+			ciServerURL:     "https://gitlab.internal.com",
+			expectedJWKSURL: "https://test-server.example.com:9090/jwks",
 		},
 	}
 
@@ -167,7 +167,7 @@ func TestJWKSURLOverride(t *testing.T) {
 			// Set up environment variables required for GitLab CI detection
 			t.Setenv("GITLAB_CI", "true")
 			t.Setenv("CI_SERVER_URL", testCase.ciServerURL)
-			
+
 			// Set up JWKS URL override environment variable
 			if testCase.jwksURLEnv != "" {
 				t.Setenv("WITNESS_GITLAB_JWKS_URL", testCase.jwksURLEnv)
@@ -176,16 +176,16 @@ func TestJWKSURLOverride(t *testing.T) {
 			// Create new attestor and test with empty context since we only care about JWKS URL setup
 			attestor := New()
 			ctx := &attestation.AttestationContext{}
-			
+
 			// Call Attest which sets up the JWKS URL
 			err := attestor.Attest(ctx)
-			
+
 			// We expect this to pass (no JWT token is OK for this test)
 			assert.NoError(t, err)
-			
+
 			// Verify the correct server URL was captured
 			assert.Equal(t, testCase.ciServerURL, attestor.CIServerUrl)
-			
+
 			// We can't directly access the JWKS URL used since it's passed to jwt.New(),
 			// but we can verify the environment variable logic by checking that if we set the environment variable,
 			// we should be able to retrieve it the same way the code does

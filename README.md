@@ -49,3 +49,12 @@ The Fulcio signer provides certificate-based signing using the [Sigstore Fulcio]
 
 ## Running Tests
 This repository uses Go tests for testing. You can run these tests by executing `make test`.
+
+## CI Attestor Testing
+For testing CI attestors locally or with mock servers, the following environment variables can be used to override hardcoded OIDC/JWKS endpoints:
+
+- `WITNESS_GITHUB_JWKS_URL` - Override GitHub Actions OIDC JWKS endpoint (default: `https://token.actions.githubusercontent.com/.well-known/jwks`)
+- `WITNESS_GITLAB_JWKS_URL` - Override GitLab CI OIDC JWKS endpoint (default: dynamically constructed from `CI_SERVER_URL`)
+- `WITNESS_GCP_JWKS_URL` - Override GCP IIT OIDC JWKS endpoint (default: `https://www.googleapis.com/oauth2/v3/certs`)
+
+**Security Note**: These overrides are intended for testing purposes only and should never be used in production environments. When these environment variables are not set, the attestors will use their default production endpoints.
