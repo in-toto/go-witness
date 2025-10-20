@@ -103,9 +103,15 @@ type Attestor struct {
 
 // New creates and returns a new github attestor.
 func New() *Attestor {
+	// Allow JWKS URL override for testing purposes
+	customJWKSURL := os.Getenv("WITNESS_GITHUB_JWKS_URL")
+	if customJWKSURL == "" {
+		customJWKSURL = jwksURL // use default
+	}
+	
 	return &Attestor{
 		aud:      tokenAudience,
-		jwksURL:  jwksURL,
+		jwksURL:  customJWKSURL,
 		tokenURL: os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL"),
 	}
 }

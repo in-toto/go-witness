@@ -120,3 +120,46 @@ func TestSubjects(t *testing.T) {
 	assert.NotNil(t, m)
 	assert.Equal(t, 1, len(m))
 }
+
+func TestJWKSURLOverride(t *testing.T) {
+	testCases := []struct {
+		name               string
+		jwksURLEnv         string
+		expectedJWKSURL    string
+	}{
+		{
+			name:               "default JWKS URL when no override",
+			jwksURLEnv:         "",
+			expectedJWKSURL:    jwksURL,
+		},
+		{
+			name:               "custom JWKS URL when override set",
+			jwksURLEnv:         "http://localhost:8081/.well-known/jwks",
+			expectedJWKSURL:    "http://localhost:8081/.well-known/jwks",
+		},
+		{
+			name:               "custom JWKS URL with different port",
+			jwksURLEnv:         "https://test-server.example.com:9090/jwks",
+			expectedJWKSURL:    "https://test-server.example.com:9090/jwks",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			// Set up environment variable
+			if testCase.jwksURLEnv != "" {
+				os.Setenv("WITNESS_GITHUB_JWKS_URL", testCase.jwksURLEnv)
+				defer os.Unsetenv("WITNESS_GITHUB_JWKS_URL")
+			} else {
+				// Ensure environment variable is not set
+				os.Unsetenv("WITNESS_GITHUB_JWKS_URL")
+			}
+
+			// Create new attestor
+			attestor := New()
+
+			// Verify the JWKS URL is set correctly
+			assert.Equal(t, testCase.expectedJWKSURL, attestor.jwksURL)
+		})
+	}
+}
