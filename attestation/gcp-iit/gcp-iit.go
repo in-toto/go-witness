@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
@@ -117,7 +118,13 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	it := string(identityToken)
 
-	a.JWT = jwt.New(jwt.WithToken(it), jwt.WithJWKSUrl(jwksUrl))
+	// Allow JWKS URL override for testing purposes
+	customJWKSURL := os.Getenv("WITNESS_GCP_JWKS_URL")
+	if customJWKSURL == "" {
+		customJWKSURL = jwksUrl // use default
+	}
+
+	a.JWT = jwt.New(jwt.WithToken(it), jwt.WithJWKSUrl(customJWKSURL))
 	if err := a.JWT.Attest(ctx); err != nil {
 		return err
 	}
