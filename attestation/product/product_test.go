@@ -77,24 +77,23 @@ func TestGetFileContentType(t *testing.T) {
 	// Create a temporary text file.
 	textFile, err := os.CreateTemp(tempDir, "test-*.txt")
 	require.NoError(t, err)
-	defer os.Remove(textFile.Name())
 	_, err = textFile.WriteString("This is a test file.")
 	require.NoError(t, err)
+	textFilePath := textFile.Name()
+	textFile.Close()
 
 	// Create a temporary PDF file with extension.
 	pdfFile, err := os.CreateTemp(tempDir, "test-*")
 	require.NoError(t, err)
-	defer os.Remove(pdfFile.Name())
-
 	//write to pdf so it has correct file signature 25 50 44 46 2D
 	_, err = pdfFile.WriteAt([]byte{0x25, 0x50, 0x44, 0x46, 0x2D}, 0)
-
 	require.NoError(t, err)
+	pdfFilePath := pdfFile.Name()
+	pdfFile.Close()
 
 	// Create a temporary tar file with no extension.
 	tarFile, err := os.CreateTemp(tempDir, "test-*")
 	require.NoError(t, err)
-	defer os.Remove(tarFile.Name())
 	tarBuffer := new(bytes.Buffer)
 	writer := tar.NewWriter(tarBuffer)
 	header := &tar.Header{
@@ -107,26 +106,30 @@ func TestGetFileContentType(t *testing.T) {
 	require.NoError(t, writer.Close())
 	_, err = tarFile.Write(tarBuffer.Bytes())
 	require.NoError(t, err)
-
+	tarFilePath := tarFile.Name()
+	tarFile.Close()
 	// Open the temporary tar file using os.Open.
 	tarFile, err = os.Open(tarFile.Name())
 	require.NoError(t, err)
-
+	defer func() {
+		tarFile.Close()
+		os.Remove(tarFile.Name())
+	}()
 	// Define the test cases.
 	tests := []struct {
 		name     string
-		file     *os.File
+		filePath string
 		expected string
 	}{
-		{"text file with extension", textFile, "text/plain; charset=utf-8"},
-		{"PDF file with no extension", pdfFile, "application/pdf"},
-		{"tar file with no extension", tarFile, "application/x-tar"},
+		{"text file with extension", textFilePath, "text/plain; charset=utf-8"},
+		{"PDF file with no extension", pdfFilePath, "application/pdf"},
+		{"tar file with no extension", tarFilePath, "application/x-tar"},
 	}
 
 	// Run the test cases.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			contentType, err := getFileContentType(test.file.Name())
+			contentType, err := getFileContentType(test.filePath)
 			require.NoError(t, err)
 			require.Equal(t, test.expected, contentType)
 		})
