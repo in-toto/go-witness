@@ -252,8 +252,9 @@ verify:
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
 	require.NoError(t, err)
 
-	err = os.Chdir(tempDir)
-	require.NoError(t, err)
+	oldDir, _ := os.Getwd()
+	require.NoError(t, os.Chdir(tempDir))
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	attestor := New(WithCustomArgs(func() []string {
 		return []string{"witness", "run"}
