@@ -252,10 +252,6 @@ verify:
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
 	require.NoError(t, err)
 
-	oldWd, err := os.Getwd()
-	require.NoError(t, err)
-	defer os.Chdir(oldWd)
-
 	err = os.Chdir(tempDir)
 	require.NoError(t, err)
 
