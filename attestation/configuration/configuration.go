@@ -15,13 +15,14 @@
 package configuration
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto"
 	"os"
 	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/invopop/jsonschema"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -51,10 +52,11 @@ func init() {
 }
 
 type Attestor struct {
-	Flags        map[string]string `json:"flags,omitempty"`
-	ConfigPath   string            `json:"config_path,omitempty"`
-	ConfigDigest string            `json:"config_digest,omitempty"`
-	WorkingDir   string            `json:"working_directory,omitempty"`
+	Flags         map[string]string      `json:"flags,omitempty"`
+	ConfigPath    string                 `json:"config_path,omitempty"`
+	ConfigDigest  cryptoutil.DigestSet   `json:"config_digest,omitempty"`
+	ConfigContent map[string]interface{} `json:"config_content,omitempty"`
+	WorkingDir    string                 `json:"working_directory,omitempty"`
 
 	osArgs func() []string
 }
@@ -116,10 +118,20 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		a.ConfigPath = ".witness.yaml"
 	}
 
-	// Config digest if file exists
+	// Config digest and content if file exists
 	if data, err := os.ReadFile(a.ConfigPath); err == nil {
-		sum := sha256.Sum256(data)
-		a.ConfigDigest = hex.EncodeToString(sum[:])
+		digestSet, err := cryptoutil.CalculateDigestSetFromBytes(data, []cryptoutil.DigestValue{
+			{Hash: crypto.SHA256, GitOID: false, DirHash: false},
+		})
+		if err == nil {
+			a.ConfigDigest = digestSet
+		}
+
+		// Parse and store config content
+		var configData map[string]interface{}
+		if err := yaml.Unmarshal(data, &configData); err == nil {
+			a.ConfigContent = configData
+		}
 	}
 
 	return nil
