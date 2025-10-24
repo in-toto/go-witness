@@ -14,13 +14,22 @@
           "type": "string"
         },
         "config_digest": {
-          "type": "string"
+          "$ref": "#/$defs/DigestSet"
+        },
+        "config_content": {
+          "type": "object"
         },
         "working_directory": {
           "type": "string"
         }
       },
       "additionalProperties": false,
+      "type": "object"
+    },
+    "DigestSet": {
+      "additionalProperties": {
+        "type": "string"
+      },
       "type": "object"
     }
   }
