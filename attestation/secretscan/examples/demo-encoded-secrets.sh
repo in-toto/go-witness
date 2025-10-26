@@ -27,15 +27,26 @@ echo "Creating demo files in: $DEMO_DIR"
 cd "$(dirname "$0")/../../../"
 REPO_ROOT=$(pwd)
 
-# Set witness binary location - can be overridden with WITNESS_BIN env var
-WITNESS_BIN=${WITNESS_BIN:-"./witness/witness"}
+# Set witness binary location (can be overridden with WITNESS_BIN env var)
+WITNESS_BIN=${WITNESS_BIN:-"witness"}
 
-# Ensure witness binary exists
-if [ ! -f "$WITNESS_BIN" ]; then
-  echo "Witness binary not found at $WITNESS_BIN. Building..."
-  make witness
-  WITNESS_BIN="./witness/witness"
+# Check if witness binary is available (either in PATH or custom path)
+if ! command -v "$WITNESS_BIN" >/dev/null 2>&1; then
+  echo "❌ Error: 'witness' binary not found."
+  echo ""
+  echo "To fix this:"
+  echo "  1. Install Witness using the official install script:"
+  echo "       bash <(curl -s https://raw.githubusercontent.com/in-toto/witness/main/install-witness.sh)"
+  echo ""
+  echo "  2. Or build the Witness binary locally from source if you have the repository."
+  echo ""
+  echo "  3. Or specify a custom binary path via environment variable:"
+  echo "       export WITNESS_BIN=./path/to/witness"
+  echo ""
+  exit 1
 fi
+
+echo "✅ Using witness binary: $(command -v $WITNESS_BIN || echo $WITNESS_BIN)"
 
 # Create test key if it doesn't exist
 if [ ! -f "testkey.pem" ]; then
@@ -115,7 +126,7 @@ echo "==============================================================="
 extract_findings() {
   local file="$1"
   local name="$2"
-  
+
   echo "=== $name Findings ==="
   jq -r '.payload' "$file" | base64 -d | jq '.predicate.attestations[] | select(.type=="https://witness.dev/attestations/secretscan/v0.1") | .attestation.findings'
   echo
