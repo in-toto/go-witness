@@ -156,6 +156,109 @@ func trustBundlesFromRoots(roots map[string]Root) (map[string]TrustBundle, error
 	return bundles, nil
 }
 
+// Validate checks the policy for circular dependencies in AttestationsFrom declarations.
+// This prevents infinite loops and ensures a valid dependency graph.
+func (p Policy) Validate() error {
+	// Check for circular dependencies using depth-first search
+	visited := make(map[string]bool)
+	recursionStack := make(map[string]bool)
+
+	var dfs func(string) error
+	dfs = func(stepName string) error {
+		visited[stepName] = true
+		recursionStack[stepName] = true
+
+		step, exists := p.Steps[stepName]
+		if !exists {
+			// Step doesn't exist, but we don't error here - will be caught during verification
+			recursionStack[stepName] = false
+			return nil
+		}
+
+		for _, dep := range step.AttestationsFrom {
+			// Check for self-reference
+			if dep == stepName {
+				return ErrSelfReference{Step: stepName}
+			}
+
+			if !visited[dep] {
+				if err := dfs(dep); err != nil {
+					return err
+				}
+			} else if recursionStack[dep] {
+				// Found a cycle - reconstruct the cycle path
+				return ErrCircularDependency{Steps: []string{dep, stepName}}
+			}
+		}
+
+		recursionStack[stepName] = false
+		return nil
+	}
+
+	for stepName := range p.Steps {
+		if !visited[stepName] {
+			if err := dfs(stepName); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// topologicalSort returns steps in dependency order using Kahn's algorithm.
+// Steps with no dependencies come first, followed by steps that depend on them.
+func (p Policy) topologicalSort() ([]string, error) {
+	// Build in-degree map (number of dependencies for each step)
+	inDegree := make(map[string]int)
+	adjList := make(map[string][]string)
+
+	// Initialize all steps with in-degree 0
+	for stepName := range p.Steps {
+		inDegree[stepName] = 0
+		adjList[stepName] = []string{}
+	}
+
+	// Build adjacency list and calculate in-degrees
+	for stepName, step := range p.Steps {
+		for _, dep := range step.AttestationsFrom {
+			adjList[dep] = append(adjList[dep], stepName)
+			inDegree[stepName]++
+		}
+	}
+
+	// Queue of steps with no dependencies
+	queue := []string{}
+	for stepName, degree := range inDegree {
+		if degree == 0 {
+			queue = append(queue, stepName)
+		}
+	}
+
+	// Process queue
+	sorted := []string{}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		sorted = append(sorted, current)
+
+		// Reduce in-degree for dependent steps
+		for _, dependent := range adjList[current] {
+			inDegree[dependent]--
+			if inDegree[dependent] == 0 {
+				queue = append(queue, dependent)
+			}
+		}
+	}
+
+	// If we haven't processed all steps, there's a cycle
+	if len(sorted) != len(p.Steps) {
+		return nil, ErrCircularDependency{Steps: []string{}}
+	}
+
+	return sorted, nil
+}
+
 type VerifyOption func(*verifyOptions)
 
 type verifyOptions struct {
@@ -251,7 +354,10 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 
 			// Verify the functionaries
 			functionaryCheckResults := step.checkFunctionaries(collections, trustBundles)
-			stepResult := step.validateAttestations(functionaryCheckResults.Passed)
+
+			// Build step context for cross-step data access from verified dependencies
+			stepContext := buildStepContext(resultsByStep, step.AttestationsFrom)
+			stepResult := step.validateAttestations(functionaryCheckResults.Passed, stepContext)
 			stepResult.Rejected = append(stepResult.Rejected, functionaryCheckResults.Rejected...)
 
 			// We perform many searches against the same step, so we need to merge the relevant fields
