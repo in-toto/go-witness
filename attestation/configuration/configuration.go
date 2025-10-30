@@ -15,7 +15,6 @@
 package configuration
 
 import (
-	"crypto"
 	"os"
 	"strings"
 
@@ -120,9 +119,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 
 	// Config digest and content if file exists
 	if data, err := os.ReadFile(a.ConfigPath); err == nil {
-		digestSet, err := cryptoutil.CalculateDigestSetFromBytes(data, []cryptoutil.DigestValue{
-			{Hash: crypto.SHA256, GitOID: false, DirHash: false},
-		})
+		digestSet, err := cryptoutil.CalculateDigestSetFromBytes(data, ctx.Hashes())
 		if err == nil {
 			a.ConfigDigest = digestSet
 		}
