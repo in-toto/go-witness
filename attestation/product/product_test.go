@@ -77,24 +77,23 @@ func TestGetFileContentType(t *testing.T) {
 	// Create a temporary text file.
 	textFile, err := os.CreateTemp(tempDir, "test-*.txt")
 	require.NoError(t, err)
-	defer os.Remove(textFile.Name())
 	_, err = textFile.WriteString("This is a test file.")
 	require.NoError(t, err)
+	textFilePath := textFile.Name()
+	textFile.Close()
 
 	// Create a temporary PDF file with extension.
 	pdfFile, err := os.CreateTemp(tempDir, "test-*")
 	require.NoError(t, err)
-	defer os.Remove(pdfFile.Name())
-
 	//write to pdf so it has correct file signature 25 50 44 46 2D
 	_, err = pdfFile.WriteAt([]byte{0x25, 0x50, 0x44, 0x46, 0x2D}, 0)
-
 	require.NoError(t, err)
+	pdfFilePath := pdfFile.Name()
+	pdfFile.Close()
 
 	// Create a temporary tar file with no extension.
 	tarFile, err := os.CreateTemp(tempDir, "test-*")
 	require.NoError(t, err)
-	defer os.Remove(tarFile.Name())
 	tarBuffer := new(bytes.Buffer)
 	writer := tar.NewWriter(tarBuffer)
 	header := &tar.Header{
@@ -107,26 +106,30 @@ func TestGetFileContentType(t *testing.T) {
 	require.NoError(t, writer.Close())
 	_, err = tarFile.Write(tarBuffer.Bytes())
 	require.NoError(t, err)
-
+	tarFilePath := tarFile.Name()
+	tarFile.Close()
 	// Open the temporary tar file using os.Open.
 	tarFile, err = os.Open(tarFile.Name())
 	require.NoError(t, err)
-
+	defer func() {
+		tarFile.Close()
+		os.Remove(tarFile.Name())
+	}()
 	// Define the test cases.
 	tests := []struct {
 		name     string
-		file     *os.File
+		filePath string
 		expected string
 	}{
-		{"text file with extension", textFile, "text/plain; charset=utf-8"},
-		{"PDF file with no extension", pdfFile, "application/pdf"},
-		{"tar file with no extension", tarFile, "application/x-tar"},
+		{"text file with extension", textFilePath, "text/plain; charset=utf-8"},
+		{"PDF file with no extension", pdfFilePath, "application/pdf"},
+		{"tar file with no extension", tarFilePath, "application/x-tar"},
 	}
 
 	// Run the test cases.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			contentType, err := getFileContentType(test.file.Name())
+			contentType, err := getFileContentType(test.filePath)
 			require.NoError(t, err)
 			require.Equal(t, test.expected, contentType)
 		})
@@ -190,6 +193,58 @@ func TestIncludeExcludeGlobs(t *testing.T) {
 			WithExcludeGlob(test.excludeGlob)(a)
 			require.NoError(t, a.Attest(ctx))
 			assertSubjsMatch(t, a.Subjects(), test.expectedSubjects)
+		})
+	}
+}
+
+func TestIsSPDXJson(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		expected bool
+	}{
+		{
+			name:     "valid SPDX with large buffer",
+			input:    []byte(`{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"test","documentNamespace":"https://example.com/test","creationInfo":{"created":"2024-01-01T00:00:00Z","creators":["Tool: test"]},"packages":[],"files":[],"relationships":[],"externalDocumentRefs":[],"snippets":[],"annotations":[],"reviewedBy":[],"comment":"","licenseListVersion":"3.21","creator":{"person":[],"organization":[],"tool":[]}}`),
+			expected: true,
+		},
+		{
+			name:     "valid SPDX with small buffer (< 500 bytes)",
+			input:    []byte(`{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"test","documentNamespace":"https://example.com/test","creationInfo":{"created":"2024-01-01T00:00:00Z","creators":["Tool: test"]},"packages":[]}`),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsSPDXJson(tt.input)
+			assert.Equal(t, tt.expected, result, "IsSPDXJson() result mismatch")
+		})
+	}
+}
+
+func TestIsCycloneDXJson(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		expected bool
+	}{
+		{
+			name:     "valid CycloneDX with large buffer",
+			input:    []byte(`{"bomFormat":"CycloneDX","specVersion":"1.4","serialNumber":"urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79","version":1,"metadata":{"timestamp":"2024-01-01T00:00:00Z","tools":[{"vendor":"test","name":"test","version":"1.0.0"}],"component":{"type":"application","bom-ref":"pkg:generic/test","name":"test","version":"1.0.0"}},"components":[],"dependencies":[]}`),
+			expected: true,
+		},
+		{
+			name:     "valid CycloneDX with small buffer (< 500 bytes)",
+			input:    []byte(`{"bomFormat":"CycloneDX","specVersion":"1.4","serialNumber":"urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79","version":1,"metadata":{"timestamp":"2024-01-01T00:00:00Z"},"components":[]}`),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsCycloneDXJson(tt.input)
+			assert.Equal(t, tt.expected, result, "IsCycloneDXJson() result mismatch")
 		})
 	}
 }

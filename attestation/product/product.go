@@ -238,11 +238,16 @@ func (a *Attestor) Products() map[string]attestation.Product {
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 	subjects := make(map[string]cryptoutil.DigestSet)
 	for productName, product := range a.products {
-		if a.compiledExcludeGlob != nil && a.compiledExcludeGlob.Match(productName) {
+		// Normalize path to forward slashes for glob matching
+		// This ensures Windows paths like "subdir\test.txt" are converted to "subdir/test.txt"
+		// to match glob patterns which always use forward slashes
+		normalizedPath := filepath.ToSlash(productName)
+
+		if a.compiledExcludeGlob != nil && a.compiledExcludeGlob.Match(normalizedPath) {
 			continue
 		}
 
-		if a.compiledIncludeGlob != nil && !a.compiledIncludeGlob.Match(productName) {
+		if a.compiledIncludeGlob != nil && !a.compiledIncludeGlob.Match(normalizedPath) {
 			continue
 		}
 
@@ -257,12 +262,22 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 }
 
 func IsSPDXJson(buf []byte) bool {
-	header := buf[:500]
+	maxLen := len(buf)
+	if maxLen > 500 {
+		maxLen = 500
+	}
+	header := buf[:maxLen]
+
 	return bytes.Contains(header, []byte(`"spdxVersion":"SPDX-`)) || bytes.Contains(header, []byte(`"spdxVersion": "SPDX-`))
 }
 
 func IsCycloneDXJson(buf []byte) bool {
-	header := buf[:500]
+	maxLen := len(buf)
+	if maxLen > 500 {
+		maxLen = 500
+	}
+	header := buf[:maxLen]
+
 	return bytes.Contains(header, []byte(`"bomFormat":"CycloneDX"`)) || bytes.Contains(header, []byte(`"bomFormat": "CycloneDX"`))
 }
 
