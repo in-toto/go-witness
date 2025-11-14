@@ -196,3 +196,55 @@ func TestIncludeExcludeGlobs(t *testing.T) {
 		})
 	}
 }
+
+func TestIsSPDXJson(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		expected bool
+	}{
+		{
+			name:     "valid SPDX with large buffer",
+			input:    []byte(`{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"test","documentNamespace":"https://example.com/test","creationInfo":{"created":"2024-01-01T00:00:00Z","creators":["Tool: test"]},"packages":[],"files":[],"relationships":[],"externalDocumentRefs":[],"snippets":[],"annotations":[],"reviewedBy":[],"comment":"","licenseListVersion":"3.21","creator":{"person":[],"organization":[],"tool":[]}}`),
+			expected: true,
+		},
+		{
+			name:     "valid SPDX with small buffer (< 500 bytes)",
+			input:    []byte(`{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"test","documentNamespace":"https://example.com/test","creationInfo":{"created":"2024-01-01T00:00:00Z","creators":["Tool: test"]},"packages":[]}`),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsSPDXJson(tt.input)
+			assert.Equal(t, tt.expected, result, "IsSPDXJson() result mismatch")
+		})
+	}
+}
+
+func TestIsCycloneDXJson(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		expected bool
+	}{
+		{
+			name:     "valid CycloneDX with large buffer",
+			input:    []byte(`{"bomFormat":"CycloneDX","specVersion":"1.4","serialNumber":"urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79","version":1,"metadata":{"timestamp":"2024-01-01T00:00:00Z","tools":[{"vendor":"test","name":"test","version":"1.0.0"}],"component":{"type":"application","bom-ref":"pkg:generic/test","name":"test","version":"1.0.0"}},"components":[],"dependencies":[]}`),
+			expected: true,
+		},
+		{
+			name:     "valid CycloneDX with small buffer (< 500 bytes)",
+			input:    []byte(`{"bomFormat":"CycloneDX","specVersion":"1.4","serialNumber":"urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79","version":1,"metadata":{"timestamp":"2024-01-01T00:00:00Z"},"components":[]}`),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsCycloneDXJson(tt.input)
+			assert.Equal(t, tt.expected, result, "IsCycloneDXJson() result mismatch")
+		})
+	}
+}
