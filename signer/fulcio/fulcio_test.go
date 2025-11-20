@@ -22,10 +22,14 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -256,6 +260,114 @@ func TestSigner(t *testing.T) {
 	provider = New(WithFulcioURL(fmt.Sprintf("http://%v:%v", hostname, port)), WithTokenPath(tp), WithToken(token))
 	_, err = provider.Signer(ctx)
 	require.ErrorContains(t, err, "only one of --fulcio-token-path or --fulcio-raw-token can be used")
+}
+func TestGetCertHTTP(t *testing.T) {
+	t.Run("successful certificate retrieval", func(t *testing.T) {
+		// Mock HTTP server
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Verify the request method and path
+			require.Equal(t, "POST", r.Method)
+			require.Equal(t, "/api/v2/signingCert", r.URL.Path)
+
+			// Verify the headers
+			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+			require.Equal(t, "application/json", r.Header.Get("Accept"))
+
+			// Read the request body
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+
+			// Verify the payload structure
+			var payload map[string]interface{}
+			err = json.Unmarshal(body, &payload)
+			require.NoError(t, err)
+			require.Contains(t, payload, "credentials")
+			require.Contains(t, payload, "publicKeyRequest")
+
+			// Return a mock response
+			mockResponse := map[string]interface{}{
+				"signedCertificateEmbeddedSct": map[string]interface{}{
+					"chain": map[string]interface{}{
+						"certificates": []string{
+							"-----BEGIN CERTIFICATE-----\nMOCK_CERT\n-----END CERTIFICATE-----",
+						},
+					},
+				},
+			}
+
+			// Encode the mock response as JSON
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(mockResponse)
+		}))
+		defer server.Close()
+
+		// Generate a test key
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+
+		// Generate a test token
+		token := generateTestToken("test@example.com", "")
+
+		// Call getCertHTTP
+		cert, err := getCertHTTP(context.Background(), key, server.URL, token)
+		require.NoError(t, err)
+		require.NotNil(t, cert)
+
+		// Verify the certificate chain
+		require.NotNil(t, cert.Certificate)
+		switch cert := cert.Certificate.(type) {
+		case *fulciopb.SigningCertificate_SignedCertificateEmbeddedSct:
+			require.NotNil(t, cert.SignedCertificateEmbeddedSct)
+			require.NotNil(t, cert.SignedCertificateEmbeddedSct.Chain)
+			require.Len(t, cert.SignedCertificateEmbeddedSct.Chain.Certificates, 1)
+			require.Equal(t, "-----BEGIN CERTIFICATE-----\nMOCK_CERT\n-----END CERTIFICATE-----", cert.SignedCertificateEmbeddedSct.Chain.Certificates[0])
+		default:
+			t.Fatalf("unexpected certificate type: %T", cert)
+		}
+	})
+	t.Run("unmarshaling error", func(t *testing.T) {
+		// Mock HTTP server that returns invalid JSON
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`invalid json`))
+		}))
+		defer server.Close()
+
+		// Generate a test key
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+
+		// Generate a valid test token
+		token := generateTestToken("test@example.com", "")
+
+		// Call getCertHTTP and expect an error
+		_, err = getCertHTTP(context.Background(), key, server.URL, token)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to unmarshal response")
+	})
+
+	t.Run("HTTP request failure", func(t *testing.T) {
+		// Mock HTTP server that returns an error
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error": "invalid request"}`))
+		}))
+		defer server.Close()
+
+		// Generate a test key
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+
+		// Generate a valid test token
+		token := generateTestToken("test@example.com", "")
+
+		// Call getCertHTTP and expect an error
+		_, err = getCertHTTP(context.Background(), key, server.URL, token)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "HTTP request failed with status: 400 Bad Request")
+	})
 }
 
 func generateCertChain(t *testing.T) []string {
