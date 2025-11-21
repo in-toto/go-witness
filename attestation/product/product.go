@@ -262,12 +262,22 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 }
 
 func IsSPDXJson(buf []byte) bool {
-	header := buf[:500]
+	maxLen := len(buf)
+	if maxLen > 500 {
+		maxLen = 500
+	}
+	header := buf[:maxLen]
+
 	return bytes.Contains(header, []byte(`"spdxVersion":"SPDX-`)) || bytes.Contains(header, []byte(`"spdxVersion": "SPDX-`))
 }
 
 func IsCycloneDXJson(buf []byte) bool {
-	header := buf[:500]
+	maxLen := len(buf)
+	if maxLen > 500 {
+		maxLen = 500
+	}
+	header := buf[:maxLen]
+
 	return bytes.Contains(header, []byte(`"bomFormat":"CycloneDX"`)) || bytes.Contains(header, []byte(`"bomFormat": "CycloneDX"`))
 }
 
