@@ -568,7 +568,7 @@ func getCertHTTP(ctx context.Context, key *ecdsa.PrivateKey, fulcioURL string, t
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", fulcioURL+"/api/v2/signingCert", bytes.NewBuffer(jsonPayload))
+	req, err := http.NewRequestWithContext(ctx, "POST", fulcioURL+"/api/v2/signingCert", bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		return nil, err
 	}
@@ -588,6 +588,7 @@ func getCertHTTP(ctx context.Context, key *ecdsa.PrivateKey, fulcioURL string, t
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		log.Debugf("HTTP request failed with status: %s, full body: %s", resp.Status, string(body))
 		return nil, fmt.Errorf("HTTP request failed with status: %s, body: %s", resp.Status, string(body))
 	}
 
