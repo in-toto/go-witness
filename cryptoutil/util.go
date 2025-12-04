@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/secure-systems-lab/go-securesystemslib/encrypted"
 	"go.step.sm/crypto/pemutil"
 )
 
@@ -35,6 +36,11 @@ const (
 	PublicKeyPEMType PEMType = "PUBLIC KEY"
 	// PKCS1PublicKeyPEMType is the string "RSA PUBLIC KEY" used to parse PKCS#1-encoded public keys
 	PKCS1PublicKeyPEMType PEMType = "RSA PUBLIC KEY"
+)
+
+const (
+	sigstoreEncryptedPEMType = "ENCRYPTED SIGSTORE PRIVATE KEY"
+	cosignEncryptedPEMType   = "ENCRYPTED COSIGN PRIVATE KEY"
 )
 
 type ErrUnsupportedPEM struct {
@@ -128,6 +134,10 @@ func TryParsePEMBlockWithPassword(block *pem.Block, password []byte) (interface{
 		return nil, ErrInvalidPemBlock{}
 	}
 
+	if isSigstorePEMType(block.Type) && len(password) == 0 {
+		return nil, fmt.Errorf("encrypted sigstore private key requires a non-empty passphrase (use --key-passphrase, --key-passphrase-path, or WITNESS_KEY_PASSPHRASE)")
+	}
+
 	// If no password, only attempt unencrypted formats and return.
 	if len(password) == 0 {
 		// Unencrypted formats.
@@ -151,6 +161,18 @@ func TryParsePEMBlockWithPassword(block *pem.Block, password []byte) (interface{
 		}
 
 		return nil, ErrUnsupportedPEM{block.Type}
+	}
+
+	if isSigstorePEMType(block.Type) {
+		der, err := encrypted.Decrypt(block.Bytes, password)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt sigstore private key: %w", err)
+		}
+		key, err := x509.ParsePKCS8PrivateKey(der)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse decrypted sigstore private key: %w", err)
+		}
+		return key, nil
 	}
 
 	// Password provided: handle legacy-encrypted PEM, otherwise fall back to unencrypted parse.
@@ -218,6 +240,10 @@ func TryParseKeyFromReaderWithPassword(r io.Reader, password []byte) (interface{
 		return TryParsePEMBlockWithPassword(pemBlock, password)
 	}
 
+	if pemBlock, _ := pem.Decode(bytes); pemBlock != nil && isSigstorePEMType(pemBlock.Type) {
+		return TryParsePEMBlockWithPassword(pemBlock, password)
+	}
+
 	// Use smallstep's pemutil to parse and decrypt various PEM/DER key formats,
 	// including PKCS#8 EncryptedPrivateKeyInfo.
 	obj, err := pemutil.Parse(bytes, pemutil.WithPassword(password))
@@ -263,4 +289,8 @@ func isSupportedAlg(alg crypto.Hash, supportedAlgs []crypto.Hash) bool {
 		}
 	}
 	return false
+}
+
+func isSigstorePEMType(t string) bool {
+	return t == sigstoreEncryptedPEMType || t == cosignEncryptedPEMType
 }
