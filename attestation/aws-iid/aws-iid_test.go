@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -134,19 +135,40 @@ func TestAttestor_RunType(t *testing.T) {
 }
 
 func TestAttestor_Attest(t *testing.T) {
+	// Prepare cert file for path-based test
+	tmpFile, err := os.CreateTemp(t.TempDir(), "region-cert-*.pem")
+	require.NoError(t, err)
+	_, err = tmpFile.WriteString(testCert)
+	require.NoError(t, err)
+	require.NoError(t, tmpFile.Close())
+	testCertPath := tmpFile.Name()
+
 	var tests = []struct {
 		name    string
 		resp    []testresp
+		cert    string
 		errNil  bool
 		errText string
 	}{
 		{
-			"Valid IID",
+			"Valid IID (inline PEM)",
 			[]testresp{
 				{"/latest/dynamic/instance-identity/document", iid},
 				{"/latest/dynamic/instance-identity/signature", sig},
 				{"/latest/api/token", "testtoken"},
 			},
+			testCert,
+			true,
+			"",
+		},
+		{
+			"Valid IID (cert from file path)",
+			[]testresp{
+				{"/latest/dynamic/instance-identity/document", iid},
+				{"/latest/dynamic/instance-identity/signature", sig},
+				{"/latest/api/token", "testtoken"},
+			},
+			testCertPath,
 			true,
 			"",
 		},
@@ -157,6 +179,7 @@ func TestAttestor_Attest(t *testing.T) {
 				{"/latest/dynamic/instance-identity/signature", ""},
 				{"/latest/api/token", "testtoken"},
 			},
+			testCert,
 			false,
 			"instance identity document or signature is empty",
 		},
@@ -167,6 +190,7 @@ func TestAttestor_Attest(t *testing.T) {
 				{"/latest/dynamic/instance-identity/signature", badsig},
 				{"/latest/api/token", "testtoken"},
 			},
+			testCert,
 			false,
 			"crypto/rsa: verification error",
 		},
@@ -177,13 +201,14 @@ func TestAttestor_Attest(t *testing.T) {
 				{"/latest/dynamic/instance-identity/signature", "12345"},
 				{"/latest/api/token", "testtoken"},
 			},
+			testCert,
 			false,
 			"failed to decode signature:",
 		},
 	}
 
 	for _, test := range tests {
-		a := New(WithAWSRegionCert(testCert))
+		a := New(WithAWSRegionCert(test.cert))
 
 		t.Run(test.name, func(t *testing.T) {
 			server := initTestServer(t, test.resp)
@@ -283,4 +308,11 @@ func Test_validateRegionalCerts(t *testing.T) {
 			t.Errorf("Expected key to not be nil for region %s", region)
 		}
 	}
+}
+
+func Test_getAWSCAPublicKey_UnknownRegion(t *testing.T) {
+	key, err := getAWSCAPublicKey("invalid-region-1", "")
+	require.Error(t, err)
+	require.Nil(t, key)
+	require.Contains(t, err.Error(), "AWS region invalid-region-1 cert must be provided")
 }
