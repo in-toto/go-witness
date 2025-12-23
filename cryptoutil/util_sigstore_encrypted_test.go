@@ -37,6 +37,19 @@ bmNGOGlZbzBTMVl6Y1ZOMVFwY2J2c0dNcUlYRzVlbmdteGp5dCtBcXlyZTF0Q0Y0
 V01tU1BlaEljNlBqd2h1Q2xHaVpJUWRvTGc9PSJ9
 -----END ENCRYPTED SIGSTORE PRIVATE KEY-----`
 
+// pemcosignkey copied from sigstore/cosign tests; passphrase is "hello".
+const pemcosignkey = `-----BEGIN ENCRYPTED COSIGN PRIVATE KEY-----
+eyJrZGYiOnsibmFtZSI6InNjcnlwdCIsInBhcmFtcyI6eyJOIjozMjc2OCwiciI6
+OCwicCI6MX0sInNhbHQiOiJ4WWdoc09JTUxUWGNOT0RsclNIOUNKc1FlOVFnZmN1
+cmUrMXlLdHh1TlkwPSJ9LCJjaXBoZXIiOnsibmFtZSI6Im5hY2wvc2VjcmV0Ym94
+Iiwibm9uY2UiOiI0cS9PSlVmaXJkSUkrUjZ0ajZBMmcyQ0JqL25xdFNicCJ9LCJj
+aXBoZXJ0ZXh0IjoiKzB4Q3NzcFN0WStBczdKanJpOWtsbHBWd2JhcUI4ZWJNdWto
+eS9aVE1MSXRsL3B1YS9jWVJvbytLRGxMWWdmOW1kSjk4K1FnQW9oTktoYnJPMTcw
+MHdBY1JTMjFDOE4zQUNJRUVZaWpOMllBNnMraGJSbkhjUnd4eGhDMDFtb2FvL0dO
+Y1pmbEJheXZMV3pXblo4d2NDZ2ZpT1o1VXlRTEFJMHh0dnR6dEh3cTdDV1Vhd3V4
+RlhlNDZzck9TUE9SNHN6bytabWErUGovSFE9PSJ9
+-----END ENCRYPTED COSIGN PRIVATE KEY-----`
+
 func TestTryParseKeyFromReaderWithPassword_SigstoreEncrypted_Success(t *testing.T) {
 	parsed, err := TryParseKeyFromReaderWithPassword(bytes.NewReader([]byte(pemsigstorekey)), []byte("hello"))
 	require.NoError(t, err)
@@ -56,5 +69,27 @@ func TestTryParseKeyFromReaderWithPassword_SigstoreEncrypted_WrongPass(t *testin
 
 func TestTryParseKeyFromReaderWithPassword_SigstoreEncrypted_NoPass(t *testing.T) {
 	_, err := TryParseKeyFromReaderWithPassword(bytes.NewReader([]byte(pemsigstorekey)), nil)
+	require.Error(t, err)
+}
+
+func TestTryParseKeyFromReaderWithPassword_CosignEncrypted_Success(t *testing.T) {
+	parsed, err := TryParseKeyFromReaderWithPassword(bytes.NewReader([]byte(pemcosignkey)), []byte("hello"))
+	require.NoError(t, err)
+
+	switch parsed.(type) {
+	case *rsa.PrivateKey, *ecdsa.PrivateKey, ed25519.PrivateKey:
+		// ok
+	default:
+		t.Fatalf("unexpected key type %T", parsed)
+	}
+}
+
+func TestTryParseKeyFromReaderWithPassword_CosignEncrypted_WrongPass(t *testing.T) {
+	_, err := TryParseKeyFromReaderWithPassword(bytes.NewReader([]byte(pemcosignkey)), []byte("wrong"))
+	require.Error(t, err)
+}
+
+func TestTryParseKeyFromReaderWithPassword_CosignEncrypted_NoPass(t *testing.T) {
+	_, err := TryParseKeyFromReaderWithPassword(bytes.NewReader([]byte(pemcosignkey)), nil)
 	require.Error(t, err)
 }
