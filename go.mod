@@ -18,7 +18,7 @@ require (
 	github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
 	github.com/fkautz/omnitrail-go v0.0.0-20230808061951-37d34c23539d
-	github.com/gabriel-vasile/mimetype v1.4.11
+	github.com/gabriel-vasile/mimetype v1.4.12
 	github.com/go-git/go-git/v5 v5.13.2
 	github.com/go-jose/go-jose/v3 v3.0.4
 	github.com/google/go-containerregistry v0.20.7
@@ -241,7 +241,7 @@ require (
 	golang.org/x/term v0.37.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
 	google.golang.org/genproto v0.0.0-20250303144028-a0af3efb3deb // indirect
-	google.golang.org/protobuf v1.36.10
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
