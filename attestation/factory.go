@@ -83,6 +83,12 @@ type BackReffer interface {
 	BackRefs() map[string]cryptoutil.DigestSet
 }
 
+// ExecuteHookDeclarer allows attestors to declare execute hooks. DeclareHooks is called
+// before running the attestor that implements this interface.
+type ExecuteHookDeclarer interface {
+	DeclareHooks(hooks *ExecuteHooks) error
+}
+
 type ErrAttestationNotFound string
 
 func (e ErrAttestationNotFound) Error() string {
