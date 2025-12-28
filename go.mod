@@ -12,6 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.18
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.61.3
 	github.com/aws/aws-sdk-go-v2/service/kms v1.48.3
+	github.com/cilium/ebpf v0.20.0
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
 	github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
@@ -162,7 +163,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.4 // indirect
-	github.com/prometheus/procfs v0.16.1 // indirect
+	github.com/prometheus/procfs v0.19.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/sagikazarmark/locafero v0.9.0 // indirect
@@ -242,3 +243,5 @@ require (
 )
 
 replace github.com/gin-gonic/gin v1.5.0 => github.com/gin-gonic/gin v1.7.7
+
+tool github.com/cilium/ebpf/cmd/bpf2go
