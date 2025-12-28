@@ -18,10 +18,10 @@ package commandrun
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -37,12 +37,17 @@ const (
 )
 
 type ptraceContext struct {
-	parentPid           int
+	traceePid           int
 	mainProgram         string
 	processes           map[int]*ProcessInfo
 	exitCode            int
 	hash                []cryptoutil.DigestValue
 	environmentCapturer *environment.Capture
+
+	executeHooks *attestation.ExecuteHooks
+	hooksOnly    bool
+	hasPreExec   bool
+	hasPreExit   bool
 }
 
 func enableTracing(c *exec.Cmd) {
@@ -51,20 +56,37 @@ func enableTracing(c *exec.Cmd) {
 	}
 }
 
-func (r *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext) ([]ProcessInfo, error) {
+func (rc *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext, hasPreExec, hasPreExit bool) ([]ProcessInfo, error) {
+	return rc.traceWithOptions(c, actx, false, hasPreExec, hasPreExit)
+}
+
+func (rc *CommandRun) runWithHooks(c *exec.Cmd, hasPreExec, hasPreExit bool) error {
+	_, err := rc.traceWithOptions(c, nil, true, hasPreExec, hasPreExit)
+	return err
+}
+
+func (rc *CommandRun) traceWithOptions(c *exec.Cmd, actx *attestation.AttestationContext, hooksOnly, hasPreExec, hasPreExit bool) ([]ProcessInfo, error) {
 	pctx := &ptraceContext{
-		parentPid:           c.Process.Pid,
-		mainProgram:         c.Path,
-		processes:           make(map[int]*ProcessInfo),
-		hash:                actx.Hashes(),
-		environmentCapturer: actx.EnvironmentCapturer(),
+		traceePid:    c.Process.Pid,
+		mainProgram:  c.Path,
+		processes:    make(map[int]*ProcessInfo),
+		executeHooks: rc.executeHooks,
+		hooksOnly:    hooksOnly,
+		hasPreExec:   hasPreExec,
+		hasPreExit:   hasPreExit,
+	}
+
+	// Only set these when doing full tracing
+	if actx != nil {
+		pctx.hash = actx.Hashes()
+		pctx.environmentCapturer = actx.EnvironmentCapturer()
 	}
 
 	if err := pctx.runTrace(); err != nil {
 		return nil, err
 	}
 
-	r.ExitCode = pctx.exitCode
+	rc.ExitCode = pctx.exitCode
 
 	if pctx.exitCode != 0 {
 		return pctx.procInfoArray(), fmt.Errorf("exit status %v", pctx.exitCode)
@@ -74,23 +96,58 @@ func (r *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext) ([
 }
 
 func (p *ptraceContext) runTrace() error {
-	defer p.retryOpenedFiles()
+	if !p.hooksOnly {
+		defer p.retryOpenedFiles()
+	}
 
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	status := unix.WaitStatus(0)
-	_, err := unix.Wait4(p.parentPid, &status, 0, nil)
+	_, err := unix.Wait4(p.traceePid, &status, 0, nil)
 	if err != nil {
 		return err
 	}
 
-	if err := unix.PtraceSetOptions(p.parentPid, unix.PTRACE_O_TRACESYSGOOD|unix.PTRACE_O_TRACEEXEC|unix.PTRACE_O_TRACEEXIT|unix.PTRACE_O_TRACEVFORK|unix.PTRACE_O_TRACEFORK|unix.PTRACE_O_TRACECLONE); err != nil {
+	if p.hasPreExec {
+		log.Infof("Running PreExec hooks")
+		if err := p.executeHooks.RunHooks(attestation.StagePreExec, p.traceePid); err != nil {
+			return fmt.Errorf("PreExec hooks failed: %w", err)
+		}
+	}
+
+	if p.hooksOnly {
+		log.Infof("Entering hooks-only mode")
+		if p.hasPreExit {
+			log.Infof("Waiting for process exit to run PreExit hooks")
+			// Change the signal handling in waitForExitOnly if ptrace options are changed from PTRACE_O_TRACEEXIT
+			if err := unix.PtraceSetOptions(p.traceePid, unix.PTRACE_O_TRACEEXIT); err != nil {
+				return err
+			}
+			return p.waitForExitOnly()
+		}
+
+		log.Infof("No PreExit hooks to run, detaching ptrace")
+		if err := unix.PtraceDetach(p.traceePid); err != nil {
+			return fmt.Errorf("failed to detach from process: %w", err)
+		}
+		_, err := unix.Wait4(p.traceePid, &status, 0, nil)
+		if err != nil {
+			return err
+		}
+		if status.Exited() {
+			p.exitCode = status.ExitStatus()
+		} else if status.Signaled() {
+			p.exitCode = 128 + int(status.Signal())
+		}
+		return nil
+	}
+
+	// Full tracing mode
+	if err := unix.PtraceSetOptions(p.traceePid, unix.PTRACE_O_TRACESYSGOOD|unix.PTRACE_O_TRACEEXEC|unix.PTRACE_O_TRACEEXIT|unix.PTRACE_O_TRACEVFORK|unix.PTRACE_O_TRACEFORK|unix.PTRACE_O_TRACECLONE); err != nil {
 		return err
 	}
 
-	procInfo := p.getProcInfo(p.parentPid)
+	procInfo := p.getProcInfo(p.traceePid)
 	procInfo.Program = p.mainProgram
-	if err := unix.PtraceSyscall(p.parentPid, 0); err != nil {
+	if err := unix.PtraceSyscall(p.traceePid, 0); err != nil {
 		return err
 	}
 
@@ -99,33 +156,140 @@ func (p *ptraceContext) runTrace() error {
 		if err != nil {
 			return err
 		}
-		if pid == p.parentPid && status.Exited() {
+		if pid == p.traceePid && status.Exited() {
 			p.exitCode = status.ExitStatus()
 			return nil
 		}
-
-		sig := status.StopSignal()
-		// since we set PTRACE_O_TRACESYSGOOD any traps triggered by ptrace will have its signal set to SIGTRAP|0x80.
-		// If we catch a signal that isn't a ptrace'd signal we want to let the process continue to handle that signal, so we inject the thrown signal back to the process.
-		// If it was a ptrace SIGTRAP we suppress the signal and send 0
-		injectedSig := int(sig)
-		isPtraceTrap := (unix.SIGTRAP | unix.PTRACE_EVENT_STOP) == sig
-		if status.Stopped() && isPtraceTrap {
-			injectedSig = 0
-			if err := p.nextSyscall(pid); err != nil {
-				log.Debugf("(tracing) got error while processing syscall: %w", err)
-			}
+		if pid == p.traceePid && status.Signaled() {
+			p.exitCode = 128 + int(status.Signal())
+			return nil
 		}
 
-		if err := unix.PtraceSyscall(pid, injectedSig); err != nil {
-			log.Debugf("(tracing) got error from ptrace syscall: %w", err)
+		if status.Stopped() {
+			sig := status.StopSignal()
+
+			// Distinguish the 3 types of traps
+			// since we set PTRACE_O_TRACESYSGOOD any traps triggered by ptrace will have its signal set to SIGTRAP|0x80.
+			// If we catch a signal that isn't a ptrace'd signal we want to let the process continue to handle that signal, so we inject the thrown signal back to the process.
+			// If it was a ptrace SIGTRAP we suppress the signal and send 0
+			isSyscallTrap := sig == (unix.SIGTRAP | 0x80)
+			isRegularTrap := sig == unix.SIGTRAP
+
+			// Inject the signal back (e.g., SIGINT, SIGTERM, or Real SIGTRAP)
+			injectedSig := int(sig)
+
+			if isSyscallTrap {
+				injectedSig = 0
+				if err := p.nextSyscall(pid); err != nil {
+					log.Debugf("(tracing) processing syscall: %w", err)
+				}
+			} else if isRegularTrap {
+				// PTRACE_EVENT stops also come as regular SIGTRAP irrespective of TRACESYSGOOD
+				// eventCode is in the high bits of the status
+				eventCode := (uint32(status) >> 16) & 0xFFFF
+
+				if eventCode != 0 {
+					// Case 2: Ptrace Event (Exit/Fork/Exec) -> Suppress signal
+					injectedSig = 0
+
+					if eventCode == unix.PTRACE_EVENT_EXIT && pid == p.traceePid && p.hasPreExit {
+						if err := p.executeHooks.RunHooks(attestation.StagePreExit, pid); err != nil {
+							log.Errorf("PreExit hooks failed: %v", err)
+						}
+					}
+				}
+			}
+
+			if err := unix.PtraceSyscall(pid, injectedSig); err != nil {
+				log.Debugf("(tracing) ptrace syscall error: %w", err)
+			}
+		} else {
+			if err := unix.PtraceSyscall(pid, 0); err != nil {
+				log.Debugf("(tracing) got error from ptrace syscall: %w", err)
+			}
+		}
+	}
+}
+
+func (p *ptraceContext) waitForExitOnly() error {
+	var status unix.WaitStatus
+
+	log.Debugf("continuing process to wait for exit")
+	if err := unix.PtraceCont(p.traceePid, 0); err != nil {
+		return fmt.Errorf("failed to continue: %w", err)
+	}
+
+	for {
+		_, err := unix.Wait4(p.traceePid, &status, 0, nil)
+		if err != nil {
+			return fmt.Errorf("wait4 failed: %w", err)
+		}
+
+		if status.Exited() {
+			p.exitCode = status.ExitStatus()
+			return nil
+		}
+		if status.Signaled() {
+			p.exitCode = 128 + int(status.Signal())
+			return nil
+		}
+
+		if status.Stopped() {
+			sig := status.StopSignal()
+
+			injectedSig := int(sig)
+
+			if sig == unix.SIGTRAP {
+				eventCode := (uint32(status) >> 16) & 0xFFFF
+
+				if eventCode != 0 {
+					// Ptrace Event (EXIT) -> Swallow signal
+					injectedSig = 0
+
+					// As we setup with only PTRACE_O_TRACEEXIT, only this event would be emitted
+					// Still, eventCode != 0 and eventCode == unix.PTRACE_EVENT_EXIT are separated for defensive
+					// programming
+					if eventCode == unix.PTRACE_EVENT_EXIT {
+						log.Infof("caught exit event for pid %d", p.traceePid)
+						if err := p.executeHooks.RunHooks(attestation.StagePreExit, p.traceePid); err != nil {
+							log.Errorf("PreExit hooks failed: %v", err)
+						}
+
+						exitStatus, err := unix.PtraceGetEventMsg(p.traceePid)
+						if err == nil {
+							p.exitCode = int(exitStatus >> 8)
+						}
+
+						// Cont is required after PTRACE_EVENT_EXIT event stop, tracee is alive, needs to be cont
+						err = unix.PtraceCont(p.traceePid, 0)
+						if err != nil {
+							log.Errorf("Final PtraceCont failed (process likely already dead): %v", err)
+						}
+						// clear the zombie process using a wait signal
+						wPid, err := unix.Wait4(p.traceePid, &status, 0, nil)
+						if err != nil {
+							// ECHILD - child process has likely already been cleared
+							if !errors.Is(err, unix.ECHILD) {
+								log.Errorf("wPid: %d, wait4 failed: %v", wPid, err)
+							}
+						}
+						return nil
+					}
+				}
+				// If eventCode == 0, it is a REAL trap (int3).
+				// injectedSig remains SIGTRAP (5).
+			}
+
+			if err := unix.PtraceCont(p.traceePid, injectedSig); err != nil {
+				return fmt.Errorf("failed to continue with signal %d: %w", injectedSig, err)
+			}
 		}
 	}
 }
 
 func (p *ptraceContext) retryOpenedFiles() {
 	// after tracing, look through opened files to try to resolve any newly created files
-	procInfo := p.getProcInfo(p.parentPid)
+	procInfo := p.getProcInfo(p.traceePid)
 
 	for file, digestSet := range procInfo.OpenedFiles {
 		if digestSet != nil {
