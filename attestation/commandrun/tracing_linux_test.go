@@ -16,7 +16,81 @@
 
 package commandrun
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/in-toto/go-witness/attestation"
+	"github.com/invopop/jsonschema"
+)
+
+// mockHookAttestor is a test attestor that implements ExecuteHookDeclarer
+// to verify that hooks are called correctly during command execution.
+type mockHookAttestor struct {
+	name       string
+	hooks      *attestation.ExecuteHooks
+	preExec    bool
+	preExit    bool
+	preExecPID int
+	preExitPID int
+}
+
+func (m *mockHookAttestor) Name() string {
+	return m.name
+}
+
+func (m *mockHookAttestor) Type() string {
+	return "https://witness.dev/attestations/mock-hook/v0.1"
+}
+
+func (m *mockHookAttestor) RunType() attestation.RunType {
+	return attestation.ExecuteRunType
+}
+
+func (m *mockHookAttestor) Attest(ctx *attestation.AttestationContext) error {
+	// Register hooks based on configuration
+	if m.preExec {
+		ready, err := m.hooks.RegisterHook(attestation.StagePreExec, m.name, func(pid int) error {
+			m.preExecPID = pid
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		close(ready)
+	}
+
+	if m.preExit {
+		ready, err := m.hooks.RegisterHook(attestation.StagePreExit, m.name, func(pid int) error {
+			m.preExitPID = pid
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		close(ready)
+	}
+
+	return nil
+}
+
+func (m *mockHookAttestor) DeclareHooks(hooks *attestation.ExecuteHooks) error {
+	m.hooks = hooks
+	if m.preExec {
+		if err := hooks.Declare(m.name, attestation.StagePreExec); err != nil {
+			return err
+		}
+	}
+	if m.preExit {
+		if err := hooks.Declare(m.name, attestation.StagePreExit); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *mockHookAttestor) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&m)
+}
 
 const (
 	status = `
@@ -84,4 +158,118 @@ func Test_getSpecBypassIsVulnFromStatus(t *testing.T) {
 		t.Errorf("getSpecBypassIsVulnFromStatus() = %v, want %v", isVuln, true)
 	}
 
+}
+
+func Test_preExecHook(t *testing.T) {
+	mock := &mockHookAttestor{
+		name:    "test-preexec",
+		preExec: true,
+	}
+
+	cmd := New(
+		WithCommand([]string{"go", "version"}),
+		WithSilent(true),
+	)
+
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{cmd, mock})
+	if err != nil {
+		t.Fatalf("failed to create attestation context: %v", err)
+	}
+
+	if err := ctx.RunAttestors(); err != nil {
+		t.Fatalf("failed to run attestors: %v", err)
+	}
+
+	if mock.preExecPID == 0 {
+		t.Error("preExec hook was not called (PID is 0)")
+	}
+}
+
+func Test_preExitHook(t *testing.T) {
+	mock := &mockHookAttestor{
+		name:    "test-preexit",
+		preExit: true,
+	}
+
+	cmd := New(
+		WithCommand([]string{"go", "version"}),
+		WithSilent(true),
+	)
+
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{cmd, mock})
+	if err != nil {
+		t.Fatalf("failed to create attestation context: %v", err)
+	}
+
+	if err := ctx.RunAttestors(); err != nil {
+		t.Fatalf("failed to run attestors: %v", err)
+	}
+
+	if mock.preExitPID == 0 {
+		t.Error("preExit hook was not called (PID is 0)")
+	}
+}
+
+func Test_preExecAndPreExitHooks(t *testing.T) {
+	mock := &mockHookAttestor{
+		name:    "test-both-hooks",
+		preExec: true,
+		preExit: true,
+	}
+
+	cmd := New(
+		WithCommand([]string{"go", "version"}),
+		WithSilent(true),
+	)
+
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{cmd, mock})
+	if err != nil {
+		t.Fatalf("failed to create attestation context: %v", err)
+	}
+
+	if err := ctx.RunAttestors(); err != nil {
+		t.Fatalf("failed to run attestors: %v", err)
+	}
+
+	if mock.preExecPID == 0 {
+		t.Error("preExec hook was not called (PID is 0)")
+	}
+
+	if mock.preExitPID == 0 {
+		t.Error("preExit hook was not called (PID is 0)")
+	}
+
+	if mock.preExecPID != mock.preExitPID {
+		t.Errorf("preExec PID (%d) does not match preExit PID (%d)", mock.preExecPID, mock.preExitPID)
+	}
+}
+
+func Test_preExecHookWithTracing(t *testing.T) {
+	mock := &mockHookAttestor{
+		name:    "test-preexec-tracing",
+		preExec: true,
+	}
+
+	cmd := New(
+		WithCommand([]string{"go", "version"}),
+		WithSilent(true),
+		WithTracing(true),
+	)
+
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{cmd, mock})
+	if err != nil {
+		t.Fatalf("failed to create attestation context: %v", err)
+	}
+
+	if err := ctx.RunAttestors(); err != nil {
+		t.Fatalf("failed to run attestors: %v", err)
+	}
+
+	if mock.preExecPID == 0 {
+		t.Error("preExec hook was not called (PID is 0)")
+	}
+
+	if len(cmd.Processes) == 0 {
+		t.Error("tracing was enabled but no processes were recorded")
+	}
 }
