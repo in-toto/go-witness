@@ -18,4 +18,7 @@ profile.cov
 .aider*
 .DS_Store
 
+# Generated BPF headers
+attestation/networktrace/bpf/headers/vmlinux.h
+
 !log/
