@@ -65,6 +65,18 @@ jobs:
       command: go test -v -coverprofile=profile.cov -covermode=atomic ./...
       artifact-upload-name: profile.cov
       artifact-upload-path: profile.cov
+
+  unit-plus-integration-test-privileged:
+    needs: [ unit-test ]
+    uses: ./.github/workflows/witness.yml
+    permissions:
+      contents: read
+    with:
+      pull_request: ${{ github.event_name == 'pull_request' }}
+      step: unit-plus-integration-test-privileged
+      attestations: "git github environment"
+      command: go test -c -o networktrace.test ./attestation/networktrace && sudo ./networktrace.test -test.v
+
   unit-test-windows:
     needs: [fmt]
     runs-on: windows-latest
