@@ -65,6 +65,24 @@ jobs:
       command: go test -v -coverprofile=profile.cov -covermode=atomic ./...
       artifact-upload-name: profile.cov
       artifact-upload-path: profile.cov
+
+  unit-plus-integration-test-privileged:
+    needs: [fmt]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version-file: "go.mod"
+
+      - name: Run networktrace tests with elevated permissions
+        run: sudo -E go test -v ./attestation/networktrace
+
   unit-test-windows:
     needs: [fmt]
     runs-on: windows-latest
