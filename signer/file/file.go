@@ -105,7 +105,7 @@ type FileSignerProvider struct {
 	KeyPath           string
 	CertPath          string
 	IntermediatePaths []string
-	Passphrase        string
+	Passphrase        *string
 	PassphrasePath    string
 }
 
@@ -131,7 +131,7 @@ func WithIntermediatePaths(intermediatePaths []string) Option {
 
 func WithKeyPassphrase(pass string) Option {
 	return func(fsp *FileSignerProvider) {
-		fsp.Passphrase = pass
+		fsp.Passphrase = &pass
 	}
 }
 
@@ -159,8 +159,8 @@ func (fsp FileSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, er
 	defer keyFile.Close()
 	// Resolve passphrase: explicit > file > env
 	var pass []byte
-	if fsp.Passphrase != "" {
-		pass = []byte(fsp.Passphrase)
+	if fsp.Passphrase != nil {
+		pass = []byte(*fsp.Passphrase)
 	} else if fsp.PassphrasePath != "" {
 		b, err := os.ReadFile(fsp.PassphrasePath)
 		if err != nil {
@@ -172,7 +172,7 @@ func (fsp FileSignerProvider) Signer(ctx context.Context) (cryptoutil.Signer, er
 			return nil, fmt.Errorf("passphrase file must contain a single line")
 		}
 		pass = []byte(s)
-	} else if env := os.Getenv("WITNESS_KEY_PASSPHRASE"); env != "" {
+	} else if env, ok := os.LookupEnv("WITNESS_KEY_PASSPHRASE"); ok {
 		pass = []byte(env)
 	}
 
