@@ -18,9 +18,14 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
 
+	"github.com/secure-systems-lab/go-securesystemslib/encrypted"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,4 +97,73 @@ func TestTryParseKeyFromReaderWithPassword_CosignEncrypted_WrongPass(t *testing.
 func TestTryParseKeyFromReaderWithPassword_CosignEncrypted_NoPass(t *testing.T) {
 	_, err := TryParseKeyFromReaderWithPassword(bytes.NewReader([]byte(pemcosignkey)), nil)
 	require.Error(t, err)
+}
+
+func TestTryParseKeyFromReaderWithPassword_SigstoreEmptyPassphrase(t *testing.T) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	require.NoError(t, err)
+
+	encBytes, err := encrypted.Encrypt(der, []byte(""))
+	require.NoError(t, err)
+
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "ENCRYPTED SIGSTORE PRIVATE KEY",
+		Bytes: encBytes,
+	})
+
+	parsed, err := TryParseKeyFromReaderWithPassword(bytes.NewReader(pemBytes), []byte(""))
+	require.NoError(t, err)
+
+	if _, ok := parsed.(*ecdsa.PrivateKey); !ok {
+		t.Fatalf("expected *ecdsa.PrivateKey, got %T", parsed)
+	}
+}
+
+func TestTryParseKeyFromReaderWithPassword_CosignEmptyPassphrase(t *testing.T) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	require.NoError(t, err)
+
+	encBytes, err := encrypted.Encrypt(der, []byte(""))
+	require.NoError(t, err)
+
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "ENCRYPTED COSIGN PRIVATE KEY",
+		Bytes: encBytes,
+	})
+
+	parsed, err := TryParseKeyFromReaderWithPassword(bytes.NewReader(pemBytes), []byte(""))
+	require.NoError(t, err)
+
+	if _, ok := parsed.(*ecdsa.PrivateKey); !ok {
+		t.Fatalf("expected *ecdsa.PrivateKey, got %T", parsed)
+	}
+}
+
+func TestTryParseKeyFromReaderWithPassword_CosignEmptyPassphraseBytes(t *testing.T) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	require.NoError(t, err)
+
+	encBytes, err := encrypted.Encrypt(der, []byte(""))
+	require.NoError(t, err)
+
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "ENCRYPTED COSIGN PRIVATE KEY",
+		Bytes: encBytes,
+	})
+
+	parsed, err := TryParseKeyFromReaderWithPassword(bytes.NewReader(pemBytes), []byte{})
+	require.NoError(t, err)
+
+	if _, ok := parsed.(*ecdsa.PrivateKey); !ok {
+		t.Fatalf("expected *ecdsa.PrivateKey, got %T", parsed)
+	}
 }
