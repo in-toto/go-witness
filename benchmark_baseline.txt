@@ -1,0 +1,56 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/in-toto/go-witness/attestation/file
+cpu: Apple M2 Max
+BenchmarkRecordArtifacts/Small_10files_1KB-12         	   44245	    265824 ns/op	         0.009766 MB/op	        36.74 MB/sec	     37619 files/sec	  345955 B/op	     198 allocs/op
+BenchmarkRecordArtifacts/Small_10files_1KB-12         	   45844	    262533 ns/op	         0.009766 MB/op	        37.20 MB/sec	     38090 files/sec	  345954 B/op	     198 allocs/op
+BenchmarkRecordArtifacts/Small_10files_1KB-12         	   45049	    266331 ns/op	         0.009766 MB/op	        36.67 MB/sec	     37547 files/sec	  345954 B/op	     198 allocs/op
+BenchmarkRecordArtifacts/Small_10files_1KB-12         	   45298	    265655 ns/op	         0.009766 MB/op	        36.76 MB/sec	     37643 files/sec	  345954 B/op	     198 allocs/op
+BenchmarkRecordArtifacts/Small_10files_1KB-12         	   45225	    265749 ns/op	         0.009766 MB/op	        36.75 MB/sec	     37629 files/sec	  345954 B/op	     198 allocs/op
+BenchmarkRecordArtifacts/Small_10files_1KB-12         	   45290	    264746 ns/op	         0.009766 MB/op	        36.89 MB/sec	     37772 files/sec	  345954 B/op	     198 allocs/op
+BenchmarkRecordArtifacts/Small_10files_1KB-12         	   44937	    265506 ns/op	         0.009766 MB/op	        36.78 MB/sec	     37664 files/sec	  345954 B/op	     198 allocs/op
+BenchmarkRecordArtifacts/Small_10files_1KB-12         	   45468	    265704 ns/op	         0.009766 MB/op	        36.75 MB/sec	     37636 files/sec	  345954 B/op	     198 allocs/op
+BenchmarkRecordArtifacts/Small_10files_1KB-12         	   45088	    266657 ns/op	         0.009766 MB/op	        36.62 MB/sec	     37501 files/sec	  345954 B/op	     198 allocs/op
+BenchmarkRecordArtifacts/Small_10files_1KB-12         	   45052	    266239 ns/op	         0.009766 MB/op	        36.68 MB/sec	     37560 files/sec	  345954 B/op	     198 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1KB-12       	    4869	   2476808 ns/op	         0.09766 MB/op	        39.43 MB/sec	     40375 files/sec	 3448353 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1KB-12       	    4870	   2473655 ns/op	         0.09766 MB/op	        39.48 MB/sec	     40426 files/sec	 3448192 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1KB-12       	    4898	   2481816 ns/op	         0.09766 MB/op	        39.35 MB/sec	     40293 files/sec	 3448352 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1KB-12       	    4828	   2480911 ns/op	         0.09766 MB/op	        39.36 MB/sec	     40308 files/sec	 3448352 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1KB-12       	    4888	   2467443 ns/op	         0.09766 MB/op	        39.58 MB/sec	     40528 files/sec	 3448353 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1KB-12       	    5101	   2475571 ns/op	         0.09766 MB/op	        39.45 MB/sec	     40395 files/sec	 3448194 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1KB-12       	    4920	   2477916 ns/op	         0.09766 MB/op	        39.41 MB/sec	     40356 files/sec	 3448195 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1KB-12       	    4902	   2480154 ns/op	         0.09766 MB/op	        39.38 MB/sec	     40320 files/sec	 3448353 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1KB-12       	    4940	   2476804 ns/op	         0.09766 MB/op	        39.43 MB/sec	     40375 files/sec	 3448192 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1KB-12       	    4851	   2478230 ns/op	         0.09766 MB/op	        39.41 MB/sec	     40351 files/sec	 3448193 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Large_1000files_1KB-12       	     453	  26397048 ns/op	         0.9766 MB/op	        37.00 MB/sec	     37883 files/sec	34498181 B/op	   18043 allocs/op
+BenchmarkRecordArtifacts/Large_1000files_1KB-12       	     454	  26417951 ns/op	         0.9766 MB/op	        36.97 MB/sec	     37853 files/sec	34498170 B/op	   18043 allocs/op
+BenchmarkRecordArtifacts/Large_1000files_1KB-12       	     453	  26440561 ns/op	         0.9766 MB/op	        36.93 MB/sec	     37821 files/sec	34498182 B/op	   18043 allocs/op
+BenchmarkRecordArtifacts/Large_1000files_1KB-12       	     456	  26393518 ns/op	         0.9766 MB/op	        37.00 MB/sec	     37888 files/sec	34498174 B/op	   18043 allocs/op
+BenchmarkRecordArtifacts/Large_1000files_1KB-12       	     456	  26348769 ns/op	         0.9766 MB/op	        37.06 MB/sec	     37952 files/sec	34498159 B/op	   18043 allocs/op
+BenchmarkRecordArtifacts/Large_1000files_1KB-12       	     456	  26364244 ns/op	         0.9766 MB/op	        37.04 MB/sec	     37930 files/sec	34498186 B/op	   18043 allocs/op
+BenchmarkRecordArtifacts/Large_1000files_1KB-12       	     457	  26346433 ns/op	         0.9766 MB/op	        37.07 MB/sec	     37956 files/sec	34498171 B/op	   18043 allocs/op
+BenchmarkRecordArtifacts/Large_1000files_1KB-12       	     454	  26196040 ns/op	         0.9766 MB/op	        37.28 MB/sec	     38174 files/sec	34498177 B/op	   18043 allocs/op
+BenchmarkRecordArtifacts/Large_1000files_1KB-12       	     456	  26388412 ns/op	         0.9766 MB/op	        37.01 MB/sec	     37895 files/sec	34498159 B/op	   18043 allocs/op
+BenchmarkRecordArtifacts/Large_1000files_1KB-12       	     456	  26292825 ns/op	         0.9766 MB/op	        37.14 MB/sec	     38033 files/sec	34498160 B/op	   18043 allocs/op
+BenchmarkRecordArtifacts/XLarge_5000files_1KB-12      	      82	 150870417 ns/op	         4.883 MB/op	        32.36 MB/sec	     33141 files/sec	172471097 B/op	   90082 allocs/op
+BenchmarkRecordArtifacts/XLarge_5000files_1KB-12      	      82	 146341383 ns/op	         4.883 MB/op	        33.37 MB/sec	     34167 files/sec	172471165 B/op	   90083 allocs/op
+BenchmarkRecordArtifacts/XLarge_5000files_1KB-12      	      84	 148519390 ns/op	         4.883 MB/op	        32.88 MB/sec	     33666 files/sec	172471175 B/op	   90083 allocs/op
+BenchmarkRecordArtifacts/XLarge_5000files_1KB-12      	      81	 149017409 ns/op	         4.883 MB/op	        32.77 MB/sec	     33553 files/sec	172471132 B/op	   90082 allocs/op
+BenchmarkRecordArtifacts/XLarge_5000files_1KB-12      	      80	 147966794 ns/op	         4.883 MB/op	        33.00 MB/sec	     33791 files/sec	172471115 B/op	   90082 allocs/op
+BenchmarkRecordArtifacts/XLarge_5000files_1KB-12      	      76	 146922463 ns/op	         4.883 MB/op	        33.23 MB/sec	     34032 files/sec	172471194 B/op	   90083 allocs/op
+BenchmarkRecordArtifacts/XLarge_5000files_1KB-12      	      82	 151377993 ns/op	         4.883 MB/op	        32.26 MB/sec	     33030 files/sec	172471126 B/op	   90082 allocs/op
+BenchmarkRecordArtifacts/XLarge_5000files_1KB-12      	      81	 151120601 ns/op	         4.883 MB/op	        32.31 MB/sec	     33086 files/sec	172471109 B/op	   90082 allocs/op
+BenchmarkRecordArtifacts/XLarge_5000files_1KB-12      	      82	 150677148 ns/op	         4.883 MB/op	        32.41 MB/sec	     33184 files/sec	172471124 B/op	   90082 allocs/op
+BenchmarkRecordArtifacts/XLarge_5000files_1KB-12      	      82	 151884798 ns/op	         4.883 MB/op	        32.15 MB/sec	     32920 files/sec	172471126 B/op	   90082 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1MB-12       	     213	  55922536 ns/op	       100.0 MB/op	      1788 MB/sec	      1788 files/sec	 3448184 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1MB-12       	     213	  55947767 ns/op	       100.0 MB/op	      1787 MB/sec	      1787 files/sec	 3448338 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1MB-12       	     214	  55817829 ns/op	       100.0 MB/op	      1792 MB/sec	      1792 files/sec	 3448181 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1MB-12       	     212	  56164178 ns/op	       100.0 MB/op	      1780 MB/sec	      1780 files/sec	 3448339 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1MB-12       	     213	  56101451 ns/op	       100.0 MB/op	      1782 MB/sec	      1782 files/sec	 3448347 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1MB-12       	     212	  56303399 ns/op	       100.0 MB/op	      1776 MB/sec	      1776 files/sec	 3448341 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1MB-12       	     212	  56191438 ns/op	       100.0 MB/op	      1780 MB/sec	      1780 files/sec	 3448339 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1MB-12       	     212	  56456182 ns/op	       100.0 MB/op	      1771 MB/sec	      1771 files/sec	 3448342 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1MB-12       	     213	  56004062 ns/op	       100.0 MB/op	      1786 MB/sec	      1786 files/sec	 3448341 B/op	    1827 allocs/op
+BenchmarkRecordArtifacts/Medium_100files_1MB-12       	     214	  56042004 ns/op	       100.0 MB/op	      1784 MB/sec	      1784 files/sec	 3448345 B/op	    1827 allocs/op
+PASS
+ok  	github.com/in-toto/go-witness/attestation/file	610.469s
