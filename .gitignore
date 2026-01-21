@@ -23,3 +23,5 @@ profile.cov
 file.test
 
 *.prof
+
+benchmark_new.txt
