@@ -15,6 +15,7 @@
 package policy
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -446,6 +447,10 @@ func TestPubKeyVerifiers(t *testing.T) {
 	copy(mismatchedKeyIDVerifiers, testVerifiers)
 	mismatchedKeyIDVerifiers[numTestKeys-2].keyID = mismatchedKeyIDVerifiers[numTestKeys-2].keyID + "uhoh"
 
+	// Create a test key for KMS offline verification tests
+	_, kmsVerifier, kmsKeyBytes, err := createTestKey()
+	require.NoError(t, err)
+
 	testCases := []struct {
 		name          string
 		testVerifiers []testVerifier
@@ -465,9 +470,13 @@ func TestPubKeyVerifiers(t *testing.T) {
 			expectedLen:   len(mismatchedKeyIDVerifiers),
 		},
 		{
-			name: "pubkeys with kms",
+			// Test KMS key ID with embedded key (offline/air-gap verification)
+			// The embedded key should be used for verification instead of contacting KMS
+			name: "kms keyid with embedded key (offline verification)",
 			testVerifiers: append(testVerifiers, testVerifier{
-				keyID: "awskms:///1234abcd-12ab-34cd-56ef-1234567890ab",
+				keyID:    "awskms:///1234abcd-12ab-34cd-56ef-1234567890ab",
+				verifier: kmsVerifier,
+				keyBytes: kmsKeyBytes,
 			}),
 			expectedErr: nil,
 			expectedLen: len(testVerifiers) + 1,
@@ -494,6 +503,137 @@ func TestPubKeyVerifiers(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestKMSOfflineVerification tests the offline/air-gap verification feature
+// where a KMS-style key ID is used with an embedded public key.
+// This enables verification without contacting the KMS service.
+func TestKMSOfflineVerification(t *testing.T) {
+	// Create a test key that will be embedded in the policy
+	testSigner, testVerifier, keyBytes, err := createTestKey()
+	require.NoError(t, err)
+
+	signerKeyID, err := testSigner.KeyID()
+	require.NoError(t, err)
+
+	verifierKeyID, err := testVerifier.KeyID()
+	require.NoError(t, err)
+
+	// Sanity check: signer and verifier should have the same key ID
+	require.Equal(t, signerKeyID, verifierKeyID)
+
+	// Test cases for KMS offline verification
+	// Note: Only AWS KMS is imported in this test file, so only awskms:// prefixes are recognized as KMS providers
+	testCases := []struct {
+		name           string
+		kmsKeyID       string
+		embeddedKey    []byte
+		expectError    bool
+		errorContains  string
+		verifyKeyID    string // The key ID we expect in the resulting verifiers map
+	}{
+		{
+			name:        "AWS KMS key ID with embedded key",
+			kmsKeyID:    "awskms:///1234abcd-12ab-34cd-56ef-1234567890ab",
+			embeddedKey: keyBytes,
+			expectError: false,
+			verifyKeyID: "awskms:///1234abcd-12ab-34cd-56ef-1234567890ab",
+		},
+		{
+			name:        "AWS KMS ARN with embedded key",
+			kmsKeyID:    "awskms:///arn:aws:kms:us-east-1:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+			embeddedKey: keyBytes,
+			expectError: false,
+			verifyKeyID: "awskms:///arn:aws:kms:us-east-1:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+		},
+		{
+			name:          "Invalid embedded key should fail",
+			kmsKeyID:      "awskms:///1234abcd-12ab-34cd-56ef-1234567890ab",
+			embeddedKey:   []byte("not a valid key"),
+			expectError:   true,
+			errorContains: "failed to create verifier from embedded key",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := Policy{
+				PublicKeys: map[string]PublicKey{
+					tc.kmsKeyID: {
+						KeyID: tc.kmsKeyID,
+						Key:   tc.embeddedKey,
+					},
+				},
+			}
+
+			verifiers, err := p.PublicKeyVerifiers(map[string][]func(signer.SignerProvider) (signer.SignerProvider, error){})
+
+			if tc.expectError {
+				require.Error(t, err)
+				if tc.errorContains != "" {
+					assert.Contains(t, err.Error(), tc.errorContains)
+				}
+				return // Skip the rest of the test for error cases
+			}
+
+			require.NoError(t, err)
+			require.Len(t, verifiers, 1)
+
+			// Verify the key is stored with the KMS key ID (not the computed hash)
+			v, ok := verifiers[tc.verifyKeyID]
+			require.True(t, ok, "verifier should be stored with KMS key ID: %s", tc.verifyKeyID)
+			require.NotNil(t, v)
+
+			// Verify the verifier can be used (sign and verify a message)
+			message := []byte("test message for verification")
+			sig, err := testSigner.Sign(bytes.NewReader(message))
+			require.NoError(t, err)
+
+			err = v.Verify(bytes.NewReader(message), sig)
+			assert.NoError(t, err, "embedded key verifier should be able to verify signatures")
+		})
+	}
+}
+
+// TestKMSOfflineVerificationWithFunctionaries tests that the offline KMS verification
+// works correctly with the functionary matching logic in policy verification.
+func TestKMSOfflineVerificationWithFunctionaries(t *testing.T) {
+	// Create a test key
+	testSigner, testVerifier, keyBytes, err := createTestKey()
+	require.NoError(t, err)
+
+	kmsKeyID := "awskms:///test-key-12345678-1234-1234-1234-123456789012"
+
+	// Create a policy with a KMS key ID and embedded key
+	p := Policy{
+		PublicKeys: map[string]PublicKey{
+			kmsKeyID: {
+				KeyID: kmsKeyID,
+				Key:   keyBytes,
+			},
+		},
+	}
+
+	// Get verifiers from the policy
+	verifiers, err := p.PublicKeyVerifiers(map[string][]func(signer.SignerProvider) (signer.SignerProvider, error){})
+	require.NoError(t, err)
+	require.Len(t, verifiers, 1)
+
+	// The verifier should be accessible by the KMS key ID
+	v, ok := verifiers[kmsKeyID]
+	require.True(t, ok, "verifier should be stored with KMS key ID")
+
+	// Verify that signatures made with the original signer can be verified
+	message := []byte("test message")
+	sig, err := testSigner.Sign(bytes.NewReader(message))
+	require.NoError(t, err)
+
+	err = v.Verify(bytes.NewReader(message), sig)
+	assert.NoError(t, err, "should verify signature using embedded key")
+
+	// Also verify that the test verifier produces the same result
+	err = testVerifier.Verify(bytes.NewReader(message), sig)
+	assert.NoError(t, err, "original verifier should also verify the signature")
 }
 
 func TestCheckFunctionaries(t *testing.T) {
