@@ -55,48 +55,60 @@ type PublicKey struct {
 	Key   []byte `json:"key"`
 }
 
-// PublicKeyVerifiers returns verifiers for each of the policy's embedded public keys grouped by the key's ID
+// PublicKeyVerifiers returns verifiers for each of the policy's embedded public keys grouped by the key's ID.
+// When a public key entry has both a KMS-style KeyID (e.g., awskms://...) AND an embedded key in the Key field,
+// the embedded key is used directly for verification. This enables offline/air-gap verification scenarios
+// where the KMS service may not be accessible. If no embedded key is provided, the KMS service is contacted.
 func (p Policy) PublicKeyVerifiers(ko map[string][]func(signer.SignerProvider) (signer.SignerProvider, error)) (map[string]cryptoutil.Verifier, error) {
 	verifiers := make(map[string]cryptoutil.Verifier)
 	var err error
 
 	for _, key := range p.PublicKeys {
 		var verifier cryptoutil.Verifier
-		for _, prefix := range kms.SupportedProviders() {
-			if strings.HasPrefix(key.KeyID, prefix) {
-				ksp := kms.New(kms.WithRef(key.KeyID), kms.WithHash("SHA256"))
-				var vp signer.SignerProvider
-				for _, opt := range ksp.Options {
-					pn := opt.ProviderName()
-					for _, setter := range ko[pn] {
-						vp, err = setter(ksp)
-						if err != nil {
-							continue
+
+		// If an embedded key is provided, use it directly for verification.
+		// This enables offline/air-gap verification even for KMS-style key IDs.
+		if len(key.Key) > 0 {
+			verifier, err = cryptoutil.NewVerifierFromReader(bytes.NewReader(key.Key))
+			if err != nil {
+				return nil, fmt.Errorf("failed to create verifier from embedded key: %w", err)
+			}
+		} else {
+			// No embedded key - check if this is a KMS key ID and use KMS service
+			for _, prefix := range kms.SupportedProviders() {
+				if strings.HasPrefix(key.KeyID, prefix) {
+					ksp := kms.New(kms.WithRef(key.KeyID), kms.WithHash("SHA256"))
+					var vp signer.SignerProvider
+					for _, opt := range ksp.Options {
+						pn := opt.ProviderName()
+						for _, setter := range ko[pn] {
+							vp, err = setter(ksp)
+							if err != nil {
+								continue
+							}
 						}
 					}
-				}
 
-				if vp != nil {
-					var ok bool
-					ksp, ok = vp.(*kms.KMSSignerProvider)
-					if !ok {
-						return nil, fmt.Errorf("provided verifier provider is not a KMS verifier provider")
+					if vp != nil {
+						var ok bool
+						ksp, ok = vp.(*kms.KMSSignerProvider)
+						if !ok {
+							return nil, fmt.Errorf("provided verifier provider is not a KMS verifier provider")
+						}
 					}
-				}
 
-				verifier, err = ksp.Verifier(context.TODO())
-				if err != nil {
-					return nil, fmt.Errorf("failed to create kms verifier: %w", err)
+					verifier, err = ksp.Verifier(context.TODO())
+					if err != nil {
+						return nil, fmt.Errorf("failed to create kms verifier: %w", err)
+					}
+					break
 				}
-
 			}
 		}
 
+		// If still no verifier and no embedded key, this is an error
 		if verifier == nil {
-			verifier, err = cryptoutil.NewVerifierFromReader(bytes.NewReader(key.Key))
-			if err != nil {
-				return nil, err
-			}
+			return nil, fmt.Errorf("no embedded key provided for key ID %s and key ID is not a recognized KMS reference", key.KeyID)
 		}
 
 		keyID, err := verifier.KeyID()
@@ -104,14 +116,31 @@ func (p Policy) PublicKeyVerifiers(ko map[string][]func(signer.SignerProvider) (
 			return nil, err
 		}
 
-		if keyID != key.KeyID {
-			return nil, ErrKeyIDMismatch{
-				Expected: key.KeyID,
-				Actual:   keyID,
+		// For KMS key IDs with embedded keys, the computed keyID from the embedded key
+		// will be a hash of the public key, not the KMS URI. We need to allow this mismatch
+		// when an embedded key is provided with a KMS-style key ID.
+		isKMSKeyID := false
+		for _, prefix := range kms.SupportedProviders() {
+			if strings.HasPrefix(key.KeyID, prefix) {
+				isKMSKeyID = true
+				break
 			}
 		}
 
-		verifiers[keyID] = verifier
+		// Only check keyID match if:
+		// 1. It's not a KMS key ID, OR
+		// 2. It's a KMS key ID without an embedded key (verifier came from KMS)
+		if !isKMSKeyID || len(key.Key) == 0 {
+			if keyID != key.KeyID {
+				return nil, ErrKeyIDMismatch{
+					Expected: key.KeyID,
+					Actual:   keyID,
+				}
+			}
+		}
+
+		// Use the policy's key ID as the map key (this preserves the KMS URI for functionary matching)
+		verifiers[key.KeyID] = verifier
 	}
 
 	return verifiers, nil
