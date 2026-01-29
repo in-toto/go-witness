@@ -636,6 +636,92 @@ func TestKMSOfflineVerificationWithFunctionaries(t *testing.T) {
 	assert.NoError(t, err, "original verifier should also verify the signature")
 }
 
+// TestKeyIDOverrideVerifier tests that the keyIDOverrideVerifier correctly
+// returns the KMS URI as its KeyID, which is essential for functionary matching.
+// This ensures that when a policy defines a functionary with a KMS key ID,
+// the verifier created from the embedded key will match that functionary.
+func TestKeyIDOverrideVerifier(t *testing.T) {
+	// Create a test key
+	testSigner, _, keyBytes, err := createTestKey()
+	require.NoError(t, err)
+
+	// Get the original key ID (hash of the public key)
+	originalKeyID, err := testSigner.KeyID()
+	require.NoError(t, err)
+
+	kmsKeyID := "awskms:///test-key-12345678-1234-1234-1234-123456789012"
+
+	// Create a policy with a KMS key ID and embedded key
+	p := Policy{
+		PublicKeys: map[string]PublicKey{
+			kmsKeyID: {
+				KeyID: kmsKeyID,
+				Key:   keyBytes,
+			},
+		},
+	}
+
+	// Get verifiers from the policy
+	verifiers, err := p.PublicKeyVerifiers(map[string][]func(signer.SignerProvider) (signer.SignerProvider, error){})
+	require.NoError(t, err)
+	require.Len(t, verifiers, 1)
+
+	// Get the verifier
+	v, ok := verifiers[kmsKeyID]
+	require.True(t, ok, "verifier should be stored with KMS key ID")
+
+	// The verifier's KeyID() should return the KMS URI, not the original key hash
+	// This is crucial for functionary matching in policy verification
+	verifierKeyID, err := v.KeyID()
+	require.NoError(t, err)
+	assert.Equal(t, kmsKeyID, verifierKeyID, "verifier KeyID() should return the KMS URI for functionary matching")
+	assert.NotEqual(t, originalKeyID, verifierKeyID, "verifier KeyID() should NOT return the original key hash")
+
+	// Verify that signature verification still works
+	message := []byte("test message for keyIDOverrideVerifier")
+	sig, err := testSigner.Sign(bytes.NewReader(message))
+	require.NoError(t, err)
+
+	err = v.Verify(bytes.NewReader(message), sig)
+	assert.NoError(t, err, "signature verification should still work with wrapped verifier")
+}
+
+// TestKeyIDOverrideVerifierNotAppliedToNonKMS tests that regular (non-KMS) keys
+// do not get wrapped with keyIDOverrideVerifier and retain their original KeyID.
+func TestKeyIDOverrideVerifierNotAppliedToNonKMS(t *testing.T) {
+	// Create a test key
+	testSigner, _, keyBytes, err := createTestKey()
+	require.NoError(t, err)
+
+	// Get the original key ID (hash of the public key)
+	originalKeyID, err := testSigner.KeyID()
+	require.NoError(t, err)
+
+	// Create a policy with a regular (non-KMS) key ID
+	p := Policy{
+		PublicKeys: map[string]PublicKey{
+			originalKeyID: {
+				KeyID: originalKeyID,
+				Key:   keyBytes,
+			},
+		},
+	}
+
+	// Get verifiers from the policy
+	verifiers, err := p.PublicKeyVerifiers(map[string][]func(signer.SignerProvider) (signer.SignerProvider, error){})
+	require.NoError(t, err)
+	require.Len(t, verifiers, 1)
+
+	// Get the verifier
+	v, ok := verifiers[originalKeyID]
+	require.True(t, ok, "verifier should be stored with original key ID")
+
+	// The verifier's KeyID() should return the original key hash (not wrapped)
+	verifierKeyID, err := v.KeyID()
+	require.NoError(t, err)
+	assert.Equal(t, originalKeyID, verifierKeyID, "non-KMS verifier KeyID() should return the original key hash")
+}
+
 func TestCheckFunctionaries(t *testing.T) {
 	signers := []cryptoutil.Signer{}
 	verifiers := []cryptoutil.Verifier{}
