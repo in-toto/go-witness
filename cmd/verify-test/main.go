@@ -63,7 +63,7 @@ func main() {
 	fmt.Println("\n=== Testing PublicKeyVerifiers (the fix) ===")
 	fmt.Println("Creating verifiers from policy public keys...")
 	fmt.Println("(This should succeed without AWS KMS access when embedded keys are present)")
-	
+
 	verifiers, err := pol.PublicKeyVerifiers(map[string][]func(signer.SignerProvider) (signer.SignerProvider, error){})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ Failed to create verifiers: %v\n", err)
@@ -128,7 +128,7 @@ func main() {
 	checkedVerifiers, err := attestationEnvelope.Verify(dsse.VerifyWithVerifiers(matchingVerifiers...))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Verification FAILED: %v\n", err)
-		
+
 		// Print details about checked verifiers
 		for _, cv := range checkedVerifiers {
 			keyID, _ := cv.Verifier.KeyID()
@@ -147,7 +147,7 @@ func main() {
 		keyID, _ := cv.Verifier.KeyID()
 		fmt.Printf("  - %s\n", keyID)
 	}
-	
+
 	fmt.Println("\n=== Summary ===")
 	fmt.Println("The KMS offline verification fix is working correctly!")
 	fmt.Println("- Embedded public key was used instead of contacting AWS KMS")
