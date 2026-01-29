@@ -87,32 +87,32 @@ func (p Policy) PublicKeyVerifiers(ko map[string][]func(signer.SignerProvider) (
 			}
 		} else {
 			// No embedded key - check if this is a KMS key ID and use KMS service
-			for _, prefix := range kms.SupportedProviders() {
-				if strings.HasPrefix(key.KeyID, prefix) {
-					ksp := kms.New(kms.WithRef(key.KeyID), kms.WithHash("SHA256"))
-					var vp signer.SignerProvider
-					for _, opt := range ksp.Options {
-						pn := opt.ProviderName()
-						for _, setter := range ko[pn] {
-							vp, err = setter(ksp)
-							if err != nil {
-								continue
-							}
+		for _, prefix := range kms.SupportedProviders() {
+			if strings.HasPrefix(key.KeyID, prefix) {
+				ksp := kms.New(kms.WithRef(key.KeyID), kms.WithHash("SHA256"))
+				var vp signer.SignerProvider
+				for _, opt := range ksp.Options {
+					pn := opt.ProviderName()
+					for _, setter := range ko[pn] {
+						vp, err = setter(ksp)
+						if err != nil {
+							continue
 						}
 					}
+				}
 
-					if vp != nil {
-						var ok bool
-						ksp, ok = vp.(*kms.KMSSignerProvider)
-						if !ok {
-							return nil, fmt.Errorf("provided verifier provider is not a KMS verifier provider")
-						}
+				if vp != nil {
+					var ok bool
+					ksp, ok = vp.(*kms.KMSSignerProvider)
+					if !ok {
+						return nil, fmt.Errorf("provided verifier provider is not a KMS verifier provider")
 					}
+				}
 
-					verifier, err = ksp.Verifier(context.TODO())
-					if err != nil {
-						return nil, fmt.Errorf("failed to create kms verifier: %w", err)
-					}
+				verifier, err = ksp.Verifier(context.TODO())
+				if err != nil {
+					return nil, fmt.Errorf("failed to create kms verifier: %w", err)
+				}
 					break
 				}
 			}
@@ -143,12 +143,12 @@ func (p Policy) PublicKeyVerifiers(ko map[string][]func(signer.SignerProvider) (
 		// 1. It's not a KMS key ID, OR
 		// 2. It's a KMS key ID without an embedded key (verifier came from KMS)
 		if !isKMSKeyID || len(key.Key) == 0 {
-			if keyID != key.KeyID {
-				return nil, ErrKeyIDMismatch{
-					Expected: key.KeyID,
-					Actual:   keyID,
-				}
+		if keyID != key.KeyID {
+			return nil, ErrKeyIDMismatch{
+				Expected: key.KeyID,
+				Actual:   keyID,
 			}
+		}
 		}
 
 		// For KMS key IDs with embedded keys, wrap the verifier to return the KMS URI as its KeyID.
