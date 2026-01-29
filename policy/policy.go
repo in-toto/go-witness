@@ -55,6 +55,18 @@ type PublicKey struct {
 	Key   []byte `json:"key"`
 }
 
+// keyIDOverrideVerifier wraps a cryptoutil.Verifier to return a custom KeyID.
+// This is used when an embedded key is provided for a KMS-style key ID, allowing
+// the verifier to return the KMS URI instead of the computed hash of the public key.
+type keyIDOverrideVerifier struct {
+	cryptoutil.Verifier
+	keyID string
+}
+
+func (v *keyIDOverrideVerifier) KeyID() (string, error) {
+	return v.keyID, nil
+}
+
 // PublicKeyVerifiers returns verifiers for each of the policy's embedded public keys grouped by the key's ID.
 // When a public key entry has both a KMS-style KeyID (e.g., awskms://...) AND an embedded key in the Key field,
 // the embedded key is used directly for verification. This enables offline/air-gap verification scenarios
@@ -136,6 +148,16 @@ func (p Policy) PublicKeyVerifiers(ko map[string][]func(signer.SignerProvider) (
 					Expected: key.KeyID,
 					Actual:   keyID,
 				}
+			}
+		}
+
+		// For KMS key IDs with embedded keys, wrap the verifier to return the KMS URI as its KeyID.
+		// This ensures functionary matching works correctly since the policy's functionary
+		// references the KMS URI, not the computed hash of the embedded public key.
+		if isKMSKeyID && len(key.Key) > 0 {
+			verifier = &keyIDOverrideVerifier{
+				Verifier: verifier,
+				keyID:    key.KeyID,
 			}
 		}
 
