@@ -146,6 +146,7 @@ type AttestationContext struct {
 	mutex               sync.RWMutex
 	environmentCapturer *environment.Capture
 	outputWriters       []io.Writer
+	executeHooks        ExecuteHooks
 }
 
 type Product struct {
@@ -201,6 +202,25 @@ func (ctx *AttestationContext) RunAttestors() error {
 	for _, k := range order {
 		log.Infof("Starting %s attestors stage...", k.String())
 
+		// Phase 1: For ExecuteRunType, declare hooks before starting goroutines
+		if k == ExecuteRunType {
+			for _, att := range attestors[k] {
+				if declarer, ok := att.(ExecuteHookDeclarer); ok {
+					if err := declarer.DeclareHooks(&ctx.executeHooks); err != nil {
+						return fmt.Errorf("attestor %s failed to declare hooks: %w", att.Name(), err)
+					}
+				}
+			}
+		} else {
+			// Verify non-ExecuteRunType attestors don't implement ExecuteHookDeclarer
+			for _, att := range attestors[k] {
+				if _, ok := att.(ExecuteHookDeclarer); ok {
+					return fmt.Errorf("attestor %s of run type %s cannot declare execute hooks", att.Name(), k.String())
+				}
+			}
+		}
+
+		// Phase 2: Run attestors concurrently
 		var wg sync.WaitGroup
 
 		for _, att := range attestors[k] {
