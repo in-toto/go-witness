@@ -31,7 +31,7 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.9.1
 	github.com/sigstore/cosign/v2 v2.4.3
 	github.com/sigstore/fulcio v1.8.3
-	github.com/spdx/tools-golang v0.5.6
+	github.com/spdx/tools-golang v0.5.7
 	github.com/spf13/viper v1.20.1
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/stretchr/testify v1.11.1
