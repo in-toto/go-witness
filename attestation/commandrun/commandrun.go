@@ -16,9 +16,12 @@ package commandrun
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
+	"time"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
@@ -34,8 +37,9 @@ const (
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
-	_ attestation.Attestor = &CommandRun{}
-	_ CommandRunAttestor   = &CommandRun{}
+	_ attestation.Attestor            = &CommandRun{}
+	_ CommandRunAttestor              = &CommandRun{}
+	_ attestation.ExecuteHookDeclarer = &CommandRun{}
 )
 
 type CommandRunAttestor interface {
@@ -112,10 +116,11 @@ type CommandRun struct {
 	silent        bool
 	materials     map[string]cryptoutil.DigestSet
 	enableTracing bool
+	executeHooks  *attestation.ExecuteHooks
 }
 
-func (a *CommandRun) Schema() *jsonschema.Schema {
-	return jsonschema.Reflect(&a)
+func (rc *CommandRun) Schema() *jsonschema.Schema {
+	return jsonschema.Reflect(&rc)
 }
 
 func (rc *CommandRun) Attest(ctx *attestation.AttestationContext) error {
@@ -154,8 +159,15 @@ func (rc *CommandRun) TracingEnabled() bool {
 	return rc.enableTracing
 }
 
-func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
-	c := exec.Command(r.Cmd[0], r.Cmd[1:]...)
+// CommandRun saves the execute hooks using the same mechanism, even though
+// it doesn't declare any hooks itself. It is the hook runner. Maybe a hack.
+func (rc *CommandRun) DeclareHooks(hooks *attestation.ExecuteHooks) error {
+	rc.executeHooks = hooks
+	return nil
+}
+
+func (rc *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
+	c := exec.Command(rc.Cmd[0], rc.Cmd[1:]...)
 	c.Dir = ctx.WorkingDir()
 	stdoutBuffer := bytes.Buffer{}
 	stderrBuffer := bytes.Buffer{}
@@ -166,7 +178,7 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		stderrWriters = append(stderrWriters, ctx.OutputWriters()...)
 	}
 
-	if !r.silent {
+	if !rc.silent {
 		stdoutWriters = append(stdoutWriters, os.Stdout)
 		stderrWriters = append(stderrWriters, os.Stderr)
 	}
@@ -175,7 +187,22 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	stderrWriter := io.MultiWriter(stderrWriters...)
 	c.Stdout = stdoutWriter
 	c.Stderr = stderrWriter
-	if r.enableTracing {
+
+	// Wait for any declared hooks to be registered
+	if err := rc.executeHooks.WaitForDeclaredHooks(30 * time.Second); err != nil {
+		return fmt.Errorf("failed waiting for hook registration: %w", err)
+	}
+
+	// Pre-compute hook flags once to avoid repeated mutex operations
+	hasPreExec := rc.executeHooks.HasHooks(attestation.StagePreExec)
+	hasPreExit := rc.executeHooks.HasHooks(attestation.StagePreExit)
+	needsHookTracing := hasPreExec || hasPreExit
+
+	if rc.enableTracing || needsHookTracing {
+		// Locking the thread before enabling tracing and starting the command execution (fork and exec)
+		// Only the parent thread that called fork/clone can issue the subsequent tracing commands
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
 		enableTracing(c)
 	}
 
@@ -184,16 +211,19 @@ func (r *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	}
 
 	var err error
-	if r.enableTracing {
-		r.Processes, err = r.trace(c, ctx)
+
+	if rc.enableTracing {
+		rc.Processes, err = rc.trace(c, ctx, hasPreExec, hasPreExit)
+	} else if needsHookTracing {
+		err = rc.runWithHooks(c, hasPreExec, hasPreExit)
 	} else {
 		err = c.Wait()
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			r.ExitCode = exitErr.ExitCode()
+			rc.ExitCode = exitErr.ExitCode()
 		}
 	}
 
-	r.Stdout = stdoutBuffer.String()
-	r.Stderr = stderrBuffer.String()
+	rc.Stdout = stdoutBuffer.String()
+	rc.Stderr = stderrBuffer.String()
 	return err
 }
