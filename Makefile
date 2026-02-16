@@ -38,3 +38,19 @@ lint: ## Run the linter
 .PHONY: check-aws-certs
 check-aws-certs: ## Check the AWS public keys used to verify AWS IID documents
 	GOWORK=off go run -C ./attestation/aws-iid/check-certs/ . ../aws-certs.go
+
+.PHONY: generate-vmlinux
+generate-vmlinux: ## Generate vmlinux.h from kernel BTF (requires bpftool)
+	@echo "Generating vmlinux.h from kernel BTF..."
+	@command -v bpftool >/dev/null 2>&1 || { echo "Error: bpftool is required. Install with: apt install linux-tools-common linux-tools-$(uname -r)"; exit 1; }
+	bpftool btf dump file /sys/kernel/btf/vmlinux format c > ./attestation/networktrace/bpf/headers/vmlinux.h
+
+.PHONY: generate-bpf
+generate-bpf: generate-vmlinux ## Generate BPF bytecode and Go bindings for network trace attestor
+	@echo "Generating BPF code (requires clang and llvm)..."
+	go generate ./attestation/networktrace/bpf/...
+
+.PHONY: generate-bpf-debug
+generate-bpf-debug: generate-vmlinux ## Generate BPF bytecode with debug logging enabled
+	@echo "Generating BPF code with DEBUG logging (requires clang and llvm)..."
+	BPF_CFLAGS="-DBPF_DEBUG" go generate ./attestation/networktrace/bpf/...
