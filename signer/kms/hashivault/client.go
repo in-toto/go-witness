@@ -109,7 +109,6 @@ func (c *client) sign(ctx context.Context, digest []byte, hashFunc crypto.Hash) 
 	}
 
 	path := fmt.Sprintf("/%v/sign/%v/%v", c.transitSecretsEnginePath, c.keyPath, hashStr)
-	fmt.Println(path)
 	resp, err := c.client.Logical().WriteWithContext(
 		ctx,
 		path,
@@ -192,7 +191,7 @@ func (c *client) getPublicKeyBytes(ctx context.Context) ([]byte, error) {
 
 	keyVersion := strconv.FormatInt(int64(c.keyVersion), 10)
 	if keyVersion == "0" {
-		latestVersion, ok := resp.Data["lastest_version"]
+		latestVersion, ok := resp.Data["latest_version"]
 		if !ok {
 			return nil, fmt.Errorf("latest key version not in response")
 		}
