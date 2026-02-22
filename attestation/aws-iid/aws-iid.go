@@ -25,6 +25,8 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -67,6 +69,10 @@ func init() {
 				if !ok {
 					return a, fmt.Errorf("invalid attestor type: %T", a)
 				}
+				if val == "" {
+					return a, fmt.Errorf("aws-region-cert cannot be empty")
+				}
+
 				WithAWSRegionCert(val)(attestor)
 				return attestor, nil
 			},
@@ -77,6 +83,18 @@ type Option func(*Attestor)
 
 func WithAWSRegionCert(awsCert string) Option {
 	return func(a *Attestor) {
+		// Detect if `awsCert` is a path to a file
+		if fi, err := os.Stat(awsCert); err == nil && !fi.IsDir() {
+			data, err := os.ReadFile(awsCert)
+			if err != nil {
+				// If we can't read the file, just use the value as-is
+				// This maintains backward compatibility
+				a.awsCert = awsCert
+				return
+			}
+			a.awsCert = strings.TrimSpace(string(data))
+			return
+		}
 		a.awsCert = awsCert
 	}
 }
