@@ -30,6 +30,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var emptyPass = ""
+
 // generateSigstoreKeyWithEmptyPassphrase creates a sigstore-encrypted key PEM
 // with an empty passphrase for testing purposes.
 func generateSigstoreKeyWithEmptyPassphrase(t *testing.T) []byte {
@@ -56,10 +58,10 @@ func TestFileSignerProvider_EmptyPassphrase_Explicit(t *testing.T) {
 	dir := t.TempDir()
 	keyPEM := generateSigstoreKeyWithEmptyPassphrase(t)
 	keyPath := filepath.Join(dir, "key.pem")
-	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0600))
+	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0o600))
 
 	// Use explicit empty passphrase via WithKeyPassphrase("")
-	fsp := New(WithKeyPath(keyPath), WithKeyPassphrase(""))
+	fsp := New(WithKeyPath(keyPath), WithKeyPassphrase(&emptyPass))
 	s, err := fsp.Signer(context.Background())
 	require.NoError(t, err)
 
@@ -76,11 +78,11 @@ func TestFileSignerProvider_EmptyPassphrase_FromFile(t *testing.T) {
 	dir := t.TempDir()
 	keyPEM := generateSigstoreKeyWithEmptyPassphrase(t)
 	keyPath := filepath.Join(dir, "key.pem")
-	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0600))
+	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0o600))
 
 	// Empty passphrase file (no content)
 	passPath := filepath.Join(dir, "pass.txt")
-	require.NoError(t, os.WriteFile(passPath, []byte(""), 0600))
+	require.NoError(t, os.WriteFile(passPath, []byte(""), 0o600))
 
 	fsp := New(WithKeyPath(keyPath), WithKeyPassphrasePath(passPath))
 	s, err := fsp.Signer(context.Background())
@@ -99,11 +101,11 @@ func TestFileSignerProvider_EmptyPassphrase_FromFileWithNewline(t *testing.T) {
 	dir := t.TempDir()
 	keyPEM := generateSigstoreKeyWithEmptyPassphrase(t)
 	keyPath := filepath.Join(dir, "key.pem")
-	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0600))
+	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0o600))
 
 	// Empty passphrase file with trailing newline (common in editors)
 	passPath := filepath.Join(dir, "pass.txt")
-	require.NoError(t, os.WriteFile(passPath, []byte("\n"), 0600))
+	require.NoError(t, os.WriteFile(passPath, []byte("\n"), 0o600))
 
 	fsp := New(WithKeyPath(keyPath), WithKeyPassphrasePath(passPath))
 	s, err := fsp.Signer(context.Background())
@@ -122,7 +124,7 @@ func TestFileSignerProvider_EmptyPassphrase_FromEnv(t *testing.T) {
 	dir := t.TempDir()
 	keyPEM := generateSigstoreKeyWithEmptyPassphrase(t)
 	keyPath := filepath.Join(dir, "key.pem")
-	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0600))
+	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0o600))
 
 	// Set environment variable to empty string
 	t.Setenv("WITNESS_KEY_PASSPHRASE", "")
@@ -144,13 +146,13 @@ func TestFileSignerProvider_EmptyPassphrase_ExplicitPrecedence(t *testing.T) {
 	dir := t.TempDir()
 	keyPEM := generateSigstoreKeyWithEmptyPassphrase(t)
 	keyPath := filepath.Join(dir, "key.pem")
-	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0600))
+	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0o600))
 
 	// Set env to wrong passphrase - explicit empty should take precedence
 	t.Setenv("WITNESS_KEY_PASSPHRASE", "wrong-password")
 
 	// Explicit empty passphrase should override the env var
-	fsp := New(WithKeyPath(keyPath), WithKeyPassphrase(""))
+	fsp := New(WithKeyPath(keyPath), WithKeyPassphrase(&emptyPass))
 	s, err := fsp.Signer(context.Background())
 	require.NoError(t, err)
 
@@ -167,7 +169,7 @@ func TestFileSignerProvider_SigstoreKey_NoPassphrase_Error(t *testing.T) {
 	dir := t.TempDir()
 	keyPEM := generateSigstoreKeyWithEmptyPassphrase(t)
 	keyPath := filepath.Join(dir, "key.pem")
-	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0600))
+	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0o600))
 
 	// No passphrase provided at all - should fail for encrypted sigstore key
 	fsp := New(WithKeyPath(keyPath))

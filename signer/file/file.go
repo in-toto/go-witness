@@ -42,11 +42,11 @@ func init() {
 				return ksp, nil
 			},
 		),
-		registry.StringConfigOption(
+		registry.StringPtrConfigOption(
 			"key-passphrase",
 			"Passphrase to decrypt the private key (prefer key-passphrase-path).",
-			"",
-			func(sp signer.SignerProvider, pass string) (signer.SignerProvider, error) {
+			nil,
+			func(sp signer.SignerProvider, pass *string) (signer.SignerProvider, error) {
 				ksp, ok := sp.(FileSignerProvider)
 				if !ok {
 					return ksp, fmt.Errorf("provided signer provider is not a file signer provider")
@@ -129,9 +129,9 @@ func WithIntermediatePaths(intermediatePaths []string) Option {
 	}
 }
 
-func WithKeyPassphrase(pass string) Option {
+func WithKeyPassphrase(pass *string) Option {
 	return func(fsp *FileSignerProvider) {
-		fsp.Passphrase = &pass
+		fsp.Passphrase = pass
 	}
 }
 
