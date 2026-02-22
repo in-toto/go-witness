@@ -123,11 +123,9 @@ func shouldRecord(path string, artifact cryptoutil.DigestSet, baseArtifacts map[
 		excludeGlobNothing = true
 	}
 
-	includePath := true
-	if excludeGlob != nil && excludeGlob.Match(path) {
-		includePath = false
-	}
-	if !(superInclude && !includePath) && includeGlob != nil && includeGlob.Match(path) {
+	includePath := excludeGlob == nil || !excludeGlob.Match(path)
+
+	if (!superInclude || includePath) && includeGlob != nil && includeGlob.Match(path) {
 		includePath = true
 	} else if excludeGlobNothing {
 		includePath = false
