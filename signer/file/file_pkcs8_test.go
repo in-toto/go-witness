@@ -44,12 +44,12 @@ zRUMp83etY/en4xYDagth5IUz9IGNsqauXf11xcDIBy6twew6QY+oER8xKaimgQ3
 zfmC
 -----END ENCRYPTED PRIVATE KEY-----`
 
-const passphrase = "s3cret-pass"
+var passphrase = "s3cret-pass"
 
 func writeTemp(dir, name, data string, t *testing.T) string {
 	t.Helper()
 	p := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(p, []byte(data), 0600))
+	require.NoError(t, os.WriteFile(p, []byte(data), 0o600))
 	return p
 }
 
@@ -139,7 +139,7 @@ func TestFileSignerProvider_PassphraseExplicit_Precedence(t *testing.T) {
 	t.Setenv("WITNESS_KEY_PASSPHRASE", "ALSO_WRONG")
 
 	// Explicit passphrase should take precedence over file and env
-	fsp := New(WithKeyPath(keyPath), WithKeyPassphrasePath(passPath), WithKeyPassphrase(passphrase))
+	fsp := New(WithKeyPath(keyPath), WithKeyPassphrasePath(passPath), WithKeyPassphrase(&passphrase))
 	s, err := fsp.Signer(context.Background())
 	require.NoError(t, err)
 	v, err := s.Verifier()
@@ -166,8 +166,9 @@ func TestFileSignerProvider_WrongPassphrase_Error(t *testing.T) {
 	_, err = fsp2.Signer(context.Background())
 	require.Error(t, err)
 
+	wrongPass := "WRONG3"
 	// And explicit wrong
-	fsp3 := New(WithKeyPath(keyPath), WithKeyPassphrase("WRONG3"))
+	fsp3 := New(WithKeyPath(keyPath), WithKeyPassphrase(&wrongPass))
 	_, err = fsp3.Signer(context.Background())
 	require.Error(t, err)
 }

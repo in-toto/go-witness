@@ -26,7 +26,7 @@ type Configurer interface {
 }
 
 type Option interface {
-	int | string | []string | bool | time.Duration
+	int | string | []string | bool | time.Duration | *string
 }
 
 type ConfigOption[T any, TOption Option] struct {
@@ -99,6 +99,15 @@ func BoolConfigOption[T any](name, description string, defaultVal bool, setter f
 
 func DurationConfigOption[T any](name, description string, defaultVal time.Duration, setter func(T, time.Duration) (T, error)) *ConfigOption[T, time.Duration] {
 	return &ConfigOption[T, time.Duration]{
+		name:        name,
+		description: description,
+		defaultVal:  defaultVal,
+		setter:      setter,
+	}
+}
+
+func StringPtrConfigOption[T any](name, description string, defaultVal *string, setter func(T, *string) (T, error)) *ConfigOption[T, *string] {
+	return &ConfigOption[T, *string]{
 		name:        name,
 		description: description,
 		defaultVal:  defaultVal,
