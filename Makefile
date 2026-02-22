@@ -38,3 +38,42 @@ lint: ## Run the linter
 .PHONY: check-aws-certs
 check-aws-certs: ## Check the AWS public keys used to verify AWS IID documents
 	GOWORK=off go run -C ./attestation/aws-iid/check-certs/ . ../aws-certs.go
+
+benchmark: ## Run benchmarks with profiling and save results
+	go test -v -bench=. -benchmem -benchtime=10s \
+		-cpuprofile=cpu.prof -memprofile=mem.prof \
+		./attestation/file/ | tee benchmark.txt
+
+benchmark-stat: install-benchstat ## Run benchmarks 10 times for statistical analysis
+	go test -bench=. -benchmem -benchtime=10s -count=10 \
+		./attestation/file/ | tee benchmark_runs.txt
+	@echo "\n=== Statistical Summary ==="
+	$(shell go env GOPATH)/bin/benchstat benchmark_runs.txt
+
+benchmark-compare: install-benchstat ## Compare current benchmark with baseline
+	@if [ ! -f benchmark_baseline.txt ]; then \
+		echo "No baseline found. Run 'make benchmark-baseline' first"; \
+		exit 1; \
+	fi
+	@echo "Running new benchmark..."
+	@go test -bench=. -benchmem -benchtime=10s -count=10 \
+		./attestation/file/ > benchmark_new.txt
+	@echo "\n=== Comparison: Baseline vs New ==="
+	$(shell go env GOPATH)/bin/benchstat benchmark_baseline.txt benchmark_new.txt
+
+.PHONY: install-benchstat
+install-benchstat: ## Install benchstat if not present
+	@which benchstat >/dev/null 2>&1 || \
+		(echo "Installing benchstat..." && go install golang.org/x/perf/cmd/benchstat@latest)
+
+benchmark-baseline: ## Save current benchmark as baseline
+	@echo "Running baseline benchmark..."
+	@go test -bench=. -benchmem -benchtime=10s -count=10 \
+		./attestation/file/ > benchmark_baseline.txt
+	@echo "Baseline saved to benchmark_baseline.txt"
+
+view-cpu: ## View CPU profile in browser
+	go tool pprof -http=:6060 cpu.prof
+
+view-mem: ## View memory profile in browser
+	go tool pprof -http=:6060 mem.prof
