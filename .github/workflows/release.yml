@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: release
-on: 
+on:
   push:
     tags:
       - v*
@@ -62,9 +62,10 @@ jobs:
       pull_request: ${{ github.event_name == 'pull_request' }}
       step: unit-test
       attestations: "git github environment"
-      command: go test -v -coverprofile=profile.cov -covermode=atomic ./...
+      command: go test -v -coverprofile=profile.cov -covermode=atomic -tags=integration ./...
       artifact-upload-name: profile.cov
       artifact-upload-path: profile.cov
+
   unit-test-windows:
     needs: [fmt]
     runs-on: windows-latest
