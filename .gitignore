@@ -19,3 +19,9 @@ profile.cov
 .DS_Store
 
 !log/
+
+file.test
+
+*.prof
+
+benchmark_new.txt
