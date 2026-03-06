@@ -144,11 +144,12 @@ func TestAttestor_Attest(t *testing.T) {
 	testCertPath := tmpFile.Name()
 
 	var tests = []struct {
-		name    string
-		resp    []testresp
-		cert    string
-		errNil  bool
-		errText string
+		name     string
+		resp     []testresp
+		cert     string
+		certFile bool
+		errNil   bool
+		errText  string
 	}{
 		{
 			"Valid IID (inline PEM)",
@@ -158,6 +159,7 @@ func TestAttestor_Attest(t *testing.T) {
 				{"/latest/api/token", "testtoken"},
 			},
 			testCert,
+			false,
 			true,
 			"",
 		},
@@ -170,6 +172,7 @@ func TestAttestor_Attest(t *testing.T) {
 			},
 			testCertPath,
 			true,
+			true,
 			"",
 		},
 		{
@@ -180,6 +183,7 @@ func TestAttestor_Attest(t *testing.T) {
 				{"/latest/api/token", "testtoken"},
 			},
 			testCert,
+			false,
 			false,
 			"instance identity document or signature is empty",
 		},
@@ -192,6 +196,7 @@ func TestAttestor_Attest(t *testing.T) {
 			},
 			testCert,
 			false,
+			false,
 			"crypto/rsa: verification error",
 		},
 		{
@@ -203,12 +208,18 @@ func TestAttestor_Attest(t *testing.T) {
 			},
 			testCert,
 			false,
+			false,
 			"failed to decode signature:",
 		},
 	}
 
 	for _, test := range tests {
-		a := New(WithAWSRegionCert(test.cert))
+		var a *Attestor
+		if test.certFile {
+			a = New(WithAWSRegionCertFile(test.cert))
+		} else {
+			a = New(WithAWSRegionCert(test.cert))
+		}
 
 		t.Run(test.name, func(t *testing.T) {
 			server := initTestServer(t, test.resp)
