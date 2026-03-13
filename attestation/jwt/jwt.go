@@ -20,9 +20,9 @@ import (
 	"net/http"
 
 	"github.com/in-toto/go-witness/attestation"
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/invopop/jsonschema"
-	"gopkg.in/go-jose/go-jose.v2"
-	"gopkg.in/go-jose/go-jose.v2/jwt"
 )
 
 const (
@@ -96,7 +96,12 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return ErrInvalidToken(a.token)
 	}
 
-	parsed, err := jwt.ParseSigned(a.token)
+	parsed, err := jwt.ParseSigned(a.token, []jose.SignatureAlgorithm{
+		jose.RS256, jose.RS384, jose.RS512,
+		jose.PS256, jose.PS384, jose.PS512,
+		jose.ES256, jose.ES384, jose.ES512,
+		jose.EdDSA,
+	})
 	if err != nil {
 		return fmt.Errorf("error parsing token: %w", err)
 	}

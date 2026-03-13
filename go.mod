@@ -18,7 +18,7 @@ require (
 	github.com/fkautz/omnitrail-go v0.0.0-20230808061951-37d34c23539d
 	github.com/gabriel-vasile/mimetype v1.4.13
 	github.com/go-git/go-git/v5 v5.13.2
-	github.com/go-jose/go-jose/v3 v3.0.4
+	github.com/go-jose/go-jose/v4 v4.1.3
 	github.com/google/go-containerregistry v0.20.8
 	github.com/in-toto/archivista v0.9.3
 	github.com/in-toto/attestation v1.1.2
@@ -41,7 +41,6 @@ require (
 	golang.org/x/sys v0.41.0
 	google.golang.org/api v0.256.0
 	google.golang.org/grpc v1.77.0
-	gopkg.in/go-jose/go-jose.v2 v2.6.3
 	k8s.io/api v0.28.15
 	k8s.io/apimachinery v0.30.14
 	k8s.io/client-go v0.28.15
@@ -105,7 +104,6 @@ require (
 	github.com/gitleaks/go-gitdiff v0.9.1 // indirect
 	github.com/go-chi/chi v4.1.2+incompatible // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.23.0 // indirect

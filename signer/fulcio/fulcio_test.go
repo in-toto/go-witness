@@ -40,14 +40,13 @@ import (
 
 	"path/filepath"
 
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	fulciopb "github.com/sigstore/fulcio/pkg/generated/protobuf"
 	"github.com/stretchr/testify/require"
-	"go.step.sm/crypto/jose"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/go-jose/go-jose/v3/jwt"
 )
 
 func setupFulcioTestService(t *testing.T) (*dummyCAClientService, string) {
@@ -153,8 +152,11 @@ func generateTestToken(email string, subject string) string {
 		Subject string `json:"sub"`
 	}
 
-	key := []byte("test-secret")
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: key}, nil)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: key}, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -170,7 +172,7 @@ func generateTestToken(email string, subject string) string {
 	claims.Audience = []string{"sigstore"}
 
 	builder := jwt.Signed(signer).Claims(claims)
-	signedToken, _ := builder.CompactSerialize()
+	signedToken, _ := builder.Serialize()
 
 	return signedToken
 }
