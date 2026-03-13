@@ -23,6 +23,9 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 test: ## Run the go unit tests
 	go test -v -coverprofile=profile.cov -covermode=atomic ./...
 
+integration-test:
+	go test -v -coverprofile=profile.cov -covermode=atomic -tags=integration ./...
+
 .PHONY: schema
 schema: ## Generate the attestor schema json files
 	docker run -v ./:/app -w /app --platform linux/amd64 cgr.dev/chainguard/go run ./schemagen/schema.go
