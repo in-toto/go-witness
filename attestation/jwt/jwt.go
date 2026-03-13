@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/in-toto/go-witness/attestation"
 	jose "github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/in-toto/go-witness/attestation"
 	"github.com/invopop/jsonschema"
 )
 

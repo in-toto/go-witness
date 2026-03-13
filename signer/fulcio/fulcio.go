@@ -36,6 +36,8 @@ import (
 	"strings"
 	"time"
 
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
@@ -52,8 +54,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
-	jose "github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 func init() {
