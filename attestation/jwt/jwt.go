@@ -31,6 +31,17 @@ const (
 	RunType = attestation.PreMaterialRunType
 )
 
+// allowedJWTAlgorithms is the set of asymmetric JWT signing algorithms accepted
+// when parsing tokens. Symmetric algorithms (HS256/HS384/HS512) are intentionally
+// excluded: they require a shared secret, are never issued by OIDC providers via
+// JWKS endpoints, and accepting them would enable algorithm-confusion attacks.
+var allowedJWTAlgorithms = []jose.SignatureAlgorithm{
+	jose.RS256, jose.RS384, jose.RS512, // RSA PKCS#1 v1.5
+	jose.PS256, jose.PS384, jose.PS512, // RSA-PSS
+	jose.ES256, jose.ES384, jose.ES512, // ECDSA
+	jose.EdDSA, // Ed25519/Ed448
+}
+
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
@@ -96,12 +107,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return ErrInvalidToken(a.token)
 	}
 
-	parsed, err := jwt.ParseSigned(a.token, []jose.SignatureAlgorithm{
-		jose.RS256, jose.RS384, jose.RS512,
-		jose.PS256, jose.PS384, jose.PS512,
-		jose.ES256, jose.ES384, jose.ES512,
-		jose.EdDSA,
-	})
+	parsed, err := jwt.ParseSigned(a.token, allowedJWTAlgorithms)
 	if err != nil {
 		return fmt.Errorf("error parsing token: %w", err)
 	}
