@@ -244,15 +244,12 @@ func TestSigner(t *testing.T) {
 	//this should be a tranport err since we cant actually test on 443 which is the default
 	require.ErrorContains(t, err, "lookup test")
 
-	// Test signer with token read from file
-	// NOTE: this function could be refactored to accept a fileSystem or io.Reader so reading the file can be mocked,
-	// but unsure if this is the way we want to go for now
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
+	// Test signer with token read from file using a dynamically generated temp token
+	tmpDir := t.TempDir()
+	tp := filepath.Join(tmpDir, "test.token")
+	if err := os.WriteFile(tp, []byte(generateTestToken("file@example.com", "")), 0600); err != nil {
+		t.Fatalf("failed to write temp token file: %v", err)
 	}
-	rootDir := filepath.Dir(filepath.Dir(wd))
-	tp := filepath.Join(rootDir, "hack", "test.token")
 
 	provider = New(WithFulcioURL(fmt.Sprintf("http://%v:%v", hostname, port)), WithTokenPath(tp))
 	_, err = provider.Signer(ctx)
