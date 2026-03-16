@@ -7,7 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.4.0
 	github.com/CycloneDX/cyclonedx-go v0.9.3
-	github.com/aws/aws-sdk-go-v2 v1.41.3
+	github.com/aws/aws-sdk-go-v2 v1.41.4
 	github.com/aws/aws-sdk-go-v2/config v1.31.21
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.19
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.61.3
