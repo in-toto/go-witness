@@ -42,6 +42,7 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/slsa"
 	_ "github.com/in-toto/go-witness/attestation/system-packages"
 	_ "github.com/in-toto/go-witness/attestation/vex"
+	_ "github.com/in-toto/go-witness/attestation/networktrace"
 
 	// signer providers
 	_ "github.com/in-toto/go-witness/signer/file"

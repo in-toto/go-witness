@@ -88,7 +88,11 @@ func (p *TCPProxy) Start(ctx context.Context, ready chan<- struct{}) error {
 						continue
 					}
 				}
+
+				p.recordWg.Add(1)
 				go func() {
+					defer p.recordWg.Done()
+					log.Debugf("Calling HandleConnection: %s -> %s", conn.RemoteAddr(), conn.LocalAddr())
 					if err := p.HandleConnection(ctx, conn); err != nil {
 						log.Errorf("Handle IPv6 connection error: %v", err)
 					}
@@ -108,12 +112,6 @@ func (p *TCPProxy) Start(ctx context.Context, ready chan<- struct{}) error {
 	}
 
 	log.Infof("TCP proxy listening on %s (IPv4)", addrV4)
-
-	// Signal that we're ready to accept connections (both IPv4 and IPv6 are set up)
-	if ready != nil {
-		close(ready)
-	}
-
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -127,13 +125,21 @@ func (p *TCPProxy) Start(ctx context.Context, ready chan<- struct{}) error {
 				}
 			}
 
+			p.recordWg.Add(1)
 			go func() {
+				defer p.recordWg.Done()
+				log.Debugf("Calling HandleConnection: %s -> %s", conn.RemoteAddr(), conn.LocalAddr())
 				if err := p.HandleConnection(ctx, conn); err != nil {
 					log.Errorf("Handle connection error: %v", err)
 				}
 			}()
 		}
 	}()
+
+	// Signal that we're ready to accept connections (both IPv4 and IPv6 are set up)
+	if ready != nil {
+		close(ready)
+	}
 
 	// Wait for context cancellation
 	<-ctx.Done()

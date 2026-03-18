@@ -65,7 +65,7 @@ type Attestation struct {
 // Attestor implements the network trace attestation
 type Attestor struct {
 	config      types.Config
-	attestation Attestation
+	Attestation Attestation
 
 	hooks *attestation.ExecuteHooks
 }
@@ -195,7 +195,7 @@ func (n *Attestor) initProxies(ctx *attestation.AttestationContext, bpfMaps *bpf
 	go func() {
 		defer runtime.collectorWg.Done()
 		for conn := range runtime.connChannel {
-			n.attestation.Connections = append(n.attestation.Connections, conn)
+			n.Attestation.Connections = append(n.Attestation.Connections, conn)
 		}
 	}()
 
@@ -232,8 +232,8 @@ func (n *Attestor) registerHooks(bpfMaps *bpf.Maps, runtime *proxyRuntime) error
 	r1, err := n.hooks.RegisterHook(attestation.StagePreExec, Name, func(pid int) error {
 		log.Debugf("[networktrace] PreExec hook triggered, tracking PID=%d", pid)
 		n.config.ObservePIDs = append(n.config.ObservePIDs, uint32(pid))
-		n.attestation.StartTime = time.Now()
-		n.attestation.Config = n.config
+		n.Attestation.StartTime = time.Now()
+		n.Attestation.Config = n.config
 		err := bpfMaps.LoadUserConfig(n.config)
 		if err != nil {
 			log.Errorf("[networktrace] failed to load user config: %v", err)
@@ -249,7 +249,7 @@ func (n *Attestor) registerHooks(bpfMaps *bpf.Maps, runtime *proxyRuntime) error
 	// PreExit: called when command finishes, signals cleanup
 	r2, err := n.hooks.RegisterHook(attestation.StagePreExit, Name, func(pid int) error {
 		log.Debugf("[networktrace] PreExit hook triggered, PID=%d", pid)
-		n.attestation.EndTime = time.Now()
+		n.Attestation.EndTime = time.Now()
 		close(runtime.shutdownSignal)
 		<-runtime.cleanupDone
 		return nil
@@ -283,8 +283,8 @@ func (n *Attestor) waitAndCleanup(ctx *attestation.AttestationContext, runtime *
 	close(runtime.connChannel)
 	runtime.collectorWg.Wait()
 
-	n.attestation.Summary = types.ComputeSummary(n.attestation.Connections)
-	log.Debugf("[networktrace] attestation complete, collected %d connections", len(n.attestation.Connections))
+	n.Attestation.Summary = types.ComputeSummary(n.Attestation.Connections)
+	log.Debugf("[networktrace] attestation complete, collected %d connections", len(n.Attestation.Connections))
 
 	// Signal that cleanup is done
 	close(runtime.cleanupDone)
