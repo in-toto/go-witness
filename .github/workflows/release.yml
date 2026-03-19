@@ -65,6 +65,17 @@ jobs:
           go-version-file: "go.mod"
       - run: go test -v -coverprofile=profile -covermode=atomic ./...
 
+  unit-plus-integration-test-privileged:
+    needs: [ unit-test ]
+    uses: ./.github/workflows/witness.yml
+    permissions:
+      contents: read
+    with:
+      pull_request: ${{ github.event_name == 'pull_request' }}
+      step: unit-plus-integration-test-privileged
+      attestations: "git github environment"
+      command: go test -c -o networktrace.test ./attestation/networktrace && sudo ./networktrace.test -test.v
+
   integration-test:
     needs: [fmt]
     uses: ./.github/workflows/witness.yml
