@@ -230,14 +230,14 @@ func TestIntegrationNetworkTrace(t *testing.T) {
 	receivedData := <-server.receivedData
 	assert.Equal(t, []byte(clientRequest), receivedData, "Server should receive exact request data")
 
-	assert.False(t, networkAttestor.Attestation.StartTime.IsZero())
-	assert.False(t, networkAttestor.Attestation.EndTime.IsZero())
-	assert.True(t, networkAttestor.Attestation.EndTime.After(networkAttestor.Attestation.StartTime))
+	assert.False(t, networkAttestor.NetworkTrace.StartTime.IsZero())
+	assert.False(t, networkAttestor.NetworkTrace.EndTime.IsZero())
+	assert.True(t, networkAttestor.NetworkTrace.EndTime.After(networkAttestor.NetworkTrace.StartTime))
 
 	// Realistically the server should see only one connection
-	assert.Len(t, networkAttestor.Attestation.Connections, 1, "Should record one connection")
+	assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should record one connection")
 
-	conn := networkAttestor.Attestation.Connections[0]
+	conn := networkAttestor.NetworkTrace.Connections[0]
 	assert.Equal(t, "tcp", conn.Protocol)
 	assert.Equal(t, uint16(testServerPort), conn.Destination.Port)
 	assert.Equal(t, uint64(len(clientRequest)), conn.BytesSent)
@@ -305,8 +305,8 @@ func TestIntegrationZeroByteConnection(t *testing.T) {
 	receivedData := <-server.receivedData
 	assert.Equal(t, []byte{}, receivedData, "Server should receive zero-byte data")
 
-	assert.Len(t, networkAttestor.Attestation.Connections, 1, "Should record one connection")
-	conn := networkAttestor.Attestation.Connections[0]
+	assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should record one connection")
+	conn := networkAttestor.NetworkTrace.Connections[0]
 	assert.Equal(t, uint64(0), conn.BytesSent, "Should record zero bytes sent")
 	assert.Equal(t, uint64(0), conn.BytesReceived, "Should record zero bytes received")
 	assert.Len(t, conn.TCPPayloads, 2, "Should record two payloads (even if zero-byte)")

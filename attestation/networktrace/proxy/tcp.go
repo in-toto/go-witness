@@ -24,6 +24,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/in-toto/go-witness/attestation/networktrace/bpf"
@@ -51,6 +52,8 @@ type TCPConn struct {
 	ServerConn net.Conn
 	Metadata   *bpf.ConnectionMetadata
 	StartTime  time.Time
+
+	isForceClosed atomic.Bool
 }
 
 // NewTCPProxy creates a new transparent TCP proxy
@@ -173,19 +176,29 @@ func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) er
 		return fmt.Errorf("not a TCP connection")
 	}
 
-	file, err := tcpConn.File()
+	// Use SyscallConn().Control() instead of tcpConn.File() to access the raw fd.
+	// tcpConn.File() calls dup(2) which puts the original socket into blocking mode,
+	// making SetDeadline and Close ineffective and causing deadlocks during shutdown.
+	rawConn, err := tcpConn.SyscallConn()
 	if err != nil {
 		clientConn.Close()
-		return fmt.Errorf("get file descriptor: %w", err)
+		return fmt.Errorf("get syscall conn: %w", err)
 	}
-	defer file.Close()
+
+	var sockCookie uint64
+	var cookieErr error
+	if err := rawConn.Control(func(fd uintptr) {
+		sockCookie, cookieErr = bpf.GetSocketCookie(int(fd))
+	}); err != nil {
+		clientConn.Close()
+		return fmt.Errorf("raw conn control: %w", err)
+	}
 
 	log.Infof("[TCP PROXY] Handling new connection from %s to %s", clientConn.RemoteAddr(), clientConn.LocalAddr())
 
-	sockCookie, err := bpf.GetSocketCookie(int(file.Fd()))
-	if err != nil {
+	if cookieErr != nil {
 		clientConn.Close()
-		return fmt.Errorf("get socket cookie: %w", err)
+		return fmt.Errorf("get socket cookie: %w", cookieErr)
 	}
 
 	log.Infof("[TCP PROXY] Got socket cookie: %d (0x%x)", sockCookie, sockCookie)
@@ -223,6 +236,7 @@ func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) er
 	const gracePeriod = 3 * time.Second
 
 	stop := context.AfterFunc(ctx, func() {
+		conn.isForceClosed.Store(true)
 		deadline := time.Now().Add(gracePeriod)
 
 		// not closing the socket immediately, just telling the OS to return
@@ -248,6 +262,14 @@ func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) er
 	var serverToClientBuf bytes.Buffer
 
 	copyErr := p.bidirectionalCopy(ctx, conn, &clientToServerBuf, &serverToClientBuf)
+	if copyErr != nil {
+		if conn.isForceClosed.Load() {
+			log.Debugf("[TCP PROXY] Connection drained and closed intentionally")
+			copyErr = nil
+		} else if errors.Is(copyErr, io.EOF) || errors.Is(copyErr, net.ErrClosed) {
+			copyErr = nil
+		}
+	}
 
 	p.recordWg.Go(func() {
 		p.recordConnection(metadata, clientToServerBuf.Bytes(), serverToClientBuf.Bytes(), copyErr)
@@ -309,32 +331,30 @@ func (p *TCPProxy) bidirectionalCopy(_ context.Context, conn *TCPConn, clientToS
 	// Client -> Server
 	go func() {
 		_, err := io.Copy(io.MultiWriter(conn.ServerConn, clientToServerBuf), conn.ClientConn)
+
+		if tcpConn, ok := conn.ServerConn.(*net.TCPConn); ok {
+			_ = tcpConn.CloseWrite()
+		}
 		errChan <- err
 	}()
 
 	// Server -> Client
 	go func() {
 		_, err := io.Copy(io.MultiWriter(conn.ClientConn, serverToClientBuf), conn.ServerConn)
+
+		if tcpConn, ok := conn.ClientConn.(*net.TCPConn); ok {
+			_ = tcpConn.CloseWrite()
+		}
 		errChan <- err
 	}()
 
 	err1 := <-errChan
-
-	err := conn.ClientConn.(*net.TCPConn).CloseRead()
-	if err != nil {
-		log.Errorf("[TCP PROXY] Failed to close client connection: %s", err)
-	}
-	err = conn.ServerConn.(*net.TCPConn).CloseWrite()
-	if err != nil {
-		log.Errorf("[TCP PROXY] Failed to close server connection: %s", err)
-	}
-
 	err2 := <-errChan
 
-	if err1 != nil && err1 != io.EOF {
+	if err1 != nil && !errors.Is(err1, io.EOF) {
 		return err1
 	}
-	if err2 != nil && err2 != io.EOF {
+	if err2 != nil && !errors.Is(err2, io.EOF) {
 		return err2
 	}
 	return nil

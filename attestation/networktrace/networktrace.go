@@ -46,8 +46,8 @@ func init() {
 	})
 }
 
-// Attestation contains the recorded network activity during command execution
-type Attestation struct {
+// NetworkTrace contains the recorded network activity during command execution
+type NetworkTrace struct {
 	// Timing
 	StartTime time.Time `json:"start_time"`
 	EndTime   time.Time `json:"end_time"`
@@ -64,8 +64,8 @@ type Attestation struct {
 
 // Attestor implements the network trace attestation
 type Attestor struct {
-	config      types.Config
-	Attestation Attestation
+	config       types.Config
+	NetworkTrace NetworkTrace `json:"network_trace"`
 
 	hooks *attestation.ExecuteHooks
 }
@@ -112,7 +112,7 @@ func (n *Attestor) RunType() attestation.RunType {
 }
 
 func (n *Attestor) Schema() *jsonschema.Schema {
-	return jsonschema.Reflect(&Attestation{})
+	return jsonschema.Reflect(&NetworkTrace{})
 }
 
 // proxyRuntime holds the runtime state for proxy coordination
@@ -120,7 +120,6 @@ type proxyRuntime struct {
 	connChannel    chan types.Connection
 	collectorWg    sync.WaitGroup
 	shutdownSignal chan struct{}
-	cleanupDone    chan struct{}
 	proxyDone      chan struct{}
 	cancelProxy    context.CancelFunc
 }
@@ -179,14 +178,13 @@ func (n *Attestor) initProxies(ctx *attestation.AttestationContext, bpfMaps *bpf
 	runtime := &proxyRuntime{
 		connChannel:    make(chan types.Connection, 100),
 		shutdownSignal: make(chan struct{}),
-		cleanupDone:    make(chan struct{}),
 		proxyDone:      make(chan struct{}),
 	}
 
 	// Start connection collector
 	runtime.collectorWg.Go(func() {
 		for conn := range runtime.connChannel {
-			n.Attestation.Connections = append(n.Attestation.Connections, conn)
+			n.NetworkTrace.Connections = append(n.NetworkTrace.Connections, conn)
 		}
 	})
 
@@ -223,8 +221,8 @@ func (n *Attestor) registerHooks(bpfMaps *bpf.Maps, runtime *proxyRuntime) error
 	r1, err := n.hooks.RegisterHook(attestation.StagePreExec, Name, func(pid int) error {
 		log.Debugf("[networktrace] PreExec hook triggered, tracking PID=%d", pid)
 		n.config.ObservePIDs = append(n.config.ObservePIDs, uint32(pid))
-		n.Attestation.StartTime = time.Now()
-		n.Attestation.Config = n.config
+		n.NetworkTrace.StartTime = time.Now()
+		n.NetworkTrace.Config = n.config
 		err := bpfMaps.LoadUserConfig(n.config)
 		if err != nil {
 			log.Errorf("[networktrace] failed to load user config: %v", err)
@@ -237,12 +235,17 @@ func (n *Attestor) registerHooks(bpfMaps *bpf.Maps, runtime *proxyRuntime) error
 	}
 	close(r1)
 
-	// PreExit: called when command finishes, signals cleanup
+	// PreExit: called when command is about to exit (PTRACE_EVENT_EXIT).
+	// The process is still frozen by ptrace at this point and it hasn't closed
+	// its sockets yet. We must NOT block here, ptrace will only PtraceCont
+	// (letting the process actually exit and close sockets) after this hook
+	// returns. Blocking on proxy cleanup would deadlock because the proxy's
+	// io.Copy is waiting for EOF from the process's socket.
+	// Cleanup is still done irrespective of the process exiting
 	r2, err := n.hooks.RegisterHook(attestation.StagePreExit, Name, func(pid int) error {
 		log.Debugf("[networktrace] PreExit hook triggered, PID=%d", pid)
-		n.Attestation.EndTime = time.Now()
+		n.NetworkTrace.EndTime = time.Now()
 		close(runtime.shutdownSignal)
-		<-runtime.cleanupDone
 		return nil
 	})
 	if err != nil {
@@ -274,11 +277,8 @@ func (n *Attestor) waitAndCleanup(ctx *attestation.AttestationContext, runtime *
 	close(runtime.connChannel)
 	runtime.collectorWg.Wait()
 
-	n.Attestation.Summary = types.ComputeSummary(n.Attestation.Connections)
-	log.Debugf("[networktrace] attestation complete, collected %d connections", len(n.Attestation.Connections))
-
-	// Signal that cleanup is done
-	close(runtime.cleanupDone)
+	n.NetworkTrace.Summary = types.ComputeSummary(n.NetworkTrace.Connections)
+	log.Debugf("[networktrace] attestation complete, collected %d connections", len(n.NetworkTrace.Connections))
 
 	if ctx.Context().Err() != nil {
 		return ctx.Context().Err()
