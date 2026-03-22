@@ -32,8 +32,10 @@ static __always_inline __u64 get_injection_time(void) {
 }
 
 static __always_inline __u32 get_pid_ns(struct task_struct* task) {
-  unsigned int level = BPF_CORE_READ(task, thread_pid, level);
-  __u32 ns_pid = BPF_CORE_READ(task, thread_pid, numbers[level].nr);
+  struct task_struct* leader = BPF_CORE_READ(task, group_leader);
+
+  unsigned int level = BPF_CORE_READ(leader, thread_pid, level);
+  __u32 ns_pid = BPF_CORE_READ(leader, thread_pid, numbers[level].nr);
   return ns_pid;
 }
 
@@ -46,7 +48,13 @@ static __always_inline int is_pid_allowed(__u32 current_pid) {
     if (injection_time == 0) return 0;  // Not configured yet
 
     // First check: is current PID directly in the allowlist?
-    __u64 start_time = BPF_CORE_READ(task, start_boottime);
+    // Use group_leader's start_boottime, not the current thread's.
+    // Go (and other runtimes) create OS threads via clone() on demand;
+    // these threads have start_boottime after injection_time even though
+    // the process (group leader) started before. The PID in the allowlist
+    // is the tgid (group leader), so the time check must match.
+    struct task_struct* leader = BPF_CORE_READ(task, group_leader);
+    __u64 start_time = BPF_CORE_READ(leader, start_boottime);
 
     struct pid_allowlist_key key = {
         .pid = current_pid,
@@ -67,7 +75,10 @@ static __always_inline int is_pid_allowed(__u32 current_pid) {
         __u32 parent_pid = get_pid_ns(parent);
         if (parent_pid <= 1) break;
 
-        __u64 parent_start_time = BPF_CORE_READ(parent, start_boottime);
+        // Use parent's group_leader start_boottime for same reason as above:
+        // the PID we check is the tgid, so the time must be the process's, not the thread's
+        struct task_struct* parent_leader = BPF_CORE_READ(parent, group_leader);
+        __u64 parent_start_time = BPF_CORE_READ(parent_leader, start_boottime);
 
         key.pid = parent_pid;
 
