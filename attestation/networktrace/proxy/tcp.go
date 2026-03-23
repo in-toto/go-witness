@@ -17,6 +17,7 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -35,8 +36,10 @@ import (
 // TCPProxy implements a transparent TCP proxy
 type TCPProxy struct {
 	maps          *bpf.Maps
+	httpProxy     *HTTPProxy
 	port          uint16
 	proxyBindIPv4 string
+	enableHTTP    bool
 	payloadConfig types.PayloadConfig
 
 	// Channel for collecting completed connections
@@ -58,11 +61,13 @@ type TCPConn struct {
 
 // NewTCPProxy creates a new transparent TCP proxy
 // The transparency comes from bpf which routes traffic to the proxy
-func NewTCPProxy(maps *bpf.Maps, port uint16, proxyBindIPv4 string, enableHTTP bool, payloadConfig types.PayloadConfig, connChan chan types.Connection) *TCPProxy {
+func NewTCPProxy(maps *bpf.Maps, httpProxy *HTTPProxy, port uint16, proxyBindIPv4 string, enableHTTP bool, payloadConfig types.PayloadConfig, connChan chan types.Connection) *TCPProxy {
 	return &TCPProxy{
 		maps:           maps,
+		httpProxy:      httpProxy,
 		port:           port,
 		proxyBindIPv4:  proxyBindIPv4,
+		enableHTTP:     httpProxy != nil && enableHTTP,
 		payloadConfig:  payloadConfig,
 		ConnectionChan: connChan,
 	}
@@ -216,7 +221,21 @@ func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) er
 
 	log.Infof("New connection: %s (cookie=%d/0x%x)", metadata, sockCookie, sockCookie)
 
-	// This defer is placed here to allow easier addition of http proxy code later
+	// Try HTTP/HTTPS handling if enabled
+	if p.enableHTTP {
+		routed, wrappedConn, err := p.tryRouteToHTTPProxy(clientConn, metadata)
+		if err != nil {
+			log.Warnf("[TCP PROXY] HTTP proxy routing failed: %v", err)
+		}
+		if routed {
+			return nil
+		}
+		// Use the wrapped connection (preserves any peeked bytes)
+		if wrappedConn != nil {
+			clientConn = wrappedConn
+		}
+	}
+
 	defer clientConn.Close()
 
 	serverConn, err := p.connectToOriginalDestination(metadata)
@@ -298,6 +317,58 @@ func (p *TCPProxy) recordConnection(metadata *bpf.ConnectionMetadata, c2sData, s
 	log.Infof("Connection recorded: %s, sent=%d, received=%d", result.ID, result.BytesSent, result.BytesReceived)
 }
 
+// isWellKnownHTTPPort returns true for ports commonly used by HTTP/HTTPS
+func isWellKnownHTTPPort(port uint16) bool {
+	switch port {
+	case 80, 443, 8080, 8443:
+		return true
+	default:
+		return false
+	}
+}
+
+// tryRouteToHTTPProxy attempts to route the connection to the HTTP proxy.
+// For well-known HTTP/HTTPS ports it routes immediately (zero latency).
+// For other ports it peeks at the first bytes to detect TLS/HTTP protocol.
+// Returns (true, nil, nil) if the connection was handed off to the HTTP proxy.
+// Returns (false, wrappedConn, nil) if the connection should be handled as raw TCP.
+// wrappedConn preserves any bytes that were peeked during protocol detection.
+func (p *TCPProxy) tryRouteToHTTPProxy(clientConn net.Conn, metadata *bpf.ConnectionMetadata) (bool, net.Conn, error) {
+	// Fast path: well-known ports — route without peeking
+	if isWellKnownHTTPPort(metadata.OrigPort) {
+		log.Infof("[TCP PROXY] Well-known HTTP/S port %d, routing to HTTP proxy", metadata.OrigPort)
+		if err := p.httpProxy.HandleConnection(clientConn, metadata); err != nil {
+			return false, clientConn, fmt.Errorf("HTTP proxy: %w", err)
+		}
+		return true, nil, nil
+	}
+
+	// Slow path: peek to detect protocol on non-standard ports
+	br := bufio.NewReader(clientConn)
+	wrapped := &bufferedConn{Conn: clientConn, br: br}
+
+	_ = clientConn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	_, peekErr := br.Peek(1)
+	_ = clientConn.SetReadDeadline(time.Time{})
+
+	if peekErr != nil {
+		// No data within timeout not HTTP/TLS (likely raw TCP)
+		return false, wrapped, nil
+	}
+
+	proto, err := detectProtocol(br)
+	if err != nil || (proto != "tls" && proto != "http") {
+		// Not a recognized protocol — fall back to raw TCP with preserved bytes
+		return false, wrapped, nil
+	}
+
+	log.Infof("[TCP PROXY] Detected %s protocol on port %d, routing to HTTP proxy", proto, metadata.OrigPort)
+	if err := p.httpProxy.HandleBufferedConnection(clientConn, br, metadata); err != nil {
+		return false, wrapped, fmt.Errorf("HTTP proxy (%s): %w", proto, err)
+	}
+	return true, nil, nil
+}
+
 func (p *TCPProxy) getConnectionMetadata(sockCookie uint64, isIPv6 bool) (*bpf.ConnectionMetadata, error) {
 	if isIPv6 {
 		metadata, err := p.maps.LookupOrigDstV6(sockCookie)
@@ -332,8 +403,8 @@ func (p *TCPProxy) bidirectionalCopy(_ context.Context, conn *TCPConn, clientToS
 	go func() {
 		_, err := io.Copy(io.MultiWriter(conn.ServerConn, clientToServerBuf), conn.ClientConn)
 
-		if tcpConn, ok := conn.ServerConn.(*net.TCPConn); ok {
-			_ = tcpConn.CloseWrite()
+		if tcpConn := underlyingTCPConn(conn.ServerConn); tcpConn != nil {
+			_ = tcpConn.CloseWrite() // Send a FIN to the server to signal that the client is done sending data
 		}
 		errChan <- err
 	}()
@@ -342,8 +413,8 @@ func (p *TCPProxy) bidirectionalCopy(_ context.Context, conn *TCPConn, clientToS
 	go func() {
 		_, err := io.Copy(io.MultiWriter(conn.ClientConn, serverToClientBuf), conn.ServerConn)
 
-		if tcpConn, ok := conn.ClientConn.(*net.TCPConn); ok {
-			_ = tcpConn.CloseWrite()
+		if tcpConn := underlyingTCPConn(conn.ClientConn); tcpConn != nil {
+			_ = tcpConn.CloseWrite() // Send a FIN to the client to signal that the server is done sending data
 		}
 		errChan <- err
 	}()
@@ -358,4 +429,28 @@ func (p *TCPProxy) bidirectionalCopy(_ context.Context, conn *TCPConn, clientToS
 		return err2
 	}
 	return nil
+}
+
+// bufferedConn wraps a net.Conn with a bufio.Reader so that
+// any data already peeked/buffered is consumed before reading
+// from the underlying connection.
+type bufferedConn struct {
+	net.Conn
+	br *bufio.Reader
+}
+
+func (b *bufferedConn) Read(p []byte) (int, error) {
+	return b.br.Read(p)
+}
+
+// underlyingTCPConn unwraps wrapper types to find the underlying *net.TCPConn.
+func underlyingTCPConn(c net.Conn) *net.TCPConn {
+	switch v := c.(type) {
+	case *net.TCPConn:
+		return v
+	case *bufferedConn:
+		return underlyingTCPConn(v.Conn)
+	default:
+		return nil
+	}
 }

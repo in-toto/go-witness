@@ -30,7 +30,7 @@ type PayloadConfig struct {
 	// RecordPayloadHash enables storing SHA256 hash of payload (default: true)
 	RecordPayloadHash bool `json:"record_payload_hash"`
 	// MaxPayloadSize is the maximum size in bytes to store raw payload
-	// If payload exceeds this, it will be truncated
+	// If payload size exceeds, it's truncated
 	// Set to 0 for unlimited (default: 1MB)
 	MaxPayloadSize int64 `json:"max_payload_size"`
 }
@@ -58,11 +58,31 @@ type Endpoint struct {
 	Hostname string `json:"hostname,omitempty"` // From SNI or Host header
 }
 
+// TLSInfo contains TLS/SSL connection metadata
+type TLSInfo struct {
+	SNI         string `json:"sni,omitempty"`
+	Version     string `json:"version,omitempty"`
+	CipherSuite string `json:"cipher_suite,omitempty"`
+
+	// ClientHello captures what the client offered/supports (parsed from ClientHello)
+	ClientHello *ClientHelloInfo `json:"client_hello,omitempty"`
+}
+
+// ClientHelloInfo contains TLS ClientHello information parsed from the raw handshake
+type ClientHelloInfo struct {
+	// SupportedVersions lists TLS versions the client supports (from supported_versions extension or legacy)
+	SupportedVersions []string `json:"supported_versions,omitempty"`
+	// CipherSuites lists cipher suites the client offered (as hex codes)
+	CipherSuites []string `json:"cipher_suites,omitempty"`
+	// CipherSuiteNames lists cipher suite names (where known)
+	CipherSuiteNames []string `json:"cipher_suite_names,omitempty"`
+}
+
 // Payload represents recorded data with configurable storage options
 type Payload struct {
 	// Size is always recorded (bytes)
 	Size int64 `json:"size"`
-	// Data contains the raw payload (if RecordPayload=true and size <= MaxPayloadSize)
+	// Data contains the raw payload (get's truncated if greater than PayloadConfig.MaxPayloadSize)
 	Data []byte `json:"data,omitempty"`
 	// Hash contains SHA256 hash of payload (if RecordPayloadHash=true)
 	Hash string `json:"hash,omitempty"`
@@ -103,6 +123,30 @@ func NewPayload(data []byte, config PayloadConfig) Payload {
 	return p
 }
 
+// HTTPRequest records an HTTP request
+type HTTPRequest struct {
+	Method  string              `json:"method"`
+	URL     string              `json:"url"`
+	Host    string              `json:"host"`
+	Headers map[string][]string `json:"headers,omitempty"`
+	Body    Payload             `json:"body"`
+}
+
+// HTTPResponse records an HTTP response
+type HTTPResponse struct {
+	StatusCode int                 `json:"status_code"`
+	Status     string              `json:"status"`
+	Headers    map[string][]string `json:"headers,omitempty"`
+	Body       Payload             `json:"body"`
+}
+
+// HTTPExchange represents a complete HTTP request/response pair
+type HTTPExchange struct {
+	Timestamp time.Time     `json:"timestamp"`
+	Request   HTTPRequest   `json:"request"`
+	Response  *HTTPResponse `json:"response,omitempty"` // nil if no response received
+}
+
 // TCPPayload represents raw TCP payload for non-HTTP connections
 type TCPPayload struct {
 	Timestamp time.Time `json:"timestamp"`
@@ -127,22 +171,32 @@ type Connection struct {
 
 	// Network endpoints
 	// TODO: Update bpf maps to store source endpoint as well
-	// Source      Endpoint `json:"source"`
+	Source      Endpoint `json:"source"`
 	Destination Endpoint `json:"destination"`
 
-	// Raw TCP payloads
+	// TLS metadata (only for HTTPS/TLS connections)
+	TLS *TLSInfo `json:"tls,omitempty"`
+
+	// HTTP exchanges (for HTTP/HTTPS when intercepted)
+	HTTPExchanges []HTTPExchange `json:"http_exchanges,omitempty"`
+
+	// Raw TCP payloads (for non-HTTP TCP when payload recording enabled)
 	TCPPayloads []TCPPayload `json:"tcp_payloads,omitempty"`
 
 	// Traffic statistics
 	BytesSent     uint64 `json:"bytes_sent"`
 	BytesReceived uint64 `json:"bytes_received"`
 
-	Error string `json:"error,omitempty"`
+	// Observation metadata
+	Intercepted bool   `json:"intercepted"` // True if full inspection (MITM for TLS)
+	Error       string `json:"error,omitempty"`
 }
 
 // NetworkSummary provides aggregated statistics for quick policy evaluation
 type NetworkSummary struct {
 	TotalConnections   int            `json:"total_connections"`
+	InterceptedCount   int            `json:"intercepted_count"`
+	MetadataOnlyCount  int            `json:"metadata_only_count"`
 	ProtocolCounts     map[string]int `json:"protocol_counts"`
 	UniqueHosts        []string       `json:"unique_hosts"`
 	UniqueIPs          []string       `json:"unique_ips"`
@@ -164,6 +218,13 @@ func ComputeSummary(connections []Connection) NetworkSummary {
 		// Count protocols
 		summary.ProtocolCounts[conn.Protocol]++
 
+		// Count intercepted vs metadata-only
+		if conn.Intercepted {
+			summary.InterceptedCount++
+		} else {
+			summary.MetadataOnlyCount++
+		}
+
 		// Aggregate bytes
 		summary.TotalBytesSent += conn.BytesSent
 		summary.TotalBytesReceived += conn.BytesReceived
@@ -177,6 +238,7 @@ func ComputeSummary(connections []Connection) NetworkSummary {
 		}
 	}
 
+	// Convert sets to slices
 	for host := range hostSet {
 		summary.UniqueHosts = append(summary.UniqueHosts, host)
 	}

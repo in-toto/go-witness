@@ -60,6 +60,10 @@ type NetworkTrace struct {
 
 	// Configuration used (for reproducibility/auditability)
 	Config types.Config `json:"config"`
+
+	// CA certificate used for TLS interception (PEM encoded)
+	// Included so verifiers understand what was trusted during attestation
+	CACertPEM string `json:"ca_cert_pem,omitempty"`
 }
 
 // Attestor implements the network trace attestation
@@ -192,8 +196,19 @@ func (n *Attestor) initProxies(ctx *attestation.AttestationContext, bpfMaps *bpf
 		}
 	})
 
+	var httpProxy *proxy.HTTPProxy
+	if n.config.EnableHTTPInspection {
+		cm, err := proxy.NewCAManager(n.config.CAKeyPath, n.config.CACertPath, n.config.GenerateCA)
+		if err != nil {
+			log.Errorf("[networktrace] failed to create CA manager: %v", err)
+			return nil, err
+		}
+		n.NetworkTrace.CACertPEM = cm.CertPEM()
+		httpProxy = proxy.NewHTTPProxy(cm, n.config.Payload, runtime.connChannel, n.config.SkipVerify)
+	}
+
 	// Create and start proxy
-	tcpProxy := proxy.NewTCPProxy(bpfMaps, n.config.ProxyPort, n.config.ProxyBindIPv4, true, n.config.Payload, runtime.connChannel)
+	tcpProxy := proxy.NewTCPProxy(bpfMaps, httpProxy, n.config.ProxyPort, n.config.ProxyBindIPv4, true, n.config.Payload, runtime.connChannel)
 
 	var proxyCtx context.Context
 	proxyCtx, runtime.cancelProxy = context.WithCancel(ctx.Context())
