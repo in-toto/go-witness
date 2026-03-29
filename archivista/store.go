@@ -22,6 +22,10 @@ import (
 )
 
 func (c *Client) Store(ctx context.Context, env dsse.Envelope) (string, error) {
+	if err := c.validate(); err != nil {
+		return "", err
+	}
+
 	resp, err := archivistaapi.Store(ctx, c.url, env, c.archivistaRequestOpts()...)
 	if err != nil {
 		return "", err
