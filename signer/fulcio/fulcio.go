@@ -36,6 +36,8 @@ import (
 	"strings"
 	"time"
 
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
@@ -52,7 +54,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
-	"gopkg.in/go-jose/go-jose.v2/jwt"
 )
 
 func init() {
@@ -155,6 +156,17 @@ func init() {
 			},
 		),
 	)
+}
+
+// allowedJWTAlgorithms is the set of asymmetric JWT signing algorithms accepted
+// when parsing OIDC identity tokens. Symmetric algorithms (HS256/HS384/HS512)
+// are intentionally excluded: they require a shared secret, are never issued by
+// OIDC providers, and accepting them would enable algorithm-confusion attacks.
+var allowedJWTAlgorithms = []jose.SignatureAlgorithm{
+	jose.RS256, jose.RS384, jose.RS512, // RSA PKCS#1 v1.5
+	jose.PS256, jose.PS384, jose.PS512, // RSA-PSS
+	jose.ES256, jose.ES384, jose.ES512, // ECDSA
+	jose.EdDSA, // Ed25519/Ed448
 }
 
 type FulcioSignerProvider struct {
@@ -375,7 +387,7 @@ func getCert(ctx context.Context, key *ecdsa.PrivateKey, fc fulciopb.CAClient, t
 		return nil, fmt.Errorf("invalid token format: token does not appear to be a JWT (missing dots)")
 	}
 
-	t, err := jwt.ParseSigned(token)
+	t, err := jwt.ParseSigned(token, allowedJWTAlgorithms)
 	if err != nil {
 		// Check if the error is due to invalid JSON in the token
 		if strings.Contains(err.Error(), "invalid character") {
@@ -515,7 +527,7 @@ func getCert(ctx context.Context, key *ecdsa.PrivateKey, fc fulciopb.CAClient, t
 }
 
 func getCertHTTP(ctx context.Context, key *ecdsa.PrivateKey, fulcioURL string, token string) (*fulciopb.SigningCertificate, error) {
-	t, err := jwt.ParseSigned(token)
+	t, err := jwt.ParseSigned(token, allowedJWTAlgorithms)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse JWT token: %w", err)
 	}

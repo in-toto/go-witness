@@ -40,14 +40,13 @@ import (
 
 	"path/filepath"
 
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	fulciopb "github.com/sigstore/fulcio/pkg/generated/protobuf"
 	"github.com/stretchr/testify/require"
-	"go.step.sm/crypto/jose"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/go-jose/go-jose/v3/jwt"
 )
 
 func setupFulcioTestService(t *testing.T) (*dummyCAClientService, string) {
@@ -153,8 +152,11 @@ func generateTestToken(email string, subject string) string {
 		Subject string `json:"sub"`
 	}
 
-	key := []byte("test-secret")
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: key}, nil)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: key}, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -170,7 +172,7 @@ func generateTestToken(email string, subject string) string {
 	claims.Audience = []string{"sigstore"}
 
 	builder := jwt.Signed(signer).Claims(claims)
-	signedToken, _ := builder.CompactSerialize()
+	signedToken, _ := builder.Serialize()
 
 	return signedToken
 }
@@ -242,15 +244,12 @@ func TestSigner(t *testing.T) {
 	//this should be a tranport err since we cant actually test on 443 which is the default
 	require.ErrorContains(t, err, "lookup test")
 
-	// Test signer with token read from file
-	// NOTE: this function could be refactored to accept a fileSystem or io.Reader so reading the file can be mocked,
-	// but unsure if this is the way we want to go for now
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
+	// Test signer with token read from file using a dynamically generated temp token
+	tmpDir := t.TempDir()
+	tp := filepath.Join(tmpDir, "test.token")
+	if err := os.WriteFile(tp, []byte(generateTestToken("file@example.com", "")), 0600); err != nil {
+		t.Fatalf("failed to write temp token file: %v", err)
 	}
-	rootDir := filepath.Dir(filepath.Dir(wd))
-	tp := filepath.Join(rootDir, "hack", "test.token")
 
 	provider = New(WithFulcioURL(fmt.Sprintf("http://%v:%v", hostname, port)), WithTokenPath(tp))
 	_, err = provider.Signer(ctx)
