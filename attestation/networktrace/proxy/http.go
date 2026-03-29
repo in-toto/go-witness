@@ -294,6 +294,10 @@ func (h *HTTPProxy) HandleBufferedConnection(conn net.Conn, br *bufio.Reader, me
 		return fmt.Errorf("detect protocol: %w", err)
 	}
 
+	// TODO: There is a race condition between the TCP proxy terminating and the HTTP request, response pool draining
+	// This can be mitigated by adding a wait group here or some other better place. As we rely on goproxy package, it
+	// might be that we can't get that fine control, so hooking higher might be required. Also, making sure that we don't
+	// block indefinitely using a wg
 	switch proto {
 	case "tls":
 		// HTTPS traffic - parse SNI and create synthetic CONNECT request for goproxy to MITM this TCP connection

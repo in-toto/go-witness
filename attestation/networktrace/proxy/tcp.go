@@ -167,6 +167,9 @@ func (p *TCPProxy) Start(ctx context.Context, ready chan<- struct{}) error {
 	// Wait for all in-flight connection recordings to complete
 	// This ensures all sends to ConnectionChan are done before we return
 	p.recordWg.Wait()
+	if p.enableHTTP {
+		p.httpProxy.Wait()
+	}
 
 	log.Infof("TCP proxy shutdown complete: all recordings finished")
 
