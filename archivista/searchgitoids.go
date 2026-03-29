@@ -38,6 +38,10 @@ type SearchGitoidVariables struct {
 }
 
 func (c *Client) SearchGitoids(ctx context.Context, vars SearchGitoidVariables) ([]string, error) {
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+
 	const query = `query ($subjectDigests: [String!], $attestations: [String!], $collectionName: String!, $excludeGitoids: [String!]) {
   dsses(
     where: {
