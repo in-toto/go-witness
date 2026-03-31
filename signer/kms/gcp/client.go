@@ -110,6 +110,7 @@ type gcpClient struct {
 
 type gcpClientOptions struct {
 	credentialsFile string
+	credType        option.CredentialsType
 }
 
 type Option func(*gcpClientOptions)
@@ -136,10 +137,64 @@ func (a *gcpClientOptions) Init() []registry.Configurer {
 				}
 
 				if clientOpts == nil {
-					return nil, fmt.Errorf("unable to find aws client options in aws kms signer provider")
+					return nil, fmt.Errorf("unable to find gcp client options in gcp kms signer provider")
 				}
 
 				WithCredentialsFile(cred)(clientOpts)
+				return ksp, nil
+			},
+		),
+		registry.BoolConfigOption(
+			"service-account",
+			"Set if the credentials file's type is a service account",
+			false,
+			func(sp signer.SignerProvider, credType bool) (signer.SignerProvider, error) {
+				ksp, ok := sp.(*kms.KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+				}
+
+				var clientOpts *gcpClientOptions
+				for _, opt := range ksp.Options {
+					co, optsOk := opt.(*gcpClientOptions)
+					if !optsOk {
+						continue
+					}
+					clientOpts = co
+				}
+
+				if clientOpts == nil {
+					return nil, fmt.Errorf("unable to find gcp client options in gcp kms signer provider")
+				}
+
+				WithSACredentialsType(credType)(clientOpts)
+				return ksp, nil
+			},
+		),
+		registry.BoolConfigOption(
+			"authorized-user",
+			"Set if the credentials file's type is an authorized user",
+			false,
+			func(sp signer.SignerProvider, credType bool) (signer.SignerProvider, error) {
+				ksp, ok := sp.(*kms.KMSSignerProvider)
+				if !ok {
+					return sp, fmt.Errorf("provided signer provider is not a kms signer provider")
+				}
+
+				var clientOpts *gcpClientOptions
+				for _, opt := range ksp.Options {
+					co, optsOk := opt.(*gcpClientOptions)
+					if !optsOk {
+						continue
+					}
+					clientOpts = co
+				}
+
+				if clientOpts == nil {
+					return nil, fmt.Errorf("unable to find gcp client options in gcp kms signer provider")
+				}
+
+				WithAUCredentialsType(credType)(clientOpts)
 				return ksp, nil
 			},
 		),
@@ -154,6 +209,18 @@ func (*gcpClientOptions) ProviderName() string {
 func WithCredentialsFile(cred string) Option {
 	return func(opts *gcpClientOptions) {
 		opts.credentialsFile = cred
+	}
+}
+
+func WithSACredentialsType(credType bool) Option {
+	return func(opts *gcpClientOptions) {
+		opts.credType = option.ServiceAccount
+	}
+}
+
+func WithAUCredentialsType(credType bool) Option {
+	return func(opts *gcpClientOptions) {
+		opts.credType = option.AuthorizedUser
 	}
 }
 
@@ -190,7 +257,7 @@ func newGCPClient(ctx context.Context, ksp *kms.KMSSignerProvider) (*gcpClient, 
 
 	var opts []option.ClientOption
 	if g.options.credentialsFile != "" {
-		opts = append(opts, option.WithCredentialsFile(g.options.credentialsFile))
+		opts = append(opts, option.WithAuthCredentialsFile(g.options.credType, g.options.credentialsFile))
 	}
 
 	g.client, err = gcpkms.NewKeyManagementClient(ctx, opts...)
