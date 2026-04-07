@@ -176,7 +176,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	intermediates := make([]*x509.Certificate, 0)
 	for _, trustBundle := range trustBundlesById {
 		roots = append(roots, trustBundle.Root)
-		intermediates = append(intermediates, intermediates...)
+		intermediates = append(intermediates, trustBundle.Intermediates...)
 	}
 
 	timestampAuthoritiesById, err := pol.TimestampAuthorityTrustBundles()
