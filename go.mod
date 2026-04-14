@@ -26,7 +26,7 @@ require (
 	github.com/in-toto/attestation v1.2.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jellydator/ttlcache/v3 v3.4.0
-	github.com/mattn/go-isatty v0.0.20
+	github.com/mattn/go-isatty v0.0.21
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/open-policy-agent/opa v1.15.1
 	github.com/owenrumney/go-sarif v1.1.1
