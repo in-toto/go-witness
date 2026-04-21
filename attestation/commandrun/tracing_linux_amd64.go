@@ -34,7 +34,3 @@ func getSyscallArgs(regs unix.PtraceRegs) []uintptr {
 		uintptr(regs.R9),
 	}
 }
-
-func getNativeUint(n int) uint64 {
-	return uint64(n)
-}

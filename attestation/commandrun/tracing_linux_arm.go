@@ -35,7 +35,3 @@ func getSyscallArgs(regs unix.PtraceRegs) []uintptr {
 		uintptr(regs.Uregs[5]),
 	}
 }
-
-func getNativeUint(n int) uint32 {
-	return uint32(n)
-}
