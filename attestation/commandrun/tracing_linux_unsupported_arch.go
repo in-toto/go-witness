@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux && amd64
+//go:build linux && !amd64 && !arm64 && !arm && !386
 
 package commandrun
 
@@ -20,17 +20,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func getSyscallId(regs unix.PtraceRegs) uint64 {
-	return regs.Orig_rax
+// Fallback syscall register decoding for Linux architectures that do not yet
+// have architecture-specific ptrace register mappings.
+func getSyscallId(regs unix.PtraceRegs) int {
+	return -1
 }
 
 func getSyscallArgs(regs unix.PtraceRegs) []uintptr {
-	return []uintptr{
-		uintptr(regs.Rdi),
-		uintptr(regs.Rsi),
-		uintptr(regs.Rdx),
-		uintptr(regs.R10),
-		uintptr(regs.R8),
-		uintptr(regs.R9),
-	}
+	return nil
 }

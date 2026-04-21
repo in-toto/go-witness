@@ -441,8 +441,8 @@ func (ctx *ptraceContext) readSyscallReg(pid int, addr uintptr, n int) (string, 
 	data := make([]byte, n)
 	localIov := unix.Iovec{
 		Base: &data[0],
-		Len:  getNativeUint(n),
 	}
+	localIov.SetLen(n)
 
 	removeIov := unix.RemoteIovec{
 		Base: addr,
