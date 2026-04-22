@@ -108,26 +108,26 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		a.WorkingDir = wd
 	}
 
-	// Config path: flag or default
+	// Config path is only set when explicitly passed via --config/-c.
+	// Witness removed default loading of .witness.yaml for security reasons,
+	// so an empty ConfigPath distinguishes "no config used" from a loaded file.
 	if v, ok := a.Flags["config"]; ok && v != "" {
 		a.ConfigPath = v
 	} else if v, ok := a.Flags["c"]; ok && v != "" {
 		a.ConfigPath = v
-	} else {
-		a.ConfigPath = ".witness.yaml"
 	}
 
-	// Config digest and content if file exists
-	if data, err := os.ReadFile(a.ConfigPath); err == nil {
-		digestSet, err := cryptoutil.CalculateDigestSetFromBytes(data, ctx.Hashes())
-		if err == nil {
-			a.ConfigDigest = digestSet
-		}
+	if a.ConfigPath != "" {
+		if data, err := os.ReadFile(a.ConfigPath); err == nil {
+			digestSet, err := cryptoutil.CalculateDigestSetFromBytes(data, ctx.Hashes())
+			if err == nil {
+				a.ConfigDigest = digestSet
+			}
 
-		// Parse and store config content
-		var configData map[string]interface{}
-		if err := yaml.Unmarshal(data, &configData); err == nil {
-			a.ConfigContent = configData
+			var configData map[string]interface{}
+			if err := yaml.Unmarshal(data, &configData); err == nil {
+				a.ConfigContent = configData
+			}
 		}
 	}
 
