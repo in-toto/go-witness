@@ -115,6 +115,24 @@ func TestAttest_CustomConfigPathLongFlag(t *testing.T) {
 	assert.Equal(t, "custom.yaml", attestor.ConfigPath)
 }
 
+func TestAttest_NoConfigFlag(t *testing.T) {
+	// When no --config/-c flag is provided, ConfigPath must stay empty
+	// so callers can distinguish "no config used" from a loaded file.
+	// Witness no longer defaults to .witness.yaml.
+	attestor := New(WithCustomArgs(func() []string {
+		return []string{"witness", "run", "-a", "configuration", "--step", "build"}
+	}))
+
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{})
+	require.NoError(t, err)
+	err = attestor.Attest(ctx)
+	require.NoError(t, err)
+
+	assert.Empty(t, attestor.ConfigPath)
+	assert.Empty(t, attestor.ConfigDigest)
+	assert.Empty(t, attestor.ConfigContent)
+}
+
 func TestExtractWitnessArgs(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -238,7 +256,7 @@ func TestParseFlags(t *testing.T) {
 
 func TestConfigDigest_ValidYAML(t *testing.T) {
 	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, ".witness.yaml")
+	configPath := filepath.Join(tempDir, "witness.yaml")
 
 	configContent := `run:
   signer-file-key-path: testkey.pem
@@ -252,12 +270,8 @@ verify:
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
 	require.NoError(t, err)
 
-	oldDir, _ := os.Getwd()
-	require.NoError(t, os.Chdir(tempDir))
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
-
 	attestor := New(WithCustomArgs(func() []string {
-		return []string{"witness", "run"}
+		return []string{"witness", "run", "--config", configPath}
 	}))
 
 	ctx, err := attestation.NewContext("test", []attestation.Attestor{})
