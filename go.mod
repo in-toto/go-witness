@@ -19,7 +19,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.13
 	github.com/go-git/go-git/v5 v5.18.0
 	github.com/go-jose/go-jose/v4 v4.1.4
-	github.com/google/go-containerregistry v0.21.4
+	github.com/google/go-containerregistry v0.21.5
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/hashicorp/vault/api/auth/kubernetes v0.12.0
 	github.com/in-toto/archivista v0.11.1
@@ -41,8 +41,8 @@ require (
 	github.com/zricethezav/gitleaks/v8 v8.30.1
 	go.step.sm/crypto v0.77.2
 	go.yaml.in/yaml/v3 v3.0.4
-	golang.org/x/mod v0.34.0
-	golang.org/x/sys v0.42.0
+	golang.org/x/mod v0.35.0
+	golang.org/x/sys v0.43.0
 	google.golang.org/api v0.275.0
 	google.golang.org/grpc v1.80.0
 	k8s.io/api v0.35.4
