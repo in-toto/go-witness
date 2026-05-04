@@ -89,6 +89,13 @@ type ExecuteHookDeclarer interface {
 	DeclareHooks(hooks *ExecuteHooks) error
 }
 
+// Experimental allows attestors to indicate that they are experimental and should be hidden from
+// users by default. This is useful for attestors that are still in development and may have breaking
+// changes before they are stable.
+type Experimental interface {
+	IsExperimental() bool
+}
+
 type ErrAttestationNotFound string
 
 func (e ErrAttestationNotFound) Error() string {
@@ -178,4 +185,12 @@ func AttestorOptions(nameOrType string) []registry.Configurer {
 
 func RegistrationEntries() []registry.Entry[Attestor] {
 	return attestorRegistry.AllEntries()
+}
+
+func IsExperimental(attestor Attestor) bool {
+	if experimentalAttestor, ok := attestor.(Experimental); ok {
+		return experimentalAttestor.IsExperimental()
+	}
+
+	return false
 }
