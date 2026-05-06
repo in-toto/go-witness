@@ -115,6 +115,10 @@ func (n *Attestor) Schema() *jsonschema.Schema {
 	return jsonschema.Reflect(&NetworkTrace{})
 }
 
+func (n *Attestor) IsExperimental() bool {
+	return true
+}
+
 // proxyRuntime holds the runtime state for proxy coordination
 type proxyRuntime struct {
 	connChannel    chan types.Connection
