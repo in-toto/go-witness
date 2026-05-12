@@ -28,7 +28,7 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/mattn/go-isatty v0.0.21
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/open-policy-agent/opa v1.15.1
+	github.com/open-policy-agent/opa v1.15.2
 	github.com/owenrumney/go-sarif v1.1.1
 	github.com/secure-systems-lab/go-securesystemslib v0.10.0
 	github.com/sigstore/fulcio v1.8.5
