@@ -36,7 +36,6 @@ import (
 	"github.com/in-toto/go-witness/log"
 	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
-	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -230,13 +229,17 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 			if p.products == nil {
 				p.products = ctx.Products()
 			} else {
-				maps.Copy(p.products, ctx.Products())
+				for k, v := range ctx.Products() {
+					p.products[k] = v
+				}
 			}
 
 			if p.subjects == nil {
 				p.subjects = attestor.Attestor.(attestation.Subjecter).Subjects()
 			} else {
-				maps.Copy(p.subjects, attestor.Attestor.(attestation.Subjecter).Subjects())
+				for k, v := range attestor.Attestor.(attestation.Subjecter).Subjects() {
+					p.subjects[k] = v
+				}
 			}
 
 		// Post Attestors
@@ -244,7 +247,9 @@ func (p *Provenance) Attest(ctx *attestation.AttestationContext) error {
 			if p.subjects == nil {
 				p.subjects = attestor.Attestor.(attestation.Subjecter).Subjects()
 			} else {
-				maps.Copy(p.subjects, attestor.Attestor.(attestation.Subjecter).Subjects())
+				for k, v := range attestor.Attestor.(attestation.Subjecter).Subjects() {
+					p.subjects[k] = v
+				}
 			}
 		}
 	}
