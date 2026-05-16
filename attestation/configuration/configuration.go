@@ -104,7 +104,9 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.Flags = parseFlags(witnessArgs)
 
 	// Capture working directory
-	if wd, err := os.Getwd(); err == nil {
+	if wd := ctx.WorkingDir(); wd != "" {
+		a.WorkingDir = wd
+	} else if wd, err := os.Getwd(); err == nil {
 		a.WorkingDir = wd
 	}
 
