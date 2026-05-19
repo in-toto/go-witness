@@ -529,8 +529,8 @@ github.com/sigstore/fulcio v1.8.5 h1:HYTD1/L5wlBp8JxsWxUf8hmfaNBBF/x3r3p5l6tZwbA
 github.com/sigstore/fulcio v1.8.5/go.mod h1:tSLYK3JsKvJpDW1BsIsVHZgHj+f8TjXARzqIUWSsSPQ=
 github.com/sigstore/protobuf-specs v0.5.1 h1:/5OPaNuolRJmQfeZLayJGFXMpsRJEdgC6ah1/+7Px7U=
 github.com/sigstore/protobuf-specs v0.5.1/go.mod h1:DRBzpFuE+LnvQMN10/dU6nBeKwVLGEQ6o2FovN2Rats=
-github.com/sigstore/sigstore v1.10.5 h1:KqrOjDhNOVY+uOzQFat2FrGLClPPCb3uz8pK3wuI+ow=
-github.com/sigstore/sigstore v1.10.5/go.mod h1:k/mcVVXw3I87dYG/iCVTSW2xTrW7vPzxxGic4KqsqXs=
+github.com/sigstore/sigstore v1.10.6 h1:YWhMQfTrJSK80QB1pbxjYeAwGKx+5UwWPPAY9hrPPZg=
+github.com/sigstore/sigstore v1.10.6/go.mod h1:k/mcVVXw3I87dYG/iCVTSW2xTrW7vPzxxGic4KqsqXs=
 github.com/sirupsen/logrus v1.7.0/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
