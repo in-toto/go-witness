@@ -15,9 +15,15 @@
 package archivista
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/in-toto/archivista/pkg/api"
+)
+
+var (
+	ErrClientNotConfigured = errors.New("archivista client is not configured")
+	ErrURLNotConfigured    = errors.New("archivista URL is not configured")
 )
 
 type Client struct {
@@ -53,9 +59,22 @@ func New(url string, opts ...Option) *Client {
 
 func (c *Client) archivistaRequestOpts() []api.RequestOption {
 	opts := make([]api.RequestOption, 0)
-	if c.headers != nil {
-		opts = append(opts, api.WithHeaders(c.headers))
+	if c == nil || c.headers == nil {
+		return opts
 	}
 
+	opts = append(opts, api.WithHeaders(c.headers))
 	return opts
+}
+
+func (c *Client) validate() error {
+	if c == nil {
+		return ErrClientNotConfigured
+	}
+
+	if c.url == "" {
+		return ErrURLNotConfigured
+	}
+
+	return nil
 }
