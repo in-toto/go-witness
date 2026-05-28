@@ -176,6 +176,29 @@ func New(opts ...Option) *KMSSignerProvider {
 		ksp.Options[opt.ProviderName()] = opt
 	}
 
+	// Apply provider-specific client option defaults onto the signer provider
+	// so that each provider's Init() configurers run and populate default
+	// values (for example, transit path and kubernetes SA token path).
+	var allConfigurers []registry.Configurer
+	for _, opt := range ksp.Options {
+		if opt == nil {
+			continue
+		}
+		allConfigurers = append(allConfigurers, opt.Init()...)
+	}
+
+	if len(allConfigurers) > 0 {
+		reg := registry.New[signer.SignerProvider]()
+		// ignore error — New should not fail; if defaults fail to apply,
+		// we still return the constructed provider (best-effort defaults).
+		spWithDefaults, err := reg.SetDefaultVals(&ksp, allConfigurers)
+		if err == nil {
+			if ksp2, ok := spWithDefaults.(*KMSSignerProvider); ok {
+				ksp = *ksp2
+			}
+		}
+	}
+
 	return &ksp
 }
 
