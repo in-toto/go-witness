@@ -71,8 +71,16 @@ jobs:
             with:
               step: pre-${{ inputs.step }}
               attestations: ${{ inputs.attestations }}
-              version: 0.9.1
+              version: 0.11.0
+              outfile: pre-${{ inputs.step }}-attestation.json
+              enable-archivista: false
+              witness-install-dir: /tmp/witness
               command: /bin/sh -c "${{ inputs.pre-command }}"
+          - if: ${{ inputs.pre-command != '' && inputs.pull_request == false }}
+            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            with:
+              name: pre-${{ inputs.step }}-attestation
+              path: pre-${{ inputs.step }}-attestation.json
           - if: ${{ inputs.pre-command != '' && inputs.pull_request == true }}
             run: ${{ inputs.pre-command }}
 
@@ -81,8 +89,16 @@ jobs:
             with:
               step: ${{ inputs.step }}
               attestations: ${{ inputs.attestations }}
-              version: 0.9.1
+              version: 0.11.0
+              outfile: ${{ inputs.step }}-attestation.json
+              enable-archivista: false
+              witness-install-dir: /tmp/witness
               command: /bin/sh -c "${{ inputs.command }}"
+          - if: ${{ inputs.pull_request == false }}
+            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            with:
+              name: ${{ inputs.step }}-attestation
+              path: ${{ inputs.step }}-attestation.json
           - if: ${{ inputs.pull_request == true }}
             run: ${{ inputs.command }}
 
