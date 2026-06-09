@@ -24,12 +24,14 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
 	"github.com/invopop/jsonschema"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 const (
@@ -148,7 +150,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return err
 	}
 
-	if err := a.parseMaifest(ctx); err != nil {
+	if err := a.parseManifest(ctx); err != nil {
 		log.Debugf("(attestation/oci) error parsing manifest: %w", err)
 		return err
 	}
@@ -200,14 +202,18 @@ func (a *Attestor) getCandidate(ctx *attestation.AttestationContext) error {
 	return fmt.Errorf("no tar file found")
 }
 
-func (a *Attestor) parseMaifest(ctx *attestation.AttestationContext) error {
+func (a *Attestor) parseManifest(ctx *attestation.AttestationContext) error {
 	f, err := os.Open(a.tarFilePath)
 	if err != nil {
 		err = fmt.Errorf("error opening tar file: %w", err)
 		return err
 	}
+	defer f.Close()
 
+	// Cache the entry points and content-addressed blobs needed by both the
+	// OCI image-layout and legacy Docker archive parsers.
 	tarReader := tar.NewReader(f)
+	files := make(map[string][]byte)
 	for {
 		h, err := tarReader.Next()
 		if err == io.EOF {
@@ -215,35 +221,263 @@ func (a *Attestor) parseMaifest(ctx *attestation.AttestationContext) error {
 		}
 
 		if err != nil {
-			return err
+			return fmt.Errorf("read OCI archive %q: %w", a.tarFilePath, err)
 		}
 
 		if h.FileInfo().IsDir() {
 			continue
 		}
-		if h.Name == "manifest.json" {
-			a.ManifestRaw = make([]byte, h.Size)
-			_, err = tarReader.Read(a.ManifestRaw)
-			if err != nil || err == io.EOF {
-				break
-			}
-			break
+
+		name := strings.TrimPrefix(path.Clean(h.Name), "./")
+		if name != "manifest.json" && name != "index.json" && !strings.HasPrefix(name, "blobs/") {
+			continue
 		}
+
+		b, err := io.ReadAll(tarReader)
+		if err != nil {
+			return fmt.Errorf("read OCI archive entry %q: %w", name, err)
+		}
+		files[name] = b
 	}
+
+	manifestRaw, ok := files["manifest.json"]
+
+	// Prefer the OCI image-layout entry point when a hybrid archive contains
+	// both index.json and Docker's compatibility manifest.json.
+	if indexRaw, ok := files["index.json"]; ok {
+		if manifestRaw != nil {
+			a.logDockerManifestAttestation(ctx, manifestRaw)
+		}
+		return a.parseOCIManifest(ctx, indexRaw, files)
+	}
+
+	if !ok {
+		return fmt.Errorf("archive %q contains neither OCI index.json nor Docker manifest.json", a.tarFilePath)
+	}
+
+	log.Debug("(attestation/oci) index.json not found; parsing legacy Docker manifest.json")
+	return a.parseDockerManifest(ctx, manifestRaw)
+}
+
+func (a *Attestor) logDockerManifestAttestation(ctx *attestation.AttestationContext, manifestRaw []byte) {
+	dockerAttestor := New()
+	dockerAttestor.TarDigest = a.TarDigest
+	dockerAttestor.tarFilePath = a.tarFilePath
+
+	if err := dockerAttestor.parseDockerManifest(ctx, manifestRaw); err != nil {
+		log.Infof("FYI Docker manifest.json comparison failed: %v", err)
+		return
+	}
+
+	imageID, err := dockerAttestor.Manifest[0].getImageID(ctx, a.tarFilePath)
+	if err != nil {
+		log.Infof("FYI Docker manifest.json comparison failed: %v", err)
+		return
+	}
+	diffIDs, err := dockerAttestor.Manifest[0].getLayerDIFFIDs(ctx, a.tarFilePath)
+	if err != nil {
+		log.Infof("FYI Docker manifest.json comparison failed: %v", err)
+		return
+	}
+
+	dockerAttestor.ImageID = imageID
+	dockerAttestor.LayerDiffIDs = diffIDs
+	dockerAttestor.ImageTags = dockerAttestor.Manifest[0].RepoTags
+
+	output, err := json.MarshalIndent(dockerAttestor, "", "  ")
+	if err != nil {
+		log.Infof("FYI Docker manifest.json comparison failed: %v", err)
+		return
+	}
+	log.Infof("FYI Docker manifest.json attestation:\n%s", output)
+}
+
+func (a *Attestor) parseDockerManifest(ctx *attestation.AttestationContext, manifestRaw []byte) error {
+	a.ManifestRaw = manifestRaw
 
 	manifestDigest, err := cryptoutil.CalculateDigestSetFromBytes(a.ManifestRaw, ctx.Hashes())
 	if err != nil {
-		return err
+		return fmt.Errorf("calculate Docker manifest.json digest: %w", err)
 	}
 
 	a.ManifestDigest = manifestDigest
 
-	err = json.Unmarshal(a.ManifestRaw, &a.Manifest)
-	if err != nil {
-		return err
+	if err := json.Unmarshal(a.ManifestRaw, &a.Manifest); err != nil {
+		return fmt.Errorf("parse Docker manifest.json: %w", err)
+	}
+
+	if len(a.Manifest) == 0 {
+		return fmt.Errorf("Docker manifest.json contains no image entries")
 	}
 
 	return nil
+}
+
+func (a *Attestor) parseOCIManifest(ctx *attestation.AttestationContext, indexRaw []byte, files map[string][]byte) error {
+	type imageManifest struct {
+		manifest Manifest
+		raw      []byte
+	}
+
+	var images []imageManifest
+	visited := make(map[string]struct{})
+
+	// OCI indexes form a descriptor graph and may point to nested indexes.
+	// Tags on a parent index are inherited by image manifests below it.
+	var walkIndex func([]byte, []string, string) error
+	walkIndex = func(raw []byte, inheritedTags []string, source string) error {
+		var index v1.Index
+		if err := json.Unmarshal(raw, &index); err != nil {
+			return fmt.Errorf("parse OCI index %s: %w", source, err)
+		}
+
+		for descriptorIndex, descriptor := range index.Manifests {
+			descriptorTags := tagsFromDescriptor(descriptor, inheritedTags)
+
+			blobPath, err := descriptorPath(descriptor)
+			if err != nil {
+				return fmt.Errorf("resolve descriptor %d in OCI index %s: %w", descriptorIndex, source, err)
+			}
+			if _, ok := visited[blobPath]; ok {
+				continue
+			}
+			visited[blobPath] = struct{}{}
+
+			descriptorRaw, ok := files[blobPath]
+			if !ok {
+				return fmt.Errorf(
+					"OCI index %s references missing %s descriptor blob %q",
+					source,
+					descriptor.MediaType,
+					blobPath,
+				)
+			}
+
+			switch descriptor.MediaType {
+			// Recursively traverse the index.
+			case v1.MediaTypeImageIndex:
+				if err := walkIndex(descriptorRaw, descriptorTags, descriptor.Digest.String()); err != nil {
+					return fmt.Errorf("follow nested OCI index %s: %w", descriptor.Digest, err)
+				}
+			// Parse the found manifest.
+			case v1.MediaTypeImageManifest:
+				var manifest v1.Manifest
+				if err := json.Unmarshal(descriptorRaw, &manifest); err != nil {
+					return fmt.Errorf("parse OCI image manifest %s: %w", descriptor.Digest, err)
+				}
+
+				// Artifacts and subject-linked manifests are not runnable images.
+				if manifest.ArtifactType != "" || manifest.Subject != nil || manifest.Config.MediaType != v1.MediaTypeImageConfig {
+					log.Debugf("(attestation/oci) skipping non-runnable manifest %s", descriptor.Digest)
+					continue
+				}
+
+				configPath, err := descriptorPath(manifest.Config)
+				if err != nil {
+					return fmt.Errorf("resolve config descriptor in OCI image manifest %s: %w", descriptor.Digest, err)
+				}
+
+				layerPaths, runnable, err := parseLayers(manifest.Layers, descriptor.Digest.String())
+				if err != nil {
+					return err
+				}
+				if !runnable {
+					log.Debugf("(attestation/oci) skipping non-runnable manifest %s", descriptor.Digest)
+					continue
+				}
+
+				images = append(images, imageManifest{
+					manifest: Manifest{
+						Config:   configPath,
+						RepoTags: descriptorTags,
+						Layers:   layerPaths,
+					},
+					raw: descriptorRaw,
+				})
+			default:
+				log.Debugf("(attestation/oci) skipping unsupported descriptor media type %q", descriptor.MediaType)
+			}
+		}
+
+		return nil
+	}
+
+	if err := walkIndex(indexRaw, nil, "index.json"); err != nil {
+		return err
+	}
+	if len(images) == 0 {
+		return fmt.Errorf("OCI index graph contains no runnable image manifests")
+	}
+
+	a.Manifest = make([]Manifest, 0, len(images))
+	for _, image := range images {
+		a.Manifest = append(a.Manifest, image.manifest)
+	}
+
+	// v0.1 has singular raw/digest fields, so the first runnable image remains
+	// the primary image while Manifest reports every runnable image discovered.
+	a.ManifestRaw = images[0].raw
+	manifestDigest, err := cryptoutil.CalculateDigestSetFromBytes(a.ManifestRaw, ctx.Hashes())
+	if err != nil {
+		return fmt.Errorf("calculate primary OCI image manifest digest: %w", err)
+	}
+	a.ManifestDigest = manifestDigest
+
+	return nil
+}
+
+func descriptorPath(descriptor v1.Descriptor) (string, error) {
+	if descriptor.Digest == "" {
+		return "", fmt.Errorf("OCI descriptor has an empty digest")
+	}
+	if err := descriptor.Digest.Validate(); err != nil {
+		return "", fmt.Errorf("OCI descriptor has an invalid digest %q: %w", descriptor.Digest, err)
+	}
+
+	algorithm := descriptor.Digest.Algorithm()
+	encoded := descriptor.Digest.Encoded()
+
+	return path.Join("blobs", algorithm.String(), encoded), nil
+}
+
+func tagsFromDescriptor(descriptor v1.Descriptor, inherited []string) []string {
+	// containerd records a fully qualified image name, while the standard OCI
+	// annotation commonly contains only the local reference name.
+	if name := descriptor.Annotations["io.containerd.image.name"]; name != "" {
+		return []string{name}
+	}
+	if name := descriptor.Annotations[v1.AnnotationRefName]; name != "" {
+		return []string{name}
+	}
+
+	return append([]string(nil), inherited...)
+}
+
+func parseLayers(layers []v1.Descriptor, manifestDigest string) ([]string, bool, error) {
+	layerPaths := make([]string, 0, len(layers))
+	for layerIndex, layer := range layers {
+		// Only OCI and Docker rootfs layers belong to runnable images.
+		switch layer.MediaType {
+		case v1.MediaTypeImageLayer,
+			v1.MediaTypeImageLayerGzip,
+			v1.MediaTypeImageLayerZstd,
+			"application/vnd.docker.image.rootfs.diff.tar",
+			"application/vnd.docker.image.rootfs.diff.tar.gzip",
+			"application/vnd.docker.image.rootfs.foreign.diff.tar.gzip":
+			layerPath, err := descriptorPath(layer)
+			if err != nil {
+				return nil, false, fmt.Errorf(
+					"resolve layer descriptor %d in OCI image manifest %s: %w",
+					layerIndex, manifestDigest, err,
+				)
+			}
+			layerPaths = append(layerPaths, layerPath)
+		default:
+			return nil, false, nil
+		}
+	}
+
+	return layerPaths, true, nil
 }
 
 func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
