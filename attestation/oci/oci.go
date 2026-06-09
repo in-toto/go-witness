@@ -240,56 +240,19 @@ func (a *Attestor) parseManifest(ctx *attestation.AttestationContext) error {
 		files[name] = b
 	}
 
-	manifestRaw, ok := files["manifest.json"]
-
 	// Prefer the OCI image-layout entry point when a hybrid archive contains
 	// both index.json and Docker's compatibility manifest.json.
 	if indexRaw, ok := files["index.json"]; ok {
-		if manifestRaw != nil {
-			a.logDockerManifestAttestation(ctx, manifestRaw)
-		}
 		return a.parseOCIManifest(ctx, indexRaw, files)
 	}
 
+	manifestRaw, ok := files["manifest.json"]
 	if !ok {
 		return fmt.Errorf("archive %q contains neither OCI index.json nor Docker manifest.json", a.tarFilePath)
 	}
 
 	log.Debug("(attestation/oci) index.json not found; parsing legacy Docker manifest.json")
 	return a.parseDockerManifest(ctx, manifestRaw)
-}
-
-func (a *Attestor) logDockerManifestAttestation(ctx *attestation.AttestationContext, manifestRaw []byte) {
-	dockerAttestor := New()
-	dockerAttestor.TarDigest = a.TarDigest
-	dockerAttestor.tarFilePath = a.tarFilePath
-
-	if err := dockerAttestor.parseDockerManifest(ctx, manifestRaw); err != nil {
-		log.Infof("FYI Docker manifest.json comparison failed: %v", err)
-		return
-	}
-
-	imageID, err := dockerAttestor.Manifest[0].getImageID(ctx, a.tarFilePath)
-	if err != nil {
-		log.Infof("FYI Docker manifest.json comparison failed: %v", err)
-		return
-	}
-	diffIDs, err := dockerAttestor.Manifest[0].getLayerDIFFIDs(ctx, a.tarFilePath)
-	if err != nil {
-		log.Infof("FYI Docker manifest.json comparison failed: %v", err)
-		return
-	}
-
-	dockerAttestor.ImageID = imageID
-	dockerAttestor.LayerDiffIDs = diffIDs
-	dockerAttestor.ImageTags = dockerAttestor.Manifest[0].RepoTags
-
-	output, err := json.MarshalIndent(dockerAttestor, "", "  ")
-	if err != nil {
-		log.Infof("FYI Docker manifest.json comparison failed: %v", err)
-		return
-	}
-	log.Infof("FYI Docker manifest.json attestation:\n%s", output)
 }
 
 func (a *Attestor) parseDockerManifest(ctx *attestation.AttestationContext, manifestRaw []byte) error {
