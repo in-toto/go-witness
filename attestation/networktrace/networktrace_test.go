@@ -66,10 +66,10 @@ func TestNewWithConfig(t *testing.T) {
 
 	attestor := NewWithConfig(config)
 
-	assert.Equal(t, uint16(9999), attestor.config.ProxyPort)
-	assert.Equal(t, "127.0.0.1", attestor.config.ProxyBindIPv4)
-	assert.False(t, attestor.config.ObserveChildTree)
-	assert.True(t, attestor.config.Payload.RecordPayload)
+	assert.Equal(t, uint16(9999), attestor.NetworkTrace.Config.ProxyPort)
+	assert.Equal(t, "127.0.0.1", attestor.NetworkTrace.Config.ProxyBindIPv4)
+	assert.False(t, attestor.NetworkTrace.Config.ObserveChildTree)
+	assert.True(t, attestor.NetworkTrace.Config.Payload.RecordPayload)
 }
 
 func TestDefaultConfig(t *testing.T) {
