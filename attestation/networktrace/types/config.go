@@ -57,6 +57,9 @@ func DefaultConfig() Config {
 		CAKeyPath:            DefaultCaKeyPath,
 		ObserveChildTree:     true,
 		EnableHTTPInspection: true,
+		ObservePIDs:          make([]uint32, 0),
+		ObserveCgroups:       make([]string, 0),
+		ObserveCommands:      make([]string, 0),
 		Payload:              DefaultPayloadConfig(),
 	}
 }
