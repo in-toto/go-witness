@@ -69,6 +69,7 @@ jobs:
     needs: [ unit-test ]
     uses: ./.github/workflows/witness.yml
     permissions:
+      id-token: write # This is required for requesting the JWT
       contents: read
     with:
       pull_request: ${{ github.event_name == 'pull_request' }}
