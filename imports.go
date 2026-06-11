@@ -33,7 +33,6 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/lockfiles"
 	_ "github.com/in-toto/go-witness/attestation/material"
 	_ "github.com/in-toto/go-witness/attestation/maven"
-	_ "github.com/in-toto/go-witness/attestation/networktrace"
 	_ "github.com/in-toto/go-witness/attestation/oci"
 	_ "github.com/in-toto/go-witness/attestation/policyverify"
 	_ "github.com/in-toto/go-witness/attestation/product"
