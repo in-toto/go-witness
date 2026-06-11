@@ -5,13 +5,13 @@ go 1.26.1
 require (
 	cloud.google.com/go/kms v1.31.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
-	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.4.0
+	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.5.0
 	github.com/CycloneDX/cyclonedx-go v0.10.0
 	github.com/aws/aws-sdk-go-v2 v1.42.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.22
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.29
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.68.17
-	github.com/aws/aws-sdk-go-v2/service/kms v1.51.1
+	github.com/aws/aws-sdk-go-v2/service/kms v1.52.0
 	github.com/cilium/ebpf v0.20.0
 	github.com/digitorus/pkcs7 v0.0.0-20250730155240-ffadbf3f398c
 	github.com/digitorus/timestamp v0.0.0-20250524132541-c45532741eea
@@ -40,10 +40,10 @@ require (
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/vault v0.40.0
 	github.com/zricethezav/gitleaks/v8 v8.30.1
-	go.step.sm/crypto v0.81.0
+	go.step.sm/crypto v0.81.1
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/mod v0.36.0
-	golang.org/x/sys v0.44.0
+	golang.org/x/sys v0.45.0
 	google.golang.org/api v0.280.0
 	google.golang.org/grpc v1.81.1
 	k8s.io/api v0.35.5
@@ -64,7 +64,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
-	github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 // indirect
+	github.com/AzureAD/microsoft-authentication-library-for-go v1.7.0 // indirect
 	github.com/BobuSumisu/aho-corasick v1.0.3 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
@@ -131,7 +131,7 @@ require (
 	github.com/go-openapi/swag v0.25.5 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -270,9 +270,9 @@ require (
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/yashtewari/glob-intersection v0.2.0 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
-	golang.org/x/net v0.54.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/genproto v0.0.0-20260406210006-6f92a3bedf2d // indirect
