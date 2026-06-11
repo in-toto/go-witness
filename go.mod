@@ -1,6 +1,6 @@
 module github.com/in-toto/go-witness
 
-go 1.26.1
+go 1.26.4
 
 require (
 	cloud.google.com/go/kms v1.31.0
