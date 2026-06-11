@@ -33,7 +33,7 @@ import (
 
 const (
 	ProductName    = "product"
-	ProductType    = "https://witness.dev/attestations/product/v0.1"
+	ProductType    = "https://witness.dev/attestations/product/v0.2"
 	ProductRunType = attestation.ProductRunType
 
 	defaultIncludeGlob = "*"
@@ -116,6 +116,16 @@ type Attestor struct {
 	compiledIncludeGlob glob.Glob
 	excludeGlob         string
 	compiledExcludeGlob glob.Glob
+}
+
+type attestorJson struct {
+	Products      map[string]attestation.Product `json:"products"`
+	Configuration *attestorConfiguration         `json:"configuration,omitempty"`
+}
+
+type attestorConfiguration struct {
+	IncludeGlob string `json:"includeGlob"`
+	ExcludeGlob string `json:"excludeGlob"`
 }
 
 func fromDigestMap(workingDir string, digestMap map[string]cryptoutil.DigestSet) map[string]attestation.Product {
@@ -208,7 +218,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		}
 	}
 
-	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, processWasTraced, openedFileSet, ctx.DirHashGlob())
+	products, err := file.RecordArtifacts(ctx.WorkingDir(), a.baseArtifacts, ctx.Hashes(), map[string]struct{}{}, processWasTraced, openedFileSet, ctx.DirHashGlob(), compiledIncludeGlob, compiledExcludeGlob)
 	if err != nil {
 		return err
 	}
@@ -218,16 +228,36 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 }
 
 func (a *Attestor) MarshalJSON() ([]byte, error) {
-	return json.Marshal(a.products)
+	output := attestorJson{
+		Products: a.products,
+	}
+
+	if a.includeGlob != "" || a.excludeGlob != "" {
+		config := attestorConfiguration{}
+
+		if a.includeGlob != "" {
+			config.IncludeGlob = a.includeGlob
+		}
+		if a.excludeGlob != "" {
+			config.ExcludeGlob = a.excludeGlob
+		}
+		output.Configuration = &config
+	}
+
+	return json.Marshal(output)
 }
 
 func (a *Attestor) UnmarshalJSON(data []byte) error {
-	prods := make(map[string]attestation.Product)
-	if err := json.Unmarshal(data, &prods); err != nil {
+	attestation := attestorJson{
+		Products: make(map[string]attestation.Product),
+	}
+	if err := json.Unmarshal(data, &attestation); err != nil {
 		return err
 	}
 
-	a.products = prods
+	a.products = attestation.Products
+	a.includeGlob = attestation.Configuration.IncludeGlob
+	a.excludeGlob = attestation.Configuration.ExcludeGlob
 	return nil
 }
 
@@ -241,21 +271,24 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		// Normalize path to forward slashes for glob matching
 		// This ensures Windows paths like "subdir\test.txt" are converted to "subdir/test.txt"
 		// to match glob patterns which always use forward slashes
+
 		normalizedPath := filepath.ToSlash(productName)
 
+		includeSubject := true
 		if a.compiledExcludeGlob != nil && a.compiledExcludeGlob.Match(normalizedPath) {
-			continue
+			includeSubject = false
+		}
+		if a.compiledIncludeGlob != nil && a.compiledIncludeGlob.Match(normalizedPath) {
+			includeSubject = true
 		}
 
-		if a.compiledIncludeGlob != nil && !a.compiledIncludeGlob.Match(normalizedPath) {
-			continue
+		if includeSubject {
+			subjectType := "file"
+			if product.MimeType == "text/directory" {
+				subjectType = "dir"
+			}
+			subjects[fmt.Sprintf("%v:%v", subjectType, productName)] = product.Digest
 		}
-
-		subjectType := "file"
-		if product.MimeType == "text/directory" {
-			subjectType = "dir"
-		}
-		subjects[fmt.Sprintf("%v:%v", subjectType, productName)] = product.Digest
 	}
 
 	return subjects
