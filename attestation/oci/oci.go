@@ -270,7 +270,7 @@ func (a *Attestor) parseDockerManifest(ctx *attestation.AttestationContext, mani
 	}
 
 	if len(a.Manifest) == 0 {
-		return fmt.Errorf("Docker manifest.json contains no image entries")
+		return fmt.Errorf("docker manifest.json contains no image entries")
 	}
 
 	return nil
