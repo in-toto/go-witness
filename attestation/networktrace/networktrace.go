@@ -18,6 +18,8 @@ package networktrace
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -26,6 +28,7 @@ import (
 	"github.com/in-toto/go-witness/attestation/networktrace/proxy"
 	"github.com/in-toto/go-witness/attestation/networktrace/types"
 	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
 )
 
@@ -41,9 +44,212 @@ var (
 )
 
 func init() {
-	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
-		return New()
-	})
+	attestation.RegisterAttestation(
+		Name,
+		Type,
+		RunType,
+		func() attestation.Attestor {
+			return New()
+		},
+		registry.IntConfigOption(
+			"proxy-port",
+			"Port for the network trace proxy to listen on",
+			int(types.DefaultProxyPort),
+			func(a attestation.Attestor, val int) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				if val < 1 || val > math.MaxUint16 {
+					return a, fmt.Errorf("proxy-port %d out of valid range [1, %d]", val, math.MaxUint16)
+				}
+				WithProxyPort(uint16(val))(nt)
+				return nt, nil
+			},
+		),
+		registry.StringConfigOption(
+			"proxy-bind-ipv4",
+			"IPv4 address for the proxy to bind to",
+			types.DefaultProxyBindIPv4,
+			func(a attestation.Attestor, val string) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithProxyBindIPv4(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.BoolConfigOption(
+			"enable-http-inspection",
+			"Enable HTTP/HTTPS traffic inspection via MITM proxy",
+			true,
+			func(a attestation.Attestor, val bool) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithEnableHTTPInspection(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.BoolConfigOption(
+			"generate-ca",
+			"Auto-generate a CA certificate and key for TLS interception",
+			true,
+			func(a attestation.Attestor, val bool) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithGenerateCA(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.StringConfigOption(
+			"ca-cert-path",
+			"Path to the CA certificate PEM file for TLS interception",
+			types.DefaultCaCertPath,
+			func(a attestation.Attestor, val string) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithCACertPath(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.StringConfigOption(
+			"ca-key-path",
+			"Path to the CA key PEM file for TLS interception",
+			types.DefaultCaKeyPath,
+			func(a attestation.Attestor, val string) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithCAKeyPath(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.BoolConfigOption(
+			"skip-verify",
+			"Skip TLS certificate verification for intercepted connections",
+			false,
+			func(a attestation.Attestor, val bool) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithSkipVerify(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.IntSliceConfigOption(
+			"observe-pids",
+			"PIDs to observe network activity for",
+			nil,
+			func(a attestation.Attestor, val []int) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				pids := make([]uint32, 0, len(val))
+				for _, pid := range val {
+					if pid <= 0 {
+						return a, fmt.Errorf("invalid PID %d: must be positive", pid)
+					}
+					if pid > math.MaxUint32 {
+						return a, fmt.Errorf("invalid PID %d: exceeds uint32 range", pid)
+					}
+					pids = append(pids, uint32(pid))
+				}
+				WithObservePIDs(pids)(nt)
+				return nt, nil
+			},
+		),
+		registry.StringSliceConfigOption(
+			"observe-cgroups",
+			"Cgroup paths to observe network activity for",
+			nil,
+			func(a attestation.Attestor, val []string) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithObserveCgroups(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.StringSliceConfigOption(
+			"observe-commands",
+			"Command names to observe network activity for",
+			nil,
+			func(a attestation.Attestor, val []string) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithObserveCommands(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.BoolConfigOption(
+			"observe-child-tree",
+			"Observe network activity for child processes",
+			true,
+			func(a attestation.Attestor, val bool) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithObserveChildTree(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.BoolConfigOption(
+			"record-payload",
+			"Record raw payload data in network connections",
+			false,
+			func(a attestation.Attestor, val bool) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithPayloadRecordPayload(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.BoolConfigOption(
+			"record-payload-hash",
+			"Record SHA256 hash of payload data",
+			true,
+			func(a attestation.Attestor, val bool) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				WithPayloadRecordPayloadHash(val)(nt)
+				return nt, nil
+			},
+		),
+		registry.Int64ConfigOption(
+			"max-payload-size",
+			"Maximum size in bytes to store raw payload (0 for unlimited)",
+			int64(types.DefaultPayloadConfig().MaxPayloadSize),
+			func(a attestation.Attestor, val int64) (attestation.Attestor, error) {
+				nt, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("invalid attestor type: %T", a)
+				}
+				if val < 0 {
+					return a, fmt.Errorf("max-payload-size %d must be non-negative", val)
+				}
+				WithPayloadMaxPayloadSize(val)(nt)
+				return nt, nil
+			},
+		),
+	)
 }
 
 // NetworkTrace contains the recorded network activity during command execution
@@ -60,14 +266,16 @@ type NetworkTrace struct {
 
 	// Configuration used (for reproducibility/auditability)
 	Config types.Config `json:"config"`
+
+	// CA certificate used for TLS interception (PEM encoded)
+	// Included so verifiers understand what was trusted during attestation
+	CACertPEM string `json:"ca_cert_pem,omitempty"`
 }
 
 // Attestor implements the network trace attestation
 type Attestor struct {
-	config       types.Config
 	NetworkTrace NetworkTrace `json:"network_trace"`
-
-	hooks *attestation.ExecuteHooks
+	hooks        *attestation.ExecuteHooks
 }
 
 func (n *Attestor) DeclareHooks(hooks *attestation.ExecuteHooks) error {
@@ -86,16 +294,104 @@ func (n *Attestor) DeclareHooks(hooks *attestation.ExecuteHooks) error {
 	return nil
 }
 
-// New creates a new network trace attestor with default configuration
-func New() *Attestor {
-	return &Attestor{
-		config: types.DefaultConfig(),
+func WithProxyPort(port uint16) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.ProxyPort = port
 	}
 }
 
-func NewWithConfig(config types.Config) *Attestor {
+func WithProxyBindIPv4(addr string) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.ProxyBindIPv4 = addr
+	}
+}
+
+func WithEnableHTTPInspection(enabled bool) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.EnableHTTPInspection = enabled
+	}
+}
+
+func WithGenerateCA(generate bool) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.GenerateCA = generate
+	}
+}
+
+func WithCACertPath(path string) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.CACertPath = path
+	}
+}
+
+func WithCAKeyPath(path string) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.CAKeyPath = path
+	}
+}
+
+func WithSkipVerify(skip bool) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.SkipVerify = skip
+	}
+}
+
+func WithObservePIDs(pids []uint32) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.ObservePIDs = pids
+	}
+}
+
+func WithObserveCgroups(cgroups []string) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.ObserveCgroups = cgroups
+	}
+}
+
+func WithObserveCommands(commands []string) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.ObserveCommands = commands
+	}
+}
+
+func WithObserveChildTree(observe bool) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.ObserveChildTree = observe
+	}
+}
+
+func WithPayloadRecordPayload(record bool) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.Payload.RecordPayload = record
+	}
+}
+
+func WithPayloadRecordPayloadHash(record bool) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.Payload.RecordPayloadHash = record
+	}
+}
+
+func WithPayloadMaxPayloadSize(maxSize int64) func(*Attestor) {
+	return func(a *Attestor) {
+		a.NetworkTrace.Config.Payload.MaxPayloadSize = maxSize
+	}
+}
+
+// New creates a new network trace attestor with default configuration
+func New() *Attestor {
 	return &Attestor{
-		config: config,
+		NetworkTrace: NetworkTrace{
+			Config: types.DefaultConfig(),
+		},
+	}
+}
+
+func NewWithConfig(cfg types.Config) *Attestor {
+	return &Attestor{
+		NetworkTrace: NetworkTrace{
+			Config: cfg,
+		},
 	}
 }
 
@@ -158,8 +454,8 @@ func (n *Attestor) Attest(ctx *attestation.AttestationContext) error {
 func (n *Attestor) initBPF() (*bpf.Maps, func(), error) {
 	bpfConfig := bpf.LoadConfig{
 		CgroupPath: "/sys/fs/cgroup", // TODO: allow user to configure
-		ProxyPort:  n.config.ProxyPort,
-		ProxyIPv4:  n.config.ProxyBindIPv4,
+		ProxyPort:  n.NetworkTrace.Config.ProxyPort,
+		ProxyIPv4:  n.NetworkTrace.Config.ProxyBindIPv4,
 	}
 
 	state, err := bpf.Load(bpfConfig)
@@ -192,8 +488,20 @@ func (n *Attestor) initProxies(ctx *attestation.AttestationContext, bpfMaps *bpf
 		}
 	})
 
+	cfg := n.NetworkTrace.Config
+	var httpProxy *proxy.HTTPProxy
+	if cfg.EnableHTTPInspection {
+		cm, err := proxy.NewCAManager(cfg.CAKeyPath, cfg.CACertPath, cfg.GenerateCA)
+		if err != nil {
+			log.Errorf("[networktrace] failed to create CA manager: %v", err)
+			return nil, err
+		}
+		n.NetworkTrace.CACertPEM = cm.CertPEM()
+		httpProxy = proxy.NewHTTPProxy(cm, cfg.Payload, runtime.connChannel, cfg.SkipVerify)
+	}
+
 	// Create and start proxy
-	tcpProxy := proxy.NewTCPProxy(bpfMaps, n.config.ProxyPort, n.config.ProxyBindIPv4, true, n.config.Payload, runtime.connChannel)
+	tcpProxy := proxy.NewTCPProxy(bpfMaps, httpProxy, cfg.ProxyPort, cfg.ProxyBindIPv4, true, cfg.Payload, runtime.connChannel)
 
 	var proxyCtx context.Context
 	proxyCtx, runtime.cancelProxy = context.WithCancel(ctx.Context())
@@ -217,17 +525,12 @@ func (n *Attestor) initProxies(ctx *attestation.AttestationContext, bpfMaps *bpf
 
 // registerHooks sets up PreExec and PreExit hooks for command lifecycle
 func (n *Attestor) registerHooks(bpfMaps *bpf.Maps, runtime *proxyRuntime) error {
-	if n.config.ObservePIDs == nil {
-		n.config.ObservePIDs = make([]uint32, 0)
-	}
-
 	// PreExec: called when command starts, adds PID to BPF filter
 	r1, err := n.hooks.RegisterHook(attestation.StagePreExec, Name, func(pid int) error {
 		log.Debugf("[networktrace] PreExec hook triggered, tracking PID=%d", pid)
-		n.config.ObservePIDs = append(n.config.ObservePIDs, uint32(pid))
+		n.NetworkTrace.Config.ObservePIDs = append(n.NetworkTrace.Config.ObservePIDs, uint32(pid))
 		n.NetworkTrace.StartTime = time.Now()
-		n.NetworkTrace.Config = n.config
-		err := bpfMaps.LoadUserConfig(n.config)
+		err := bpfMaps.LoadUserConfig(n.NetworkTrace.Config)
 		if err != nil {
 			log.Errorf("[networktrace] failed to load user config: %v", err)
 		}
