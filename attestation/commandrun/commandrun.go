@@ -35,10 +35,10 @@ const (
 )
 
 // List of supported tracing backends. The CLI provides these through the --trace-backend
-// argument. Default: ptrace.
+// argument. Default (Linux): ptrace.
 const (
-	TraceBackendPtrace = "ptrace"
-	TraceBackendEBPF   = "ebpf"
+	TraceBackendDefault = "default"
+	TraceBackendEBPF    = "ebpf"
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -98,7 +98,7 @@ func WithSilent(silent bool) Option {
 
 func New(opts ...Option) *CommandRun {
 	cr := &CommandRun{
-		traceBackend: TraceBackendPtrace,
+		traceBackend: TraceBackendDefault,
 	}
 
 	for _, opt := range opts {
@@ -176,7 +176,7 @@ func (rc *CommandRun) TracingEnabled() bool {
 }
 
 func (rc *CommandRun) IsExperimental() bool {
-	return rc.Data().traceBackend != TraceBackendPtrace
+	return rc.Data().traceBackend != TraceBackendDefault
 }
 
 // CommandRun saves the execute hooks using the same mechanism, even though
@@ -261,11 +261,11 @@ func (rc *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 
 func (rc *CommandRun) validateTraceBackend() error {
 	if rc.traceBackend == "" {
-		rc.traceBackend = TraceBackendPtrace
+		rc.traceBackend = TraceBackendDefault
 	}
 
 	switch rc.traceBackend {
-	case TraceBackendPtrace, TraceBackendEBPF:
+	case TraceBackendDefault, TraceBackendEBPF:
 		return nil
 	default:
 		return fmt.Errorf("unsupported trace backend %q", rc.traceBackend)

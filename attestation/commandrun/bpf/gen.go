@@ -17,5 +17,3 @@
 package bpf
 
 //go:generate sh -c "go tool bpf2go -cc clang -no-strip -target bpfel,bpfeb -go-package bpf filetraceSyscall filetrace_syscall.bpf.c -- -Wall -Werror -I ../../bpf-common/headers $BPF_CFLAGS"
-
-// -I \"$(go env GOPATH)/pkg/mod/github.com/cilium/ebpf@$(go list -m -f '{{.Version}}' github.com/cilium/ebpf)/examples/headers\"

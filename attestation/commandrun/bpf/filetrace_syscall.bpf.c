@@ -1,4 +1,4 @@
-// go:build ignore
+//go:build ignore
 
 // Copyright 2026 The Witness Contributors
 //
@@ -177,4 +177,62 @@ int trace_openat_exit(struct trace_event_raw_sys_exit *ctx) {
 SEC("tracepoint/syscalls/sys_exit_openat2")
 int trace_openat2_exit(struct trace_event_raw_sys_exit *ctx) {
 	return submit_pending_open_event(ctx->ret);
+}
+
+/* sched_process_exec and sched_process_exit give userspace enough lifecycle
+ * information to create/enrich ProcessInfo records around the open events.
+ */
+SEC("tracepoint/sched/sched_process_exec")
+int trace_sched_process_exec(struct trace_event_raw_sched_process_exec *ctx) {
+	if (!commandrun_in_target_cgroup()) {
+		return 0;
+	}
+
+	struct file_open_event *event =
+	    bpf_ringbuf_reserve(&events, sizeof(*event), 0);
+	if (!event) {
+		return 0;
+	}
+	__u64 pid_tgid = get_ns_pidtgid();
+	event->event_type = EVENT_TYPE_EXEC;
+	event->pid = pid_tgid >> 32;
+	event->tid = pid_tgid;
+	event->dfd = 0;
+	event->error = 0;
+
+	__u16 filename_offset = ctx->__data_loc_filename & 0xffff;
+
+	long copied = bpf_probe_read_kernel_str(
+	    event->path, sizeof(event->path), (void *)ctx + filename_offset);
+
+	if (copied < 0) {
+		event->path[0] = '\0';
+	}
+
+	bpf_ringbuf_submit(event, 0);
+	return 0;
+}
+
+SEC("tracepoint/sched/sched_process_exit")
+int trace_sched_process_exit(struct sched_process_exit_args *ctx) {
+	if (!commandrun_in_target_cgroup()) {
+		return 0;
+	}
+
+	struct file_open_event *event =
+	    bpf_ringbuf_reserve(&events, sizeof(*event), 0);
+	if (!event) {
+		return 0;
+	}
+	event->event_type = EVENT_TYPE_EXIT;
+
+	__u64 pid_tgid = get_ns_pidtgid();
+	event->pid = pid_tgid >> 32;
+	event->tid = pid_tgid;
+
+	event->dfd = 0;
+	event->error = 0;
+	event->path[0] = '\0';
+	bpf_ringbuf_submit(event, 0);
+	return 0;
 }
