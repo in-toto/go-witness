@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -41,6 +42,7 @@ const (
 	commandRunTraceCgroupPath = "/sys/fs/cgroup/witness-tracing"
 	commandRunDigestJobBuffer = 1 << 16
 	commandRunDigestWorkers   = 4
+	commandRunExitWaitTimeout = 5 * time.Second
 )
 
 type digestJob struct {
@@ -79,6 +81,8 @@ const (
 type ebpfTraceContext struct {
 	hash       []cryptoutil.DigestValue
 	processes  map[int]*ProcessInfo
+	exited     map[int]struct{}
+	exitNotify chan struct{}
 	digestJobs chan digestJob
 	digestWg   sync.WaitGroup
 	mu         sync.Mutex
@@ -106,8 +110,10 @@ func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationCo
 	c.SysProcAttr.CgroupFD = int(cgroupFile.Fd())
 
 	pctx := &ebpfTraceContext{
-		hash:      actx.Hashes(),
-		processes: make(map[int]*ProcessInfo),
+		hash:       actx.Hashes(),
+		processes:  make(map[int]*ProcessInfo),
+		exited:     make(map[int]struct{}),
+		exitNotify: make(chan struct{}, 1),
 	}
 
 	// Load eBPF tracing programs.
@@ -135,10 +141,12 @@ func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationCo
 	pctx.startDigestWorkers(commandRunDigestWorkers)
 
 	var readErr error
+	readerDone := make(chan struct{})
 	var readerWg sync.WaitGroup
 	readerWg.Add(1)
 	go func() {
 		defer readerWg.Done()
+		defer close(readerDone)
 		if err := pctx.readEvents(reader); err != nil {
 			// Internal tracing errors mean the attestation may be incomplete.
 			// Stop the command and propagate the error instead of finishing with missing events.
@@ -174,11 +182,24 @@ func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationCo
 		}
 	}
 
+	// Process completion does not mean userspace has drained every event already
+	// queued in the ring buffer. Wait until the reader processes the main task's
+	// sched_process_exit event; earlier open events precede it in the buffer.
+	exitSeen := pctx.waitForExit(c.Process.Pid, readerDone)
+
 	_ = reader.Close()
 	readerWg.Wait()
 	pctx.finishDigestWorkers()
+
 	if readErr != nil {
 		return pctx.procInfoArray(), readErr
+	}
+
+	if !exitSeen {
+		return pctx.procInfoArray(), fmt.Errorf(
+			"timed out waiting for command-run eBPF exit event for pid %d",
+			c.Process.Pid,
+		)
 	}
 
 	if waitErr != nil {
@@ -215,6 +236,7 @@ func (p *ebpfTraceContext) readEvents(reader *ringbuf.Reader) error {
 		}
 
 		var shouldEnrich bool
+		var exitedPID int
 		pid := int(event.PID)
 		var digestPath string
 
@@ -239,12 +261,18 @@ func (p *ebpfTraceContext) readEvents(reader *ringbuf.Reader) error {
 
 		case eventTypeExec:
 			procInfo = p.getProcInfo(pid)
+			// Fallback from the eBPF event. Might be overwritten by /proc data later.
+			if program := cleanCString(event.Path[:]); program != "" {
+				procInfo.Program = program
+				procInfo.Comm = filepath.Base(program)
+			}
 			shouldEnrich = true
 		case eventTypeExit:
 			procInfo = p.processes[pid]
 			if procInfo != nil {
 				shouldEnrich = true
 			}
+			exitedPID = pid
 		}
 
 		p.mu.Unlock()
@@ -259,6 +287,50 @@ func (p *ebpfTraceContext) readEvents(reader *ringbuf.Reader) error {
 			// /proc enrichment is attestation-schema work, not BPF plumbing.
 			// Keep it out of the locked event update path.
 			p.populateMetadataForProc(pid, event.EventType == eventTypeExec)
+		}
+
+		if exitedPID != 0 {
+			p.mu.Lock()
+			p.exited[exitedPID] = struct{}{}
+			p.mu.Unlock()
+
+			// One notification is enough to wake the waiter, which rechecks the set.
+			select {
+			case p.exitNotify <- struct{}{}:
+			default:
+			}
+		}
+	}
+}
+
+// Waits until one of exitNotify, readerDone, or a 5-second timer are awake.
+// Returns:
+//
+//	"true" for exitNotify, and non-erroring readerDone
+//	"false" for timer
+func (p *ebpfTraceContext) waitForExit(pid int, readerDone <-chan struct{}) bool {
+	timer := time.NewTimer(commandRunExitWaitTimeout)
+	defer timer.Stop()
+
+	for {
+		p.mu.Lock()
+		_, exited := p.exited[pid]
+		p.mu.Unlock()
+		if exited {
+			return true
+		}
+
+		select {
+		case <-p.exitNotify:
+		case <-readerDone:
+			// The reader cannot observe another exit event after stopping.
+			// Check once more in case it recorded this PID before exiting.
+			p.mu.Lock()
+			_, exited := p.exited[pid]
+			p.mu.Unlock()
+			return exited
+		case <-timer.C:
+			return false
 		}
 	}
 }
