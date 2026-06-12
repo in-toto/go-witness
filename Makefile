@@ -47,7 +47,7 @@ VMLINUX_H := ./attestation/bpf-common/headers/vmlinux.h
 .PHONY: generate-vmlinux
 generate-vmlinux: $(VMLINUX_H)
 
-$(VMLINUX_H): 
+$(VMLINUX_H):
 	@echo "Generating vmlinux.h from kernel BTF..."
 	@command -v bpftool >/dev/null 2>&1 || { echo "Error: bpftool is required. Install with: apt install linux-tools-common linux-tools-$(uname -r)"; exit 1; }
 	mkdir -p ./attestation/bpf-common/headers && bpftool btf dump file /sys/kernel/btf/vmlinux format c > ./attestation/bpf-common/headers/vmlinux.h
@@ -57,12 +57,12 @@ generate-commandrun-bpf: generate-vmlinux ## Generate BPF bytecode and Go bindin
 	@echo "Generating command-run BPF code (requires clang and llvm)..."
 	go generate -tags linux ./attestation/commandrun/bpf/...
 
-.PHONY: generate-bpf
+.PHONY: generate-networktrace-bpf
 generate-networktrace-bpf: generate-vmlinux ## Generate BPF bytecode and Go bindings for network trace attestor
 	@echo "Generating BPF code (requires clang and llvm)..."
 	go generate ./attestation/networktrace/bpf/...
 
 .PHONY: generate-networktrace-bpf-debug
-generate-bpf-debug: generate-vmlinux ## Generate BPF bytecode with debug logging enabled
+generate-networktrace-bpf-debug: generate-vmlinux ## Generate networktrace BPF bytecode with debug logging enabled
 	@echo "Generating BPF code with DEBUG logging (requires clang and llvm)..."
 	BPF_CFLAGS="-DBPF_DEBUG" go generate ./attestation/networktrace/bpf/...
