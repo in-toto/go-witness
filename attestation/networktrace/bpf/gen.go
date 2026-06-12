@@ -25,5 +25,5 @@ package bpf
 // - bpf2go installed as a tool: go get -tool github.com/cilium/ebpf/cmd/bpf2go
 //
 
-//go:generate sh -c "go tool bpf2go -cc clang -target bpfel,bpfeb -go-package bpf -type orig_dst_key -type orig_dst_val -type orig_dst_key_v6 -type orig_dst_val_v6 -type pid_allowlist_key -type pid_allowlist_val -type comm_allowlist_key -type cgroup_allowlist_key -type tuple_key -type tuple_val -type tuple_key_v6 -type injection_time_val connect connect.bpf.c -- -I./headers -Wall -Werror $BPF_CFLAGS"
-//go:generate sh -c "go tool bpf2go -cc clang -target bpfel,bpfeb -go-package bpf sockops sockops.bpf.c -- -I./headers -Wall -Werror $BPF_CFLAGS"
+//go:generate sh -c "go tool bpf2go -cc clang -target bpfel,bpfeb -go-package bpf -type orig_dst_key -type orig_dst_val -type orig_dst_key_v6 -type orig_dst_val_v6 -type pid_allowlist_key -type pid_allowlist_val -type comm_allowlist_key -type cgroup_allowlist_key -type tuple_key -type tuple_val -type tuple_key_v6 -type injection_time_val connect connect.bpf.c -- -I./headers -I../../bpf-common/headers -Wall -Werror $BPF_CFLAGS"
+//go:generate sh -c "go tool bpf2go -cc clang -target bpfel,bpfeb -go-package bpf sockops sockops.bpf.c -- -I./headers -I../../bpf-common/headers -Wall -Werror $BPF_CFLAGS"
