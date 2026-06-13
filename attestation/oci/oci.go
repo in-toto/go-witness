@@ -16,13 +16,10 @@ package oci
 
 import (
 	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"crypto"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"strings"
@@ -75,6 +72,7 @@ type Attestor struct {
 	ImageID        cryptoutil.DigestSet   `json:"imageid"`
 	ManifestRaw    []byte                 `json:"manifestraw"`
 	ManifestDigest cryptoutil.DigestSet   `json:"manifestdigest"`
+	files          map[string][]byte      `json:"-"`
 	tarFilePath    string                 `json:"-"`
 }
 
@@ -161,9 +159,24 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 		return err
 	}
 
-	layerDiffIDs, err := a.Manifest[0].getLayerDIFFIDs(ctx, a.tarFilePath)
-	if err != nil {
+	var config v1.Image
+	configRaw, ok := a.files[a.Manifest[0].Config]
+	if !ok {
+		return fmt.Errorf("could not find config %q in tar file", a.Manifest[0].Config)
+	}
+	if err := json.Unmarshal(configRaw, &config); err != nil {
 		return err
+	}
+
+	layerDiffIDs := make([]cryptoutil.DigestSet, 0, len(config.RootFS.DiffIDs))
+	for _, diffID := range config.RootFS.DiffIDs {
+		digestSet, err := cryptoutil.NewDigestSet(map[string]string{
+			diffID.Algorithm().String(): diffID.Encoded(),
+		})
+		if err != nil {
+			return err
+		}
+		layerDiffIDs = append(layerDiffIDs, digestSet)
 	}
 
 	a.ImageID = imageID
@@ -213,7 +226,7 @@ func (a *Attestor) parseManifest(ctx *attestation.AttestationContext) error {
 	// Cache the entry points and content-addressed blobs needed by both the
 	// OCI image-layout and legacy Docker archive parsers.
 	tarReader := tar.NewReader(f)
-	files := make(map[string][]byte)
+	a.files = make(map[string][]byte)
 	for {
 		h, err := tarReader.Next()
 		if err == io.EOF {
@@ -229,7 +242,7 @@ func (a *Attestor) parseManifest(ctx *attestation.AttestationContext) error {
 		}
 
 		name := strings.TrimPrefix(path.Clean(h.Name), "./")
-		if name != "manifest.json" && name != "index.json" && !strings.HasPrefix(name, "blobs/") {
+		if name != "manifest.json" && name != "index.json" && !strings.HasPrefix(name, "blobs/") && !strings.HasSuffix(name, ".json") {
 			continue
 		}
 
@@ -237,16 +250,16 @@ func (a *Attestor) parseManifest(ctx *attestation.AttestationContext) error {
 		if err != nil {
 			return fmt.Errorf("read OCI archive entry %q: %w", name, err)
 		}
-		files[name] = b
+		a.files[name] = b
 	}
 
 	// Prefer the OCI image-layout entry point when a hybrid archive contains
 	// both index.json and Docker's compatibility manifest.json.
-	if indexRaw, ok := files["index.json"]; ok {
-		return a.parseOCIManifest(ctx, indexRaw, files)
+	if indexRaw, ok := a.files["index.json"]; ok {
+		return a.parseOCIManifest(ctx, indexRaw, a.files)
 	}
 
-	manifestRaw, ok := files["manifest.json"]
+	manifestRaw, ok := a.files["manifest.json"]
 	if !ok {
 		return fmt.Errorf("archive %q contains neither OCI index.json nor Docker manifest.json", a.tarFilePath)
 	}
@@ -465,65 +478,4 @@ func (a *Attestor) Subjects() map[string]cryptoutil.DigestSet {
 		subj[fmt.Sprintf("layerdiffid%02d:%s", layer, a.LayerDiffIDs[layer][cryptoutil.DigestValue{Hash: crypto.SHA256}])] = a.LayerDiffIDs[layer]
 	}
 	return subj
-}
-
-func (m *Manifest) getLayerDIFFIDs(ctx *attestation.AttestationContext, tarFilePath string) ([]cryptoutil.DigestSet, error) {
-	var layerDiffIDs []cryptoutil.DigestSet
-
-	tarFile, err := os.Open(tarFilePath)
-	if err != nil {
-		return nil, err
-	}
-	defer tarFile.Close()
-
-	tarReader := tar.NewReader(tarFile)
-	for {
-		h, err := tarReader.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if h.FileInfo().IsDir() {
-			continue
-		}
-		for _, layerFile := range m.Layers {
-			if h.Name == layerFile {
-				b := make([]byte, h.Size)
-
-				_, err := tarReader.Read(b)
-				if err != nil && err != io.EOF {
-					return nil, err
-				}
-
-				contentType := http.DetectContentType(b)
-				if contentType == "application/x-gzip" {
-					breader, err := gzip.NewReader(bytes.NewReader(b))
-					if err != nil {
-						return nil, err
-					}
-					defer breader.Close()
-					c, err := io.ReadAll(breader)
-					if err != nil {
-						return nil, err
-					}
-					layerDiffID, err := cryptoutil.CalculateDigestSetFromBytes(c, ctx.Hashes())
-					if err != nil {
-						return nil, err
-					}
-					layerDiffIDs = append(layerDiffIDs, layerDiffID)
-
-				} else {
-					layerDiffID, err := cryptoutil.CalculateDigestSetFromBytes(b, ctx.Hashes())
-					if err != nil {
-						return nil, err
-					}
-					layerDiffIDs = append(layerDiffIDs, layerDiffID)
-				}
-
-			}
-		}
-	}
-	return layerDiffIDs, nil
 }
