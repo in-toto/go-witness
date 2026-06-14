@@ -18,7 +18,6 @@ package commandrun
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -117,8 +116,7 @@ func (p *ptraceContext) runTrace() error {
 		log.Infof("Entering hooks-only mode")
 		if p.hasPreExit {
 			log.Infof("Waiting for process exit to run PreExit hooks")
-			// Change the signal handling in waitForExitOnly if ptrace options are changed from PTRACE_O_TRACEEXIT
-			if err := unix.PtraceSetOptions(p.traceePid, unix.PTRACE_O_TRACEEXIT); err != nil {
+			if err := unix.PtraceSetOptions(p.traceePid, unix.PTRACE_O_TRACEEXIT|unix.PTRACE_O_TRACEEXEC|unix.PTRACE_O_TRACECLONE|unix.PTRACE_O_TRACEFORK|unix.PTRACE_O_TRACEVFORK); err != nil {
 				return err
 			}
 			return p.waitForExitOnly()
@@ -151,18 +149,34 @@ func (p *ptraceContext) runTrace() error {
 		return err
 	}
 
-	for {
+	trackedTIDs := map[int]struct{}{p.traceePid: {}}
+	preExitRun := false
+
+	for len(trackedTIDs) > 0 { // Loop until all threads die
 		pid, err := unix.Wait4(-1, &status, unix.WALL, nil)
 		if err != nil {
 			return err
 		}
-		if pid == p.traceePid && status.Exited() {
-			p.exitCode = status.ExitStatus()
-			return nil
-		}
-		if pid == p.traceePid && status.Signaled() {
-			p.exitCode = 128 + int(status.Signal())
-			return nil
+
+		// If a task in the kernel dies or exits, it reports death via Exited or Signaled other than the TGID in case of
+		// execve(2) under ptrace. As in the man page:
+		//   Note: the thread
+		//     group leader does not report death via WIFEXITED(status) until
+		//     there is at least one other live thread.  This eliminates the
+		//     possibility that the tracer will see it dying and then
+		//     reappearing.
+		// It "may" (varies with kernel version) report direct Signaled with SIGKILL, but it is not guaranteed. So we need to track all threads and wait for them to die.
+		// This is also required to reap the zombie threads and avoid leaving them in the process table.
+		if status.Exited() || status.Signaled() {
+			delete(trackedTIDs, pid)
+			if pid == p.traceePid {
+				if status.Exited() {
+					p.exitCode = status.ExitStatus()
+				} else if status.Signaled() {
+					p.exitCode = 128 + int(status.Signal())
+				}
+			}
+			continue
 		}
 
 		if status.Stopped() {
@@ -192,9 +206,35 @@ func (p *ptraceContext) runTrace() error {
 					// Case 2: Ptrace Event (Exit/Fork/Exec) -> Suppress signal
 					injectedSig = 0
 
-					if eventCode == unix.PTRACE_EVENT_EXIT && pid == p.traceePid && p.hasPreExit {
-						if err := p.executeHooks.RunHooks(attestation.StagePreExit, pid); err != nil {
-							log.Errorf("PreExit hooks failed: %v", err)
+					switch eventCode {
+					case unix.PTRACE_EVENT_CLONE, unix.PTRACE_EVENT_FORK, unix.PTRACE_EVENT_VFORK:
+						newTID, _ := unix.PtraceGetEventMsg(pid)
+						trackedTIDs[int(newTID)] = struct{}{}
+					case unix.PTRACE_EVENT_EXEC:
+						oldTID, err := unix.PtraceGetEventMsg(pid)
+						if err == nil {
+							delete(trackedTIDs, int(oldTID))
+						}
+						trackedTIDs[pid] = struct{}{}
+
+					case unix.PTRACE_EVENT_EXIT:
+						// exitCode is updated again in case this really isn't the final exit event.
+						if pid == p.traceePid {
+							exitStatus, err := unix.PtraceGetEventMsg(pid)
+							if err == nil {
+								p.exitCode = int(exitStatus)
+							}
+						}
+
+						// Run the pre exit hook when this is the last thread in the process tree.
+						if len(trackedTIDs) == 1 && !preExitRun {
+							if p.hasPreExit {
+								log.Infof("Last thread pausing for exit. Running PreExit hooks.")
+								if err := p.executeHooks.RunHooks(attestation.StagePreExit, p.traceePid); err != nil {
+									log.Errorf("PreExit hooks failed: %v", err)
+								}
+							}
+							preExitRun = true
 						}
 					}
 				}
@@ -209,6 +249,17 @@ func (p *ptraceContext) runTrace() error {
 			}
 		}
 	}
+
+	// If the tree was destroyed by SIGKILL, PTRACE_EVENT_EXIT "might" have never fired. (depends on the kernel version)
+	// We trigger the hooks here to guarantee the BPF maps and proxy are cleaned up.
+	if p.hasPreExit && !preExitRun {
+		log.Infof("Tree exited via fatal signal. Running fallback PreExit hooks.")
+		if err := p.executeHooks.RunHooks(attestation.StagePreExit, p.traceePid); err != nil {
+			log.Errorf("Fallback PreExit hooks failed: %v", err)
+		}
+	}
+
+	return nil
 }
 
 func (p *ptraceContext) waitForExitOnly() error {
@@ -219,72 +270,84 @@ func (p *ptraceContext) waitForExitOnly() error {
 		return fmt.Errorf("failed to continue: %w", err)
 	}
 
-	for {
-		_, err := unix.Wait4(p.traceePid, &status, 0, nil)
+	trackedTIDs := map[int]struct{}{p.traceePid: {}}
+	preExitRun := false
+
+	for len(trackedTIDs) > 0 {
+		pid, err := unix.Wait4(-1, &status, unix.WALL, nil)
 		if err != nil {
 			return fmt.Errorf("wait4 failed: %w", err)
 		}
 
-		if status.Exited() {
-			p.exitCode = status.ExitStatus()
-			return nil
-		}
-		if status.Signaled() {
-			p.exitCode = 128 + int(status.Signal())
-			return nil
+		if status.Exited() || status.Signaled() {
+			delete(trackedTIDs, pid)
+			if pid == p.traceePid {
+				if status.Exited() {
+					p.exitCode = status.ExitStatus()
+				} else if status.Signaled() {
+					p.exitCode = 128 + int(status.Signal())
+				}
+			}
+			continue // Wait for remaining threads
 		}
 
 		if status.Stopped() {
 			sig := status.StopSignal()
-
 			injectedSig := int(sig)
 
 			if sig == unix.SIGTRAP {
 				eventCode := (uint32(status) >> 16) & 0xFFFF
 
 				if eventCode != 0 {
-					// Ptrace Event (EXIT) -> Swallow signal
-					injectedSig = 0
+					injectedSig = 0 // Swallow signal
 
-					// As we setup with only PTRACE_O_TRACEEXIT, only this event would be emitted
-					// Still, eventCode != 0 and eventCode == unix.PTRACE_EVENT_EXIT are separated for defensive
-					// programming
-					if eventCode == unix.PTRACE_EVENT_EXIT {
-						log.Infof("caught exit event for pid %d", p.traceePid)
-						if err := p.executeHooks.RunHooks(attestation.StagePreExit, p.traceePid); err != nil {
-							log.Errorf("PreExit hooks failed: %v", err)
-						}
-
-						exitStatus, err := unix.PtraceGetEventMsg(p.traceePid)
+					switch eventCode {
+					case unix.PTRACE_EVENT_CLONE, unix.PTRACE_EVENT_FORK, unix.PTRACE_EVENT_VFORK:
+						newTID, _ := unix.PtraceGetEventMsg(pid)
+						trackedTIDs[int(newTID)] = struct{}{}
+					case unix.PTRACE_EVENT_EXEC:
+						oldTID, err := unix.PtraceGetEventMsg(pid)
 						if err == nil {
-							p.exitCode = int(exitStatus >> 8)
+							delete(trackedTIDs, int(oldTID))
 						}
-
-						// Cont is required after PTRACE_EVENT_EXIT event stop, tracee is alive, needs to be cont
-						err = unix.PtraceCont(p.traceePid, 0)
-						if err != nil {
-							log.Errorf("Final PtraceCont failed (process likely already dead): %v", err)
-						}
-						// clear the zombie process using a wait signal
-						wPid, err := unix.Wait4(p.traceePid, &status, 0, nil)
-						if err != nil {
-							// ECHILD - child process has likely already been cleared
-							if !errors.Is(err, unix.ECHILD) {
-								log.Errorf("wPid: %d, wait4 failed: %v", wPid, err)
+						trackedTIDs[pid] = struct{}{}
+					case unix.PTRACE_EVENT_EXIT:
+						// exitCode is updated again in case this really isn't the final exit event.
+						if pid == p.traceePid {
+							exitStatus, err := unix.PtraceGetEventMsg(pid)
+							if err == nil {
+								p.exitCode = int(exitStatus)
 							}
 						}
-						return nil
+
+						// Run the pre exit hook when this is the last thread in the process tree.
+						if len(trackedTIDs) == 1 && !preExitRun {
+							if p.hasPreExit {
+								log.Infof("Last thread pausing for exit. Running PreExit hooks.")
+								if err := p.executeHooks.RunHooks(attestation.StagePreExit, p.traceePid); err != nil {
+									log.Errorf("PreExit hooks failed: %v", err)
+								}
+							}
+							preExitRun = true
+						}
 					}
 				}
-				// If eventCode == 0, it is a REAL trap (int3).
-				// injectedSig remains SIGTRAP (5).
 			}
 
-			if err := unix.PtraceCont(p.traceePid, injectedSig); err != nil {
+			if err := unix.PtraceCont(pid, injectedSig); err != nil {
 				return fmt.Errorf("failed to continue with signal %d: %w", injectedSig, err)
 			}
 		}
 	}
+
+	if p.hasPreExit && !preExitRun {
+		log.Infof("Tree exited via fatal signal. Running fallback PreExit hooks.")
+		if err := p.executeHooks.RunHooks(attestation.StagePreExit, p.traceePid); err != nil {
+			log.Errorf("Fallback PreExit hooks failed: %v", err)
+		}
+	}
+
+	return nil
 }
 
 func (p *ptraceContext) retryOpenedFiles() {

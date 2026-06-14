@@ -20,16 +20,7 @@
 #include <bpf/bpf_helpers.h>
 
 #include "map_defs.h"
-
-#define MAX_PARENT_WALK 64
-
-static __always_inline __u64 get_injection_time(void) {
-    __u32 key = 0;
-    struct injection_time_val* val =
-        bpf_map_lookup_elem(&injection_time_map, &key);
-    if (val) return val->injection_time;
-    return 0;
-}
+#include "common.h"
 
 static __always_inline __u32 get_pid_ns(struct task_struct* task) {
   struct task_struct* leader = BPF_CORE_READ(task, group_leader);
@@ -39,71 +30,36 @@ static __always_inline __u32 get_pid_ns(struct task_struct* task) {
   return ns_pid;
 }
 
-// Check if current task or any ancestor is in pid_allowlist
-static __always_inline int is_pid_allowed(__u32 current_pid) {
-    struct task_struct* task = (struct task_struct*)bpf_get_current_task();
-    if (!task) return 0;
+static __always_inline __u32 get_tid_ns(struct task_struct* task) {
+  unsigned int level = BPF_CORE_READ(task, thread_pid, level);
+  __u32 ns_tid = BPF_CORE_READ(task, thread_pid, numbers[level].nr);
+  return ns_tid;
+}
 
-    __u64 injection_time = get_injection_time();
-    if (injection_time == 0) return 0;  // Not configured yet
-
-    // First check: is current PID directly in the allowlist?
-    // Use group_leader's start_boottime, not the current thread's.
-    // Go (and other runtimes) create OS threads via clone() on demand;
-    // these threads have start_boottime after injection_time even though
-    // the process (group leader) started before. The PID in the allowlist
-    // is the tgid (group leader), so the time check must match.
-    struct task_struct* leader = BPF_CORE_READ(task, group_leader);
-    __u64 start_time = BPF_CORE_READ(leader, start_boottime);
-
-    struct pid_allowlist_key key = {
-        .pid = current_pid,
+static __always_inline int is_tid_allowed(__u32 tid) {
+    struct tid_allowlist_key key = {
+        .tid = tid,
     };
 
-    struct pid_allowlist_val* val = bpf_map_lookup_elem(&pid_allowlist, &key);
-    // PID must be in allowlist AND must have started before injection_time
-    // This prevents matching a different process that reused this PID after
-    // monitoring started
-    if (val && start_time < injection_time) return 1;
-
-#pragma unroll
-    for (int i = 0; i < MAX_PARENT_WALK; i++) {
-        struct task_struct* parent = BPF_CORE_READ(task, real_parent);
-        if (!parent) break;
-
-        // tgid is the PID, getpid() returns tgid
-        __u32 parent_pid = get_pid_ns(parent);
-        if (parent_pid <= 1) break;
-
-        // Use parent's group_leader start_boottime for same reason as above:
-        // the PID we check is the tgid, so the time must be the process's, not the thread's
-        struct task_struct* parent_leader = BPF_CORE_READ(parent, group_leader);
-        __u64 parent_start_time = BPF_CORE_READ(parent_leader, start_boottime);
-
-        key.pid = parent_pid;
-
-        val = bpf_map_lookup_elem(&pid_allowlist, &key);
-        // Parent must be in allowlist, allow nested, AND started before
-        // injection_time
-        if (val && val->nested_allowed && parent_start_time < injection_time)
-            return 1;
-
-        task = parent;
-    }
+    struct tid_allowlist_val* val = bpf_map_lookup_elem(&tid_allowlist, &key);
+    if (val) return 1;
 
     return 0;
 }
 
-static __always_inline int should_intercept(__u32 pid, __u64 cgroup_id,
+static __always_inline int should_intercept(__u32 tid, __u64 cgroup_id,
                                             const char* comm) {
-    // Check PID allowlist (with subtree walk)
-    if (is_pid_allowed(pid)) {
+    DEBUG_LOG("should_intercept: ENTER tid=%d cgroup=%llu comm=%s", tid, cgroup_id, comm);
+
+    if (is_tid_allowed(tid)) {
+        DEBUG_LOG("should_intercept: ALLOWED tid=%d (tid_allowlist)", tid);
         return 1;
     }
 
     struct cgroup_allowlist_key cg_key = {.cgroup_id = cgroup_id};
     __u8* cg_val = bpf_map_lookup_elem(&cgroup_allowlist, &cg_key);
     if (cg_val != NULL) {
+        DEBUG_LOG("should_intercept: ALLOWED cgroup=%llu", cgroup_id);
         return 1;
     }
 
@@ -111,9 +67,11 @@ static __always_inline int should_intercept(__u32 pid, __u64 cgroup_id,
     __builtin_memcpy(comm_key.comm, comm, MAX_COMM_LEN);
     __u8* comm_val = bpf_map_lookup_elem(&comm_allowlist, &comm_key);
     if (comm_val != NULL) {
+        DEBUG_LOG("should_intercept: ALLOWED comm=%s", comm);
         return 1;
     }
 
+    DEBUG_LOG("should_intercept: DENIED tid=%d cgroup=%llu comm=%s", tid, cgroup_id, comm);
     return 0;
 }
 
