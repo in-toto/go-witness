@@ -23,11 +23,6 @@ type connectCommAllowlistKey struct {
 	Comm [16]int8
 }
 
-type connectInjectionTimeVal struct {
-	_             structs.HostLayout
-	InjectionTime uint64
-}
-
 type connectOrigDstKey struct {
 	_          structs.HostLayout
 	SockCookie uint64
@@ -61,12 +56,12 @@ type connectOrigDstValV6 struct {
 	Comm     [16]int8
 }
 
-type connectPidAllowlistKey struct {
+type connectTidAllowlistKey struct {
 	_   structs.HostLayout
-	Pid uint32
+	Tid uint32
 }
 
-type connectPidAllowlistVal struct {
+type connectTidAllowlistVal struct {
 	_             structs.HostLayout
 	NestedAllowed uint8
 }
@@ -148,10 +143,10 @@ type connectProgramSpecs struct {
 type connectMapSpecs struct {
 	CgroupAllowlist    *ebpf.MapSpec `ebpf:"cgroup_allowlist"`
 	CommAllowlist      *ebpf.MapSpec `ebpf:"comm_allowlist"`
-	InjectionTimeMap   *ebpf.MapSpec `ebpf:"injection_time_map"`
 	OrigDstMap         *ebpf.MapSpec `ebpf:"orig_dst_map"`
 	OrigDstMapV6       *ebpf.MapSpec `ebpf:"orig_dst_map_v6"`
-	PidAllowlist       *ebpf.MapSpec `ebpf:"pid_allowlist"`
+	PendingExecs       *ebpf.MapSpec `ebpf:"pending_execs"`
+	TidAllowlist       *ebpf.MapSpec `ebpf:"tid_allowlist"`
 	TupleToCookieMap   *ebpf.MapSpec `ebpf:"tuple_to_cookie_map"`
 	TupleToCookieMapV6 *ebpf.MapSpec `ebpf:"tuple_to_cookie_map_v6"`
 }
@@ -187,10 +182,10 @@ func (o *connectObjects) Close() error {
 type connectMaps struct {
 	CgroupAllowlist    *ebpf.Map `ebpf:"cgroup_allowlist"`
 	CommAllowlist      *ebpf.Map `ebpf:"comm_allowlist"`
-	InjectionTimeMap   *ebpf.Map `ebpf:"injection_time_map"`
 	OrigDstMap         *ebpf.Map `ebpf:"orig_dst_map"`
 	OrigDstMapV6       *ebpf.Map `ebpf:"orig_dst_map_v6"`
-	PidAllowlist       *ebpf.Map `ebpf:"pid_allowlist"`
+	PendingExecs       *ebpf.Map `ebpf:"pending_execs"`
+	TidAllowlist       *ebpf.Map `ebpf:"tid_allowlist"`
 	TupleToCookieMap   *ebpf.Map `ebpf:"tuple_to_cookie_map"`
 	TupleToCookieMapV6 *ebpf.Map `ebpf:"tuple_to_cookie_map_v6"`
 }
@@ -199,10 +194,10 @@ func (m *connectMaps) Close() error {
 	return _ConnectClose(
 		m.CgroupAllowlist,
 		m.CommAllowlist,
-		m.InjectionTimeMap,
 		m.OrigDstMap,
 		m.OrigDstMapV6,
-		m.PidAllowlist,
+		m.PendingExecs,
+		m.TidAllowlist,
 		m.TupleToCookieMap,
 		m.TupleToCookieMapV6,
 	)
