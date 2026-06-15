@@ -1,4 +1,4 @@
-//go:build ignore
+// go:build ignore
 
 // Copyright 2026 The Witness Contributors
 //
@@ -214,7 +214,7 @@ int trace_sched_process_exec(struct trace_event_raw_sched_process_exec *ctx) {
 }
 
 SEC("tracepoint/sched/sched_process_exit")
-int trace_sched_process_exit(struct sched_process_exit_args *ctx) {
+int trace_sched_process_exit(struct trace_event_raw_sys_exit *ctx) {
 	if (!commandrun_in_target_cgroup()) {
 		return 0;
 	}
