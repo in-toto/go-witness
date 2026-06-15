@@ -3,6 +3,30 @@
   "$id": "https://github.com/in-toto/go-witness/attestation/networktrace/network-trace",
   "$ref": "#/$defs/NetworkTrace",
   "$defs": {
+    "ClientHelloInfo": {
+      "properties": {
+        "supported_versions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cipher_suites": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cipher_suite_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Config": {
       "properties": {
         "observe_pids": {
@@ -32,6 +56,21 @@
         "proxy_bind_ipv4": {
           "type": "string"
         },
+        "enabled_http_inspection": {
+          "type": "boolean"
+        },
+        "generate_ca": {
+          "type": "boolean"
+        },
+        "ca_cert_path": {
+          "type": "string"
+        },
+        "ca_key_path": {
+          "type": "string"
+        },
+        "skip_verify": {
+          "type": "boolean"
+        },
         "payload": {
           "$ref": "#/$defs/PayloadConfig"
         }
@@ -42,6 +81,9 @@
         "observe_child_tree",
         "proxy_port",
         "proxy_bind_ipv4",
+        "enabled_http_inspection",
+        "generate_ca",
+        "skip_verify",
         "payload"
       ]
     },
@@ -64,8 +106,20 @@
         "process": {
           "$ref": "#/$defs/ProcessInfo"
         },
+        "source": {
+          "$ref": "#/$defs/Endpoint"
+        },
         "destination": {
           "$ref": "#/$defs/Endpoint"
+        },
+        "tls": {
+          "$ref": "#/$defs/TLSInfo"
+        },
+        "http_exchanges": {
+          "items": {
+            "$ref": "#/$defs/HTTPExchange"
+          },
+          "type": "array"
         },
         "tcp_payloads": {
           "items": {
@@ -79,6 +133,9 @@
         "bytes_received": {
           "type": "integer"
         },
+        "intercepted": {
+          "type": "boolean"
+        },
         "error": {
           "type": "string"
         }
@@ -90,9 +147,11 @@
         "protocol",
         "start_time",
         "process",
+        "source",
         "destination",
         "bytes_sent",
-        "bytes_received"
+        "bytes_received",
+        "intercepted"
       ]
     },
     "Endpoint": {
@@ -115,9 +174,97 @@
         "port"
       ]
     },
+    "HTTPExchange": {
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "request": {
+          "$ref": "#/$defs/HTTPRequest"
+        },
+        "response": {
+          "$ref": "#/$defs/HTTPResponse"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "timestamp",
+        "request"
+      ]
+    },
+    "HTTPRequest": {
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "body": {
+          "$ref": "#/$defs/Payload"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "method",
+        "url",
+        "host",
+        "body"
+      ]
+    },
+    "HTTPResponse": {
+      "properties": {
+        "status_code": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "body": {
+          "$ref": "#/$defs/Payload"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "status_code",
+        "status",
+        "body"
+      ]
+    },
     "NetworkSummary": {
       "properties": {
         "total_connections": {
+          "type": "integer"
+        },
+        "intercepted_count": {
+          "type": "integer"
+        },
+        "metadata_only_count": {
           "type": "integer"
         },
         "protocol_counts": {
@@ -149,6 +296,8 @@
       "type": "object",
       "required": [
         "total_connections",
+        "intercepted_count",
+        "metadata_only_count",
         "protocol_counts",
         "unique_hosts",
         "unique_ips",
@@ -177,6 +326,9 @@
         },
         "config": {
           "$ref": "#/$defs/Config"
+        },
+        "ca_cert_pem": {
+          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -270,6 +422,24 @@
         "direction",
         "payload"
       ]
+    },
+    "TLSInfo": {
+      "properties": {
+        "sni": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "cipher_suite": {
+          "type": "string"
+        },
+        "client_hello": {
+          "$ref": "#/$defs/ClientHelloInfo"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
     }
   }
 }
