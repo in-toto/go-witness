@@ -29,10 +29,17 @@
 #define SOCK_DGRAM 2
 #endif
 
+#ifndef SIGSTOP
+#define SIGSTOP 19
+#endif
+
 // Default Proxy configuration
 // Userspace can override the volatile variables
 #define PROXY_PORT_TCP 8888
 #define PROXY_IP 0x0100007F  // 127.0.0.1 in network byte order (big endian)
+
+#define PROXY_NOT_READY 0
+#define PROXY_READY 1
 
 #define LOG(fmt, ...) bpf_printk(fmt, ##__VA_ARGS__)
 
