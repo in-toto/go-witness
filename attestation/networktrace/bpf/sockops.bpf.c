@@ -26,10 +26,12 @@
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
-volatile const __u32 host_netns_inum = 0;  // to be set from user-space
-
 SEC("sockops")
 int tcp_sockops(struct bpf_sock_ops* skops) {
+    if (is_tracing_disabled()) {
+        return 1;
+    }
+
     __u32 op = skops->op;
 
     if (op != BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB &&
@@ -54,17 +56,14 @@ int tcp_sockops(struct bpf_sock_ops* skops) {
     __u32 tid = get_tid_ns(task);  // TID for allowlist check
     __u32 pid = get_pid_ns(task);  // PID for metadata
     __u64 cgroup_id = bpf_get_current_cgroup_id();
-
-
-    DEBUG_LOG("sockops: CHECK tid=%d pid=%d cgroup=%llu comm=%s", tid, pid, cgroup_id, comm);
-    int intercept_result = should_intercept(tid, cgroup_id, comm);
-    if (!intercept_result) {
-        return 1;
-    }
     __u32 netns_inum = get_netns_inum(task);
-    if (host_netns_inum != 0 && netns_inum != host_netns_inum) {
-        // Not in the host network namespace
-        DEBUG_LOG("sockops: SKIP diff-netns pid=%d comm=%s", pid, comm);
+    __u32 pid_ns_inum = get_pid_ns_inum(task);
+
+
+    DEBUG_LOG("sockops: CHECK pid_ns=%u tid=%d pid=%d cgroup=%llu comm=%s", pid_ns_inum, tid, pid, cgroup_id, comm);
+
+    int intercept_result = should_intercept(pid_ns_inum, netns_inum, tid, cgroup_id, comm);
+    if (!intercept_result) {
         return 1;
     }
 
@@ -184,6 +183,10 @@ int tcp_sockops(struct bpf_sock_ops* skops) {
                             LOG("sockops: PASSIVE_EST LINKED pid=%d dst=%x:%d",
                                 pid, orig_val->orig_ip, orig_val->orig_port);
                         }
+
+                        // Delete the client-cookie entry so a recycled socket
+                        // cookie never blocks a future connect.
+                        bpf_map_delete_elem(&orig_dst_map, &orig_key);
                     } else {
                         DEBUG_LOG(
                             "sockops: WARN PASSIVE_EST no orig_dst cookie=%llu",
@@ -239,6 +242,8 @@ int tcp_sockops(struct bpf_sock_ops* skops) {
                             LOG("sockops: PASSIVE_EST v6 LINKED pid=%d port=%d",
                                 pid, orig_val->orig_port);
                         }
+
+                        bpf_map_delete_elem(&orig_dst_map_v6, &orig_key);
                     } else {
                         DEBUG_LOG(
                             "sockops: WARN PASSIVE_EST v6 no orig_dst "

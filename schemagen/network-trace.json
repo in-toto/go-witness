@@ -56,6 +56,9 @@
         "proxy_bind_ipv4": {
           "type": "string"
         },
+        "max_stop_duration_ms": {
+          "type": "integer"
+        },
         "enabled_http_inspection": {
           "type": "boolean"
         },
@@ -81,6 +84,7 @@
         "observe_child_tree",
         "proxy_port",
         "proxy_bind_ipv4",
+        "max_stop_duration_ms",
         "enabled_http_inspection",
         "generate_ca",
         "skip_verify",

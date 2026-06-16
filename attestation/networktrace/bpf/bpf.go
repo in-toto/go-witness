@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"strconv"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -66,6 +68,14 @@ func GetCurrentNetns() (uint32, error) {
 	var stat unix.Stat_t
 	if err := unix.Stat("/proc/self/ns/net", &stat); err != nil {
 		return 0, fmt.Errorf("stat /proc/self/ns/net: %w", err)
+	}
+	return uint32(stat.Ino), nil
+}
+
+func GetCurrentPidNs() (uint32, error) {
+	var stat unix.Stat_t
+	if err := unix.Stat("/proc/self/ns/pid", &stat); err != nil {
+		return 0, fmt.Errorf("stat /proc/self/ns/pid: %w", err)
 	}
 	return uint32(stat.Ino), nil
 }
@@ -123,8 +133,13 @@ func Load(cfg LoadConfig) (*State, error) {
 	if err := connectSpec.Variables["proxy_ip"].Set(proxyIPUint32); err != nil {
 		return nil, fmt.Errorf("set proxy_ip in connect: %w", err)
 	}
-	if err := connectSpec.Variables["host_netns_inum"].Set(hostNetnsInum); err != nil {
-		return nil, fmt.Errorf("set host_netns_inum in connect: %w", err)
+
+	witnessPidNsInum, err := GetCurrentPidNs()
+	if err != nil {
+		return nil, fmt.Errorf("get current pid ns: %w", err)
+	}
+	if err := connectSpec.Variables["witness_pid_ns_inum"].Set(witnessPidNsInum); err != nil {
+		return nil, fmt.Errorf("set witness_pid_ns_inum in connect: %w", err)
 	}
 
 	var connectObjs connectObjects
@@ -138,20 +153,26 @@ func Load(cfg LoadConfig) (*State, error) {
 		return nil, fmt.Errorf("load sockops spec: %w", err)
 	}
 
-	if err := sockopsSpec.Variables["host_netns_inum"].Set(hostNetnsInum); err != nil {
+	if err := sockopsSpec.Variables["witness_pid_ns_inum"].Set(witnessPidNsInum); err != nil {
 		connectObjs.Close()
-		return nil, fmt.Errorf("set host_netns_inum in sockops: %w", err)
+		return nil, fmt.Errorf("set witness_pid_ns_inum in sockops: %w", err)
 	}
 
 	sockopsOpts := ebpf.CollectionOptions{
 		MapReplacements: map[string]*ebpf.Map{
-			"orig_dst_map":           connectObjs.OrigDstMap,
-			"orig_dst_map_v6":        connectObjs.OrigDstMapV6,
-			"tid_allowlist":          connectObjs.TidAllowlist,
-			"comm_allowlist":         connectObjs.CommAllowlist,
-			"cgroup_allowlist":       connectObjs.CgroupAllowlist,
-			"tuple_to_cookie_map":    connectObjs.TupleToCookieMap,
-			"tuple_to_cookie_map_v6": connectObjs.TupleToCookieMapV6,
+			"orig_dst_map":                 connectObjs.OrigDstMap,
+			"orig_dst_map_v6":              connectObjs.OrigDstMapV6,
+			"witness_pid_ns_tid_allowlist": connectObjs.WitnessPidNsTidAllowlist,
+			"comm_allowlist":               connectObjs.CommAllowlist,
+			"cgroup_allowlist":             connectObjs.CgroupAllowlist,
+			"tuple_to_cookie_map":          connectObjs.TupleToCookieMap,
+			"tuple_to_cookie_map_v6":       connectObjs.TupleToCookieMapV6,
+			"control_map":                  connectObjs.ControlMap,
+			"tracked_pid_ns_map":           connectObjs.TrackedPidNsMap,
+			"proxy_state_map":              connectObjs.ProxyStateMap,
+			"gate_map":                     connectObjs.GateMap,
+			"pending_execs":                connectObjs.PendingExecs,
+			"witness_pid_ns_level_map":     connectObjs.WitnessPidNsLevelMap,
 		},
 	}
 
@@ -168,9 +189,29 @@ func Load(cfg LoadConfig) (*State, error) {
 		return nil, fmt.Errorf("load task_tracker spec: %w", err)
 	}
 
+	if err := taskTrackerSpec.Variables["witness_pid_ns_inum"].Set(witnessPidNsInum); err != nil {
+		connectObjs.Close()
+		sockopsObjs.Close()
+		return nil, fmt.Errorf("set witness_pid_ns_inum in task_tracker: %w", err)
+	}
+
+	// All maps are not used by every bpf program, but all import the same header
+	// so replacing all maps to avoid redundant duplication of maps.
 	taskTrackerOpts := ebpf.CollectionOptions{
 		MapReplacements: map[string]*ebpf.Map{
-			"tid_allowlist": connectObjs.TidAllowlist,
+			"witness_pid_ns_tid_allowlist": connectObjs.WitnessPidNsTidAllowlist,
+			"control_map":                  connectObjs.ControlMap,
+			"tracked_pid_ns_map":           connectObjs.TrackedPidNsMap,
+			"proxy_state_map":              connectObjs.ProxyStateMap,
+			"gate_map":                     connectObjs.GateMap,
+			"pending_execs":                connectObjs.PendingExecs,
+			"witness_pid_ns_level_map":     connectObjs.WitnessPidNsLevelMap,
+			"cgroup_allowlist":             connectObjs.CgroupAllowlist,
+			"comm_allowlist":               connectObjs.CommAllowlist,
+			"orig_dst_map":                 connectObjs.OrigDstMap,
+			"orig_dst_map_v6":              connectObjs.OrigDstMapV6,
+			"tuple_to_cookie_map":          connectObjs.TupleToCookieMap,
+			"tuple_to_cookie_map_v6":       connectObjs.TupleToCookieMapV6,
 		},
 	}
 
@@ -197,13 +238,19 @@ func Load(cfg LoadConfig) (*State, error) {
 	// Close() can tear them down in reverse (links first, then progs/maps).
 	state := &State{
 		Maps: &Maps{
-			OrigDstMap:       connectObjs.OrigDstMap,
-			OrigDstMapV6:     connectObjs.OrigDstMapV6,
-			TIDAllowlist:     connectObjs.TidAllowlist,
-			CommAllowlist:    connectObjs.CommAllowlist,
-			CgroupAllowlist:  connectObjs.CgroupAllowlist,
-			TupleCookieMap:   connectObjs.TupleToCookieMap,
-			TupleCookieMapV6: connectObjs.TupleToCookieMapV6,
+			OrigDstMap:               connectObjs.OrigDstMap,
+			OrigDstMapV6:             connectObjs.OrigDstMapV6,
+			WitnessPidNsTIDAllowlist: connectObjs.WitnessPidNsTidAllowlist,
+			CommAllowlist:            connectObjs.CommAllowlist,
+			CgroupAllowlist:          connectObjs.CgroupAllowlist,
+			TupleCookieMap:           connectObjs.TupleToCookieMap,
+			TupleCookieMapV6:         connectObjs.TupleToCookieMapV6,
+			GateMap:                  taskTrackerObjs.GateMap,
+			ProxyStateMap:            taskTrackerObjs.ProxyStateMap,
+			ControlMap:               taskTrackerObjs.ControlMap,
+			TrackedPidNsMap:          connectObjs.TrackedPidNsMap,
+			WitnessPidNsLevelMap:     taskTrackerObjs.WitnessPidNsLevelMap,
+			HostNetnsInum:            hostNetnsInum,
 		},
 	}
 
@@ -281,18 +328,62 @@ func Load(cfg LoadConfig) (*State, error) {
 	}
 	state.closers = append(state.closers, execveatExitLink)
 
+	// Network-namespace gate anchors
+	cloneExitLink, err := link.Tracepoint("syscalls", "sys_exit_clone", taskTrackerObjs.SysExitClone, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sys_exit_clone tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, cloneExitLink)
+
+	clone3ExitLink, err := link.Tracepoint("syscalls", "sys_exit_clone3", taskTrackerObjs.SysExitClone3, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sys_exit_clone3 tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, clone3ExitLink)
+
+	unshareExitLink, err := link.Tracepoint("syscalls", "sys_exit_unshare", taskTrackerObjs.SysExitUnshare, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sys_exit_unshare tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, unshareExitLink)
+
+	setnsExitLink, err := link.Tracepoint("syscalls", "sys_exit_setns", taskTrackerObjs.SysExitSetns, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sys_exit_setns tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, setnsExitLink)
+
 	return state, nil
 }
 
 // Maps holds references to BPF maps with typed accessor methods.
 type Maps struct {
-	OrigDstMap       *ebpf.Map
-	OrigDstMapV6     *ebpf.Map
-	TIDAllowlist     *ebpf.Map
-	CommAllowlist    *ebpf.Map
-	CgroupAllowlist  *ebpf.Map
-	TupleCookieMap   *ebpf.Map
-	TupleCookieMapV6 *ebpf.Map
+	OrigDstMap               *ebpf.Map
+	OrigDstMapV6             *ebpf.Map
+	WitnessPidNsTIDAllowlist *ebpf.Map
+	CommAllowlist            *ebpf.Map
+	CgroupAllowlist          *ebpf.Map
+	TupleCookieMap           *ebpf.Map
+	TupleCookieMapV6         *ebpf.Map
+
+	// Execve-gate coordination maps (owned by task_tracker).
+	GateMap       *ebpf.Map
+	ProxyStateMap *ebpf.Map
+	ControlMap    *ebpf.Map
+
+	// PID namespaces created by tracked processes.
+	TrackedPidNsMap *ebpf.Map
+
+	// Cached absolute level of the witness PID namespace (populated by BPF).
+	WitnessPidNsLevelMap *ebpf.Map
+
+	// HostNetnsInum is the inode of the network namespace the daemon runs in.
+	// Seed allowlist entries (host PIDs from user config) are keyed against it.
+	HostNetnsInum uint32
 }
 
 // LookupOrigDst looks up original destination metadata for an IPv4 connection by socket cookie.
@@ -315,23 +406,72 @@ func (m *Maps) LookupOrigDstV6(sockCookie uint64) (*ConnectionMetadata, error) {
 	return val.ToConnectionMetadata(sockCookie), nil
 }
 
+// ConsumeOrigDst atomically looks up and removes IPv4 original destination
+// metadata for a socket cookie. Using LookupAndDelete avoids the lookup-then-
+// delete TOCTOU and prevents a recycled cookie from reading stale metadata.
+func (m *Maps) ConsumeOrigDst(sockCookie uint64) (*ConnectionMetadata, error) {
+	key := connectOrigDstKey{SockCookie: sockCookie}
+	var val connectOrigDstVal
+	if err := m.OrigDstMap.LookupAndDelete(&key, &val); err != nil {
+		return nil, err
+	}
+	return val.ToConnectionMetadata(sockCookie), nil
+}
+
+// ConsumeOrigDstV6 atomically looks up and removes IPv6 original destination
+// metadata for a socket cookie.
+func (m *Maps) ConsumeOrigDstV6(sockCookie uint64) (*ConnectionMetadata, error) {
+	key := connectOrigDstKeyV6{SockCookie: sockCookie}
+	var val connectOrigDstValV6
+	if err := m.OrigDstMapV6.LookupAndDelete(&key, &val); err != nil {
+		return nil, err
+	}
+	return val.ToConnectionMetadata(sockCookie), nil
+}
+
 // LoadUserConfig loads the user configuration into the BPF maps.
-// PIDs are added to tid_allowlist, and child processes are automatically
-// tracked via sched_process_fork tracepoint.
+// PIDs are added to witness_pid_ns_tid_allowlist, and child processes are
+// automatically tracked via sched_process_fork tracepoint.
 func (m *Maps) LoadUserConfig(config types.Config) error {
 	for _, pid := range config.ObservePIDs {
-		key := connectTidAllowlistKey{
+		key := connectWitnessPidNsTidKey{
 			Tid: pid,
 		}
-		val := connectTidAllowlistVal{
+		val := connectWitnessPidNsTidVal{
 			NestedAllowed: 0,
 		}
 		if config.ObserveChildTree {
 			val.NestedAllowed = 1
 		}
 
-		if err := m.TIDAllowlist.Put(&key, &val); err != nil {
-			return fmt.Errorf("put pid %d in tid_allowlist: %w", pid, err)
+		if err := m.WitnessPidNsTIDAllowlist.Put(&key, &val); err != nil {
+			return fmt.Errorf("put pid %d in witness_pid_ns_tid_allowlist: %w", pid, err)
+		}
+
+		// Daemons like dockerd and containerd are multi-threaded:
+		// worker threads fork children, not the group leader itself.
+		// Enumerate all threads under /proc/<pid>/task/ and add
+		// each TID so the fork handler propagates child-tree tracking
+		// from any thread.
+		// It is assumed that the background daemon wouldn't spawn more threads
+		// before the command execution which is being traced, so this is a one-time enumeration.
+		taskDir := fmt.Sprintf("/proc/%d/task", pid)
+		entries, err := os.ReadDir(taskDir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			tid, err := strconv.Atoi(entry.Name())
+			if err != nil || uint32(tid) == pid {
+				continue
+			}
+			key.Tid = uint32(tid)
+			if err := m.WitnessPidNsTIDAllowlist.Put(&key, &val); err != nil {
+				return fmt.Errorf("put tid %d (thread of pid %d) in witness_pid_ns_tid_allowlist: %w", tid, pid, err)
+			}
 		}
 	}
 
@@ -390,6 +530,17 @@ func GetBootTimeNs() (uint64, error) {
 	var ts unix.Timespec
 	if err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &ts); err != nil {
 		return 0, fmt.Errorf("clock_gettime CLOCK_BOOTTIME: %w", err)
+	}
+	return uint64(ts.Sec)*1e9 + uint64(ts.Nsec), nil
+}
+
+// GetMonotonicNs returns CLOCK_MONOTONIC in nanoseconds. This matches the clock
+// used by bpf_ktime_get_ns(), so it must be used to age gate entries whose
+// stop_ts_ns was stamped in eBPF.
+func GetMonotonicNs() (uint64, error) {
+	var ts unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err != nil {
+		return 0, fmt.Errorf("clock_gettime CLOCK_MONOTONIC: %w", err)
 	}
 	return uint64(ts.Sec)*1e9 + uint64(ts.Nsec), nil
 }

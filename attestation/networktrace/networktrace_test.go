@@ -26,7 +26,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -150,6 +152,17 @@ func assertNoAttestorErrors(t *testing.T, ctx *attestation.AttestationContext) {
 	}
 }
 
+func newCmd(withTracing bool, command []string) *commandrun.CommandRun {
+	opts := []commandrun.Option{
+		commandrun.WithCommand(command),
+		commandrun.WithSilent(false),
+	}
+	if withTracing {
+		opts = append(opts, commandrun.WithTracing(true))
+	}
+	return commandrun.New(opts...)
+}
+
 type testTCPServer struct {
 	listener     net.Listener
 	port         int
@@ -203,333 +216,249 @@ func (s *testTCPServer) wait() {
 }
 
 func TestIntegrationNetworkTrace(t *testing.T) {
-	skipIfNotRoot(t)
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			skipIfNotRoot(t)
 
-	clientRequest := "PING"
-	serverResponse := "PONG"
+			clientRequest := "PING"
+			serverResponse := "PONG"
 
-	requestHash := sha256.Sum256([]byte(clientRequest))
-	requestHashHex := hex.EncodeToString(requestHash[:])
-	responseHash := sha256.Sum256([]byte(serverResponse))
-	responseHashHex := hex.EncodeToString(responseHash[:])
+			requestHash := sha256.Sum256([]byte(clientRequest))
+			requestHashHex := hex.EncodeToString(requestHash[:])
+			responseHash := sha256.Sum256([]byte(serverResponse))
+			responseHashHex := hex.EncodeToString(responseHash[:])
 
-	server := newTestTCPServer(t, testServerPort, []byte(serverResponse))
-	defer server.wait()
+			server := newTestTCPServer(t, testServerPort, []byte(serverResponse))
+			defer server.wait()
 
-	config := types.Config{
-		ProxyPort:        testProxyPort,
-		ProxyBindIPv4:    "127.0.0.1",
-		ObserveChildTree: true,
-		Payload: types.PayloadConfig{
-			RecordPayload:     true,
-			RecordPayloadHash: true,
-			MaxPayloadSize:    1024 * 1024,
-		},
-		EnableHTTPInspection: false,
+			config := types.Config{
+				ProxyPort:        testProxyPort,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: true,
+				Payload: types.PayloadConfig{
+					RecordPayload:     true,
+					RecordPayloadHash: true,
+					MaxPayloadSize:    1024 * 1024,
+				},
+				EnableHTTPInspection: false,
+			}
+
+			networkAttestor := NewWithConfig(config)
+
+			cmd := newCmd(withTracing, []string{
+				"sh", "-c",
+				fmt.Sprintf("echo -n '%s' | nc -q 1 127.0.0.1 %d", clientRequest, testServerPort),
+			})
+
+			ctx, err := attestation.NewContext("test-networktrace", []attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+			assertNoAttestorErrors(t, ctx)
+
+			receivedData := <-server.receivedData
+			assert.Equal(t, []byte(clientRequest), receivedData, "Server should receive exact request data")
+
+			assert.False(t, networkAttestor.NetworkTrace.StartTime.IsZero())
+			assert.False(t, networkAttestor.NetworkTrace.EndTime.IsZero())
+			assert.True(t, networkAttestor.NetworkTrace.EndTime.After(networkAttestor.NetworkTrace.StartTime))
+
+			assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should record one connection")
+
+			conn := networkAttestor.NetworkTrace.Connections[0]
+			assert.Equal(t, "tcp", conn.Protocol)
+			assert.Equal(t, uint16(testServerPort), conn.Destination.Port)
+			assert.Equal(t, uint64(len(clientRequest)), conn.BytesSent)
+			assert.Equal(t, uint64(len(serverResponse)), conn.BytesReceived)
+
+			assert.NotZero(t, conn.Process.PID, "Connection should record process PID")
+			assert.Equal(t, "nc", conn.Process.Comm, "Connection should record process command name")
+			assert.NotZero(t, conn.Process.CgroupID, "Connection should record process CgroupID")
+
+			assert.Len(t, conn.TCPPayloads, 2, "Should record two payloads (request and response)")
+
+			clientPayload := conn.TCPPayloads[0]
+			assert.Equal(t, "client_to_server", clientPayload.Direction)
+			assert.Equal(t, int64(len(clientRequest)), clientPayload.Payload.Size)
+			assert.Equal(t, clientRequest, string(clientPayload.Payload.Data))
+			assert.Equal(t, requestHashHex, clientPayload.Payload.Hash)
+
+			serverPayload := conn.TCPPayloads[1]
+			assert.Equal(t, "server_to_client", serverPayload.Direction)
+			assert.Equal(t, int64(len(serverResponse)), serverPayload.Payload.Size)
+			assert.Equal(t, serverResponse, string(serverPayload.Payload.Data))
+			assert.Equal(t, responseHashHex, serverPayload.Payload.Hash)
+		})
 	}
-
-	networkAttestor := NewWithConfig(config)
-
-	cmd := commandrun.New(
-		commandrun.WithCommand([]string{
-			"sh", "-c",
-			fmt.Sprintf("echo -n '%s' | nc -q 1 127.0.0.1 %d", clientRequest, testServerPort),
-		}),
-		commandrun.WithSilent(false),
-	)
-
-	ctx, err := attestation.NewContext("test-networktrace", []attestation.Attestor{cmd, networkAttestor})
-	require.NoError(t, err)
-
-	err = ctx.RunAttestors()
-	require.NoError(t, err)
-	assertNoAttestorErrors(t, ctx)
-
-	receivedData := <-server.receivedData
-	assert.Equal(t, []byte(clientRequest), receivedData, "Server should receive exact request data")
-
-	assert.False(t, networkAttestor.NetworkTrace.StartTime.IsZero())
-	assert.False(t, networkAttestor.NetworkTrace.EndTime.IsZero())
-	assert.True(t, networkAttestor.NetworkTrace.EndTime.After(networkAttestor.NetworkTrace.StartTime))
-
-	// Realistically the server should see only one connection
-	assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should record one connection")
-
-	conn := networkAttestor.NetworkTrace.Connections[0]
-	assert.Equal(t, "tcp", conn.Protocol)
-	assert.Equal(t, uint16(testServerPort), conn.Destination.Port)
-	assert.Equal(t, uint64(len(clientRequest)), conn.BytesSent)
-	assert.Equal(t, uint64(len(serverResponse)), conn.BytesReceived)
-
-	// Verify process info
-	assert.NotZero(t, conn.Process.PID, "Connection should record process PID")
-	assert.Equal(t, "nc", conn.Process.Comm, "Connection should record process command name")
-	assert.NotZero(t, conn.Process.CgroupID, "Connection should record process CgroupID")
-
-	// Verify payloads
-	assert.Len(t, conn.TCPPayloads, 2, "Should record two payloads (request and response)")
-
-	// Verify client to server payload
-	clientPayload := conn.TCPPayloads[0]
-	assert.Equal(t, "client_to_server", clientPayload.Direction)
-	assert.Equal(t, int64(len(clientRequest)), clientPayload.Payload.Size)
-	assert.Equal(t, clientRequest, string(clientPayload.Payload.Data))
-	assert.Equal(t, requestHashHex, clientPayload.Payload.Hash)
-
-	// Verify server to client payload
-	serverPayload := conn.TCPPayloads[1]
-	assert.Equal(t, "server_to_client", serverPayload.Direction)
-	assert.Equal(t, int64(len(serverResponse)), serverPayload.Payload.Size)
-	assert.Equal(t, serverResponse, string(serverPayload.Payload.Data))
-	assert.Equal(t, responseHashHex, serverPayload.Payload.Hash)
 }
 
 func TestIntegrationZeroByteConnection(t *testing.T) {
-	skipIfNotRoot(t)
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			skipIfNotRoot(t)
 
-	const zeroByteServerPort = 19877
+			const zeroByteServerPort = 19877
 
-	server := newTestTCPServer(t, zeroByteServerPort, nil)
-	defer server.wait()
+			server := newTestTCPServer(t, zeroByteServerPort, nil)
+			defer server.wait()
 
-	config := types.Config{
-		ProxyPort:        testProxyPort + 1,
-		ProxyBindIPv4:    "127.0.0.1",
-		ObserveChildTree: true,
-		Payload: types.PayloadConfig{
-			RecordPayload:     true,
-			RecordPayloadHash: true,
-			MaxPayloadSize:    1024,
-		},
-		EnableHTTPInspection: false,
+			config := types.Config{
+				ProxyPort:        testProxyPort + 1,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: true,
+				Payload: types.PayloadConfig{
+					RecordPayload:     true,
+					RecordPayloadHash: true,
+					MaxPayloadSize:    1024,
+				},
+				EnableHTTPInspection: false,
+			}
+
+			networkAttestor := NewWithConfig(config)
+
+			cmd := newCmd(withTracing, []string{
+				"sh", "-c",
+				fmt.Sprintf("nc -w 1 127.0.0.1 %d < /dev/null || true", zeroByteServerPort),
+			})
+
+			ctx, err := attestation.NewContext("test-zero", []attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+			assertNoAttestorErrors(t, ctx)
+
+			receivedData := <-server.receivedData
+			assert.Equal(t, []byte{}, receivedData, "Server should receive zero-byte data")
+
+			assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should record one connection")
+			conn := networkAttestor.NetworkTrace.Connections[0]
+			assert.Equal(t, uint64(0), conn.BytesSent, "Should record zero bytes sent")
+			assert.Equal(t, uint64(0), conn.BytesReceived, "Should record zero bytes received")
+			assert.Len(t, conn.TCPPayloads, 2, "Should record two payloads (even if zero-byte)")
+
+			clientPayload := conn.TCPPayloads[0]
+			assert.Equal(t, "client_to_server", clientPayload.Direction)
+			assert.Equal(t, int64(0), clientPayload.Payload.Size)
+			assert.Equal(t, "", string(clientPayload.Payload.Data))
+			assert.Equal(t, "", clientPayload.Payload.Hash)
+
+			serverPayload := conn.TCPPayloads[1]
+			assert.Equal(t, "server_to_client", serverPayload.Direction)
+			assert.Equal(t, int64(0), serverPayload.Payload.Size)
+			assert.Equal(t, "", string(serverPayload.Payload.Data))
+			assert.Equal(t, "", serverPayload.Payload.Hash)
+		})
 	}
-
-	networkAttestor := NewWithConfig(config)
-
-	// Connect but send nothing (< /dev/null)
-	cmd := commandrun.New(
-		commandrun.WithCommand([]string{
-			"sh", "-c",
-			fmt.Sprintf("nc -w 1 127.0.0.1 %d < /dev/null || true", zeroByteServerPort),
-		}),
-		commandrun.WithSilent(false),
-	)
-
-	ctx, err := attestation.NewContext("test-zero", []attestation.Attestor{cmd, networkAttestor})
-	require.NoError(t, err)
-
-	err = ctx.RunAttestors()
-	require.NoError(t, err)
-	assertNoAttestorErrors(t, ctx)
-
-	receivedData := <-server.receivedData
-	assert.Equal(t, []byte{}, receivedData, "Server should receive zero-byte data")
-
-	assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should record one connection")
-	conn := networkAttestor.NetworkTrace.Connections[0]
-	assert.Equal(t, uint64(0), conn.BytesSent, "Should record zero bytes sent")
-	assert.Equal(t, uint64(0), conn.BytesReceived, "Should record zero bytes received")
-	assert.Len(t, conn.TCPPayloads, 2, "Should record two payloads (even if zero-byte)")
-
-	// Verify client to server payload
-	clientPayload := conn.TCPPayloads[0]
-	assert.Equal(t, "client_to_server", clientPayload.Direction)
-	assert.Equal(t, int64(0), clientPayload.Payload.Size)
-	assert.Equal(t, "", string(clientPayload.Payload.Data))
-	assert.Equal(t, "", clientPayload.Payload.Hash)
-
-	// Verify server to client payload
-	serverPayload := conn.TCPPayloads[1]
-	assert.Equal(t, "server_to_client", serverPayload.Direction)
-	assert.Equal(t, int64(0), serverPayload.Payload.Size)
-	assert.Equal(t, "", string(serverPayload.Payload.Data))
-	assert.Equal(t, "", serverPayload.Payload.Hash)
 }
 
 func TestIntegrationHangingConnectionTeardown(t *testing.T) {
-	skipIfNotRoot(t)
-
-	const hangServerPort = 19878
-
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", hangServerPort))
-	require.NoError(t, err)
-	defer listener.Close()
-
-	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
 		}
-		// Read a little data so we know the client connected
-		buf := make([]byte, 1)
-		_, _ = conn.Read(buf)
+		t.Run(name, func(t *testing.T) {
+			skipIfNotRoot(t)
 
-		// simulate a server that keeps the connection alive indefinitely.
-		time.Sleep(1 * time.Hour)
-	}()
+			const hangServerPort = 19878
 
-	config := types.Config{
-		ProxyPort:        testProxyPort + 2,
-		ProxyBindIPv4:    "127.0.0.1",
-		ObserveChildTree: true,
-		Payload: types.PayloadConfig{
-			RecordPayload:     true,
-			RecordPayloadHash: true,
-			MaxPayloadSize:    1024,
-		},
-		EnableHTTPInspection: false,
-	}
-	networkAttestor := NewWithConfig(config)
+			listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", hangServerPort))
+			require.NoError(t, err)
+			defer listener.Close()
 
-	// making sure the process itself does not hang
-	cmd := commandrun.New(
-		commandrun.WithCommand([]string{
-			"timeout", "0.2", "sh", "-c",
-			fmt.Sprintf("echo 'X' | nc 127.0.0.1 %d", hangServerPort),
-		}),
-		commandrun.WithSilent(false),
-	)
-
-	ctx, err := attestation.NewContext("test-hang", []attestation.Attestor{cmd, networkAttestor})
-	require.NoError(t, err)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- ctx.RunAttestors()
-	}()
-
-	select {
-	case err := <-done:
-		require.NoError(t, err, "Attestors should run successfully and shut down cleanly")
-
-		// command run actually fails due to timeout
-		foundCmdError := false
-		for _, ca := range ctx.CompletedAttestors() {
-			if ca.Attestor.Name() == "command-run" {
-				require.Error(t, ca.Error, "Expected command-run attestor to fail due to SIGKILL")
-				assert.Contains(t, ca.Error.Error(), "exit status 124", "Expected attestor to fail due to SIGKILL")
-				foundCmdError = true
-				break
-			}
-		}
-		require.True(t, foundCmdError, "command-run attestor not found in completed attestors")
-
-	case <-time.After(10 * time.Second):
-		t.Fatal("DEADLOCK DETECTED: Test timed out! The proxy failed to forcefully close lingering connections during shutdown, causing io.Copy to block forever.")
-	}
-}
-
-func TestIntegrationCurlHTTPS(t *testing.T) {
-	skipIfNotRoot(t)
-
-	// Start a test HTTPS server
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("Hello HTTPS"))
-	}))
-	defer server.Close()
-
-	// Parse server port
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-	_, portStr, err := net.SplitHostPort(serverURL.Host)
-	require.NoError(t, err)
-	serverPort, err := strconv.Atoi(portStr)
-	require.NoError(t, err)
-
-	config := types.Config{
-		ObserveChildTree: true,
-		ProxyPort:        testProxyPort + 2,
-		ProxyBindIPv4:    "127.0.0.1",
-		GenerateCA:       true,
-		CACertPath:       types.DefaultCaCertPath,
-		CAKeyPath:        types.DefaultCaKeyPath,
-		SkipVerify:       true, // Skip verifying upstream (httptest) cert
-		Payload: types.PayloadConfig{
-			RecordPayload:     true,
-			RecordPayloadHash: true,
-			MaxPayloadSize:    1024 * 1024,
-		},
-		EnableHTTPInspection: true,
-	}
-
-	networkAttestor := NewWithConfig(config)
-	log.SetLogger(log.ConsoleLogger{})
-
-	t.Cleanup(func() {
-		os.RemoveAll(filepath.Dir(types.DefaultCaCertPath))
-	})
-
-	// Use --resolve so curl connects to "localhost" (which sends SNI in the TLS
-	// ClientHello) while actually hitting 127.0.0.1:<port>.  The proxy's MITM
-	// cert will be generated for "localhost" thanks to the SNI.
-	// --cacert trusts the proxy CA for the MITM cert.
-	curlCmd := fmt.Sprintf(
-		"curl -s --cacert %s --resolve localhost:%d:127.0.0.1 https://localhost:%d/",
-		types.DefaultCaCertPath, serverPort, serverPort,
-	)
-
-	cmd := commandrun.New(
-		commandrun.WithCommand([]string{"sh", "-c", curlCmd}),
-		commandrun.WithSilent(false),
-	)
-
-	ctx, err := attestation.NewContext("test-https", []attestation.Attestor{cmd, networkAttestor})
-	require.NoError(t, err)
-
-	err = ctx.RunAttestors()
-	require.NoError(t, err)
-
-	require.NotEmpty(t, networkAttestor.NetworkTrace.Connections, "Should record at least one connection")
-
-	foundHTTPS := false
-	for _, conn := range networkAttestor.NetworkTrace.Connections {
-		if conn.Destination.Port == uint16(serverPort) {
-			foundHTTPS = true
-			assert.True(t, conn.Intercepted, "Connection should be marked as intercepted")
-
-			responseFound := false
-			for _, exchange := range conn.HTTPExchanges {
-				if exchange.Response != nil &&
-					string(exchange.Response.Body.Data) == "Hello HTTPS" {
-					responseFound = true
-					break
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
 				}
+				buf := make([]byte, 1)
+				_, _ = conn.Read(buf)
+
+				time.Sleep(1 * time.Hour)
+			}()
+
+			config := types.Config{
+				ProxyPort:        testProxyPort + 2,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: true,
+				Payload: types.PayloadConfig{
+					RecordPayload:     true,
+					RecordPayloadHash: true,
+					MaxPayloadSize:    1024,
+				},
+				EnableHTTPInspection: false,
 			}
-			if !responseFound {
-				for _, pl := range conn.TCPPayloads {
-					if string(pl.Payload.Data) == "Hello HTTPS" {
-						responseFound = true
+			networkAttestor := NewWithConfig(config)
+
+			cmd := newCmd(withTracing, []string{
+				"timeout", "0.2", "sh", "-c",
+				fmt.Sprintf("echo 'X' | nc 127.0.0.1 %d", hangServerPort),
+			})
+
+			ctx, err := attestation.NewContext("test-hang", []attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			done := make(chan error, 1)
+			go func() {
+				done <- ctx.RunAttestors()
+			}()
+
+			select {
+			case err := <-done:
+				require.NoError(t, err, "Attestors should run successfully and shut down cleanly")
+
+				foundCmdError := false
+				for _, ca := range ctx.CompletedAttestors() {
+					if ca.Attestor.Name() == "command-run" {
+						require.Error(t, ca.Error, "Expected command-run attestor to fail due to SIGKILL")
+						assert.Contains(t, ca.Error.Error(), "exit status 124", "Expected attestor to fail due to SIGKILL")
+						foundCmdError = true
 						break
 					}
 				}
+				require.True(t, foundCmdError, "command-run attestor not found in completed attestors")
+
+			case <-time.After(10 * time.Second):
+				t.Fatal("DEADLOCK DETECTED: Test timed out! The proxy failed to forcefully close lingering connections during shutdown, causing io.Copy to block forever.")
 			}
-			assert.True(t, responseFound, "Should capture decrypted HTTPS response body")
-			break
-		}
+		})
 	}
-	assert.True(t, foundHTTPS, "Should find the connection to test server on port %d", serverPort)
 }
 
 func TestIntegrationExecveGhostThread(t *testing.T) {
-	skipIfNotRoot(t)
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			skipIfNotRoot(t)
 
-	// This test forces a multi-threaded program to call execve from a background thread.
-	const testPort = 19880
-	server := newTestTCPServer(t, testPort, []byte("PONG"))
-	defer server.wait()
+			const testPort = 19880
+			server := newTestTCPServer(t, testPort, []byte("PONG"))
+			defer server.wait()
 
-	config := types.Config{
-		ProxyPort:        testProxyPort + 3,
-		ProxyBindIPv4:    "127.0.0.1",
-		ObserveChildTree: true,
-		Payload: types.PayloadConfig{
-			RecordPayload: true,
-		},
-	}
-	networkAttestor := NewWithConfig(config)
+			config := types.Config{
+				ProxyPort:        testProxyPort + 3,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: true,
+				Payload: types.PayloadConfig{
+					RecordPayload: true,
+				},
+			}
+			networkAttestor := NewWithConfig(config)
 
-	pythonScript := fmt.Sprintf(`
+			pythonScript := fmt.Sprintf(`
 import os, threading, time
 def do_exec():
     time.sleep(0.1) # Brief pause to ensure the thread fully detaches
@@ -539,114 +468,329 @@ while True:
     time.sleep(1) # Keep main thread alive to be swapped
 `, testPort)
 
-	// Write the script to a temp file
-	tmpDir := t.TempDir()
-	scriptPath := filepath.Join(tmpDir, "ghost.py")
-	require.NoError(t, os.WriteFile(scriptPath, []byte(pythonScript), 0644))
+			tmpDir := t.TempDir()
+			scriptPath := filepath.Join(tmpDir, "ghost.py")
+			require.NoError(t, os.WriteFile(scriptPath, []byte(pythonScript), 0644))
 
-	cmd := commandrun.New(
-		commandrun.WithCommand([]string{"python3", scriptPath}),
-		commandrun.WithSilent(false),
-	)
+			cmd := newCmd(withTracing, []string{"python3", scriptPath})
 
-	ctx, err := attestation.NewContext("test-ghost-thread", []attestation.Attestor{cmd, networkAttestor})
-	require.NoError(t, err)
+			ctx, err := attestation.NewContext("test-ghost-thread", []attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
 
-	err = ctx.RunAttestors()
-	require.NoError(t, err) // Should not hang or error out
-	assertNoAttestorErrors(t, ctx)
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+			assertNoAttestorErrors(t, ctx)
 
-	// Assert the proxy successfully tracked the ghost thread's execution
-	assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should intercept connection from rescued thread")
+			assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should intercept connection from rescued thread")
+		})
+	}
 }
 
 func TestIntegrationSIGKILLException(t *testing.T) {
-	skipIfNotRoot(t)
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			skipIfNotRoot(t)
 
-	config := types.DefaultConfig()
-	config.ProxyPort = testProxyPort + 4
-	networkAttestor := NewWithConfig(config)
+			config := types.DefaultConfig()
+			config.ProxyPort = testProxyPort + 4
+			networkAttestor := NewWithConfig(config)
 
-	pidFile := filepath.Join(t.TempDir(), "witness_test_sigkill.pid")
+			pidFile := filepath.Join(t.TempDir(), "witness_test_sigkill.pid")
 
-	cmd := commandrun.New(
-		commandrun.WithCommand([]string{"sh", "-c", fmt.Sprintf("echo $$ > %s && exec sleep 100", pidFile)}),
-		commandrun.WithSilent(false),
-	)
+			cmd := newCmd(withTracing, []string{"sh", "-c", fmt.Sprintf("echo $$ > %s && exec sleep 100", pidFile)})
 
-	ctx, err := attestation.NewContext("test-sigkill", []attestation.Attestor{cmd, networkAttestor})
-	require.NoError(t, err)
+			ctx, err := attestation.NewContext("test-sigkill", []attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
 
-	go func() {
-		var pid int
-		for range 50 { // Poll for up to 5 seconds
-			time.Sleep(100 * time.Millisecond)
-			data, err := os.ReadFile(pidFile)
-			if err == nil && len(data) > 0 {
-				_, _ = fmt.Sscanf(string(data), "%d", &pid)
-				if pid > 0 {
-					err = unix.Kill(pid, unix.SIGKILL)
-					assert.NoError(t, err, "Failed to send SIGKILL to test process")
-					return
+			go func() {
+				var pid int
+				for range 50 {
+					time.Sleep(100 * time.Millisecond)
+					data, err := os.ReadFile(pidFile)
+					if err == nil && len(data) > 0 {
+						_, _ = fmt.Sscanf(string(data), "%d", &pid)
+						if pid > 0 {
+							err = unix.Kill(pid, unix.SIGKILL)
+							assert.NoError(t, err, "Failed to send SIGKILL to test process")
+							return
+						}
+					}
+				}
+			}()
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err, "RunAttestors should not return error")
+
+			foundCmdError := false
+			for _, ca := range ctx.CompletedAttestors() {
+				if ca.Attestor.Name() == "command-run" {
+					require.Error(t, ca.Error, "Expected command-run attestor to fail due to SIGKILL")
+					assert.Contains(t, ca.Error.Error(), "exit status 137", "Expected attestor to fail due to SIGKILL")
+					foundCmdError = true
+					break
 				}
 			}
-		}
-	}()
+			require.True(t, foundCmdError, "command-run attestor not found in completed attestors")
 
-	err = ctx.RunAttestors()
-	// Note: RunAttestors() returns nil even when attestors fail.
-	// Errors are stored in CompletedAttestors(), so we check there.
-	require.NoError(t, err, "RunAttestors should not return error")
-
-	// Verify command-run attestor failed due to SIGKILL
-	foundCmdError := false
-	for _, ca := range ctx.CompletedAttestors() {
-		if ca.Attestor.Name() == "command-run" {
-			require.Error(t, ca.Error, "Expected command-run attestor to fail due to SIGKILL")
-			assert.Contains(t, ca.Error.Error(), "exit status 137", "Expected attestor to fail due to SIGKILL")
-			foundCmdError = true
-			break
-		}
+			assert.False(t, networkAttestor.NetworkTrace.EndTime.IsZero(), "Proxy teardown should still execute via SIGKILL fallback")
+		})
 	}
-	require.True(t, foundCmdError, "command-run attestor not found in completed attestors")
-
-	// The fallback pre-exit hooks must have run
-	assert.False(t, networkAttestor.NetworkTrace.EndTime.IsZero(), "Proxy teardown should still execute via SIGKILL fallback")
 }
 
 func TestIntegrationNestedNamespaceTracking(t *testing.T) {
-	skipIfNotRoot(t)
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			skipIfNotRoot(t)
 
-	const nsTestPort = 19881
-	server := newTestTCPServer(t, nsTestPort, []byte("PONG"))
-	defer server.wait()
+			const nsTestPort = 19881
+			server := newTestTCPServer(t, nsTestPort, []byte("PONG"))
+			defer server.wait()
 
-	config := types.Config{
-		ProxyPort:        testProxyPort + 5,
-		ProxyBindIPv4:    "127.0.0.1",
-		ObserveChildTree: true,
-		Payload:          types.PayloadConfig{RecordPayload: true},
+			config := types.Config{
+				ProxyPort:        testProxyPort + 5,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: true,
+				Payload:          types.PayloadConfig{RecordPayload: true},
+			}
+			networkAttestor := NewWithConfig(config)
+
+			cmd := newCmd(withTracing, []string{
+				"unshare", "-p", "-f", "--mount-proc", "sh", "-c",
+				fmt.Sprintf("echo 'NS_TEST' | nc -w 1 127.0.0.1 %d", nsTestPort),
+			})
+
+			ctx, err := attestation.NewContext("test-namespace", []attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+			assertNoAttestorErrors(t, ctx)
+
+			assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should intercept connection inside nested PID namespace")
+		})
 	}
-	networkAttestor := NewWithConfig(config)
+}
 
-	// unshare -p -f creates a new isolated PID namespace for the command
-	cmd := commandrun.New(
-		commandrun.WithCommand([]string{
-			"unshare", "-p", "-f", "--mount-proc", "sh", "-c",
-			fmt.Sprintf("echo 'NS_TEST' | nc -w 1 127.0.0.1 %d", nsTestPort),
-		}),
-		commandrun.WithSilent(false),
-	)
+func TestIntegrationOrphanedProcessSurvival(t *testing.T) {
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			skipIfNotRoot(t)
 
-	ctx, err := attestation.NewContext("test-namespace", []attestation.Attestor{cmd, networkAttestor})
-	require.NoError(t, err)
+			const orphanTestPort = 19882
+			server := newTestTCPServer(t, orphanTestPort, []byte("PONG"))
+			defer server.wait()
 
-	err = ctx.RunAttestors()
-	require.NoError(t, err)
-	assertNoAttestorErrors(t, ctx)
+			config := types.Config{
+				ProxyPort:        testProxyPort + 8,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: true,
+				Payload:          types.PayloadConfig{RecordPayload: true},
+			}
+			networkAttestor := NewWithConfig(config)
 
-	// If get_tid_ns() works correctly, the proxy will capture the connection.
-	assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should intercept connection inside nested PID namespace")
+			cmd := newCmd(withTracing, []string{
+				"sh", "-c", fmt.Sprintf("(sleep 3 && echo 'ORPHAN' | nc -w 1 127.0.0.1 %d) & exit 0", orphanTestPort),
+			})
+
+			ctx, err := attestation.NewContext("test-orphan", []attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+			assertNoAttestorErrors(t, ctx)
+
+			assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should intercept connection from orphaned background process")
+		})
+	}
+}
+
+func TestIntegrationDeepNestingAndExecveSwap(t *testing.T) {
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			skipIfNotRoot(t)
+
+			port1, port2, port3 := 19890, 19891, 19892
+			srv1 := newTestTCPServer(t, port1, []byte("ACK1"))
+			srv2 := newTestTCPServer(t, port2, []byte("ACK2"))
+			srv3 := newTestTCPServer(t, port3, []byte("ACK3"))
+			defer srv1.wait()
+			defer srv2.wait()
+			defer srv3.wait()
+
+			config := types.Config{
+				ProxyPort:        testProxyPort + 9,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: true,
+				Payload: types.PayloadConfig{
+					RecordPayload: true,
+				},
+			}
+			networkAttestor := NewWithConfig(config)
+
+			pythonScript := fmt.Sprintf(`
+import os, threading, socket, time
+
+# Connection 1: Synchronous call from the main thread
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(("127.0.0.1", %d))
+s.sendall(b"PAYLOAD_1")
+s.close()
+
+def do_exec():
+    # Execute Connection 2 natively, then spawn a nested shell for Connection 3
+    cmd = "echo 'PAYLOAD_2' | nc -w 1 127.0.0.1 %d && sh -c 'echo \"PAYLOAD_3\" | nc -w 1 127.0.0.1 %d'"
+    os.execlp("sh", "sh", "-c", cmd)
+
+threading.Thread(target=do_exec).start()
+
+# Wait to be slaughtered by the kernel during the swap
+while True:
+    time.sleep(1)
+`, port1, port2, port3)
+
+			tmpDir := t.TempDir()
+			scriptPath := filepath.Join(tmpDir, "deep_nest.py")
+			require.NoError(t, os.WriteFile(scriptPath, []byte(pythonScript), 0644))
+
+			deepNestCmd := fmt.Sprintf("sh -c \"sh -c 'python3 %s'\"", scriptPath)
+
+			cmd := newCmd(withTracing, []string{"sh", "-c", deepNestCmd})
+
+			ctx, err := attestation.NewContext("test-deep-nesting-exec", []attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+			assertNoAttestorErrors(t, ctx)
+
+			connections := networkAttestor.NetworkTrace.Connections
+			assert.Len(t, connections, 3, "Should intercept exactly 3 connections across the nested execve lifecycle")
+
+			var payloads []string
+			for _, conn := range connections {
+				if len(conn.TCPPayloads) > 0 {
+					for _, p := range conn.TCPPayloads {
+						if p.Direction == "client_to_server" {
+							payloads = append(payloads, string(p.Payload.Data))
+						}
+					}
+				}
+			}
+
+			assert.Contains(t, payloads, "PAYLOAD_1", "Failed to capture pre-execve payload")
+			assert.Contains(t, payloads, "PAYLOAD_2\n", "Failed to capture post-execve payload (Ghost rescue failed)")
+			assert.Contains(t, payloads, "PAYLOAD_3\n", "Failed to capture deeply nested payload spawned by rescued ghost")
+		})
+	}
+}
+func TestIntegrationCurlHTTPS(t *testing.T) {
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			skipIfNotRoot(t)
+
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("Hello HTTPS"))
+			}))
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+			_, portStr, err := net.SplitHostPort(serverURL.Host)
+			require.NoError(t, err)
+			serverPort, err := strconv.Atoi(portStr)
+			require.NoError(t, err)
+
+			config := types.Config{
+				ObserveChildTree: true,
+				ProxyPort:        testProxyPort + 6,
+				ProxyBindIPv4:    "127.0.0.1",
+				GenerateCA:       true,
+				CACertPath:       types.DefaultCaCertPath,
+				CAKeyPath:        types.DefaultCaKeyPath,
+				SkipVerify:       true,
+				Payload: types.PayloadConfig{
+					RecordPayload:     true,
+					RecordPayloadHash: true,
+					MaxPayloadSize:    1024 * 1024,
+				},
+				EnableHTTPInspection: true,
+			}
+
+			networkAttestor := NewWithConfig(config)
+			log.SetLogger(log.ConsoleLogger{})
+
+			t.Cleanup(func() {
+				os.RemoveAll(filepath.Dir(types.DefaultCaCertPath))
+			})
+
+			curlCmd := fmt.Sprintf(
+				"curl -s --cacert %s --resolve localhost:%d:127.0.0.1 https://localhost:%d/",
+				types.DefaultCaCertPath, serverPort, serverPort,
+			)
+
+			cmd := newCmd(withTracing, []string{"sh", "-c", curlCmd})
+
+			ctx, err := attestation.NewContext("test-https", []attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+
+			require.NotEmpty(t, networkAttestor.NetworkTrace.Connections, "Should record at least one connection")
+
+			found := false
+			for _, conn := range networkAttestor.NetworkTrace.Connections {
+				if conn.Destination.Port == uint16(serverPort) {
+					found = true
+					assert.True(t, conn.Intercepted, "Connection should be marked as intercepted")
+
+					responseFound := false
+
+					for _, exchange := range conn.HTTPExchanges {
+						if exchange.Response != nil &&
+							string(exchange.Response.Body.Data) == "Hello HTTPS" {
+							responseFound = true
+							break
+						}
+					}
+
+					if !responseFound {
+						for _, pl := range conn.TCPPayloads {
+							if string(pl.Payload.Data) == "Hello HTTPS" {
+								responseFound = true
+								break
+							}
+						}
+					}
+
+					assert.True(t, responseFound, "Should capture decrypted HTTPS response body")
+					break
+				}
+			}
+			assert.True(t, found, "Should find the connection to test server on port %d", serverPort)
+		})
+	}
 }
 
 // TestIntegrationRealWorldHTTPS downloads small metadata files from real package
@@ -661,23 +805,17 @@ func TestIntegrationNestedNamespaceTracking(t *testing.T) {
 func TestIntegrationRealWorldHTTPS(t *testing.T) {
 	skipIfNotRoot(t)
 
-	t.Cleanup(func() {
-		os.RemoveAll(filepath.Dir(types.DefaultCaCertPath))
-	})
-
-	// Quick connectivity check — skip if we can't reach the internet
 	dialConn, err := net.DialTimeout("tcp", "pypi.org:443", 3*time.Second)
 	if err != nil {
 		t.Skip("Skipping test: no internet connectivity")
 	}
 	dialConn.Close()
 
-	// Each sub-test downloads a small JSON/XML metadata file from a real registry.
 	tests := []struct {
 		name     string
-		host     string // hostname for SNI and assertions
-		url      string // full URL to fetch
-		contains string // substring expected in the response body
+		host     string
+		url      string
+		contains string
 	}{
 		{
 			name:     "PyPI",
@@ -699,253 +837,374 @@ func TestIntegrationRealWorldHTTPS(t *testing.T) {
 		},
 	}
 
-	for i, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			config := types.Config{
-				ObserveChildTree: true,
-				ProxyPort:        testProxyPort + 10 + uint16(i),
-				ProxyBindIPv4:    "127.0.0.1",
-				GenerateCA:       true,
-				CACertPath:       types.DefaultCaCertPath,
-				CAKeyPath:        types.DefaultCaKeyPath,
-				SkipVerify:       false, // real certs — no need to skip
-				Payload: types.PayloadConfig{
-					RecordPayload:     true,
-					RecordPayloadHash: true,
-					MaxPayloadSize:    1024 * 1024,
-				},
-				EnableHTTPInspection: true,
-			}
-
-			networkAttestor := NewWithConfig(config)
-			log.SetLogger(log.ConsoleLogger{})
-
-			curlCmd := fmt.Sprintf(
-				"curl -sS --cacert %s %s -o /dev/null -w '%%{http_code}'",
-				types.DefaultCaCertPath, tt.url,
-			)
-
-			cmd := commandrun.New(
-				commandrun.WithCommand([]string{"sh", "-c", curlCmd}),
-				commandrun.WithSilent(false),
-				commandrun.WithTracing(true),
-				commandrun.WithTraceBackend(commandrun.TraceBackendEBPF),
-			)
-
-			ctx, err := attestation.NewContext(
-				fmt.Sprintf("test-real-%s", tt.name),
-				[]attestation.Attestor{cmd, networkAttestor},
-			)
-			require.NoError(t, err)
-
-			err = ctx.RunAttestors()
-			require.NoError(t, err)
-
-			require.NotEmpty(t, networkAttestor.NetworkTrace.Connections,
-				"Should record at least one connection")
-
-			require.NotEmpty(t, cmd.Processes)
-
-			// Find the connection to the expected host
-			found := false
-			for _, conn := range networkAttestor.NetworkTrace.Connections {
-				if conn.Destination.Hostname != tt.host {
-					continue
-				}
-				found = true
-
-				// Protocol should be https (intercepted via MITM)
-				assert.Equal(t, "https", conn.Protocol,
-					"Connection to %s should be https", tt.host)
-
-				// Must be intercepted
-				assert.True(t, conn.Intercepted,
-					"Connection to %s should be intercepted", tt.host)
-
-				// Destination port should be 443
-				assert.Equal(t, uint16(443), conn.Destination.Port,
-					"Connection to %s should target port 443", tt.host)
-
-				// TLS info should be present with ClientHello details
-				if assert.NotNil(t, conn.TLS, "TLS info should be present for %s", tt.host) {
-					if assert.NotNil(t, conn.TLS.ClientHello,
-						"ClientHello should be recorded for %s", tt.host) {
-						assert.NotEmpty(t, conn.TLS.ClientHello.SupportedVersions,
-							"ClientHello should list TLS versions for %s", tt.host)
-						assert.NotEmpty(t, conn.TLS.ClientHello.CipherSuites,
-							"ClientHello should list cipher suites for %s", tt.host)
+	for _, withTracing := range []bool{false, true} {
+		tracingName := "hooks-only"
+		if withTracing {
+			tracingName = "full-tracing"
+		}
+		t.Run(tracingName, func(t *testing.T) {
+			for i, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					config := types.Config{
+						ObserveChildTree: true,
+						ProxyPort:        testProxyPort + 10 + uint16(i),
+						ProxyBindIPv4:    "127.0.0.1",
+						GenerateCA:       true,
+						CACertPath:       types.DefaultCaCertPath,
+						CAKeyPath:        types.DefaultCaKeyPath,
+						SkipVerify:       false,
+						Payload: types.PayloadConfig{
+							RecordPayload:     true,
+							RecordPayloadHash: true,
+							MaxPayloadSize:    1024 * 1024,
+						},
+						EnableHTTPInspection: true,
 					}
-				}
 
-				// HTTP exchanges should be recorded
-				require.NotEmpty(t, conn.HTTPExchanges,
-					"Should have HTTP exchanges for %s", tt.host)
+					networkAttestor := NewWithConfig(config)
+					log.SetLogger(log.ConsoleLogger{})
 
-				exchange := conn.HTTPExchanges[0]
+					t.Cleanup(func() {
+						os.RemoveAll(filepath.Dir(types.DefaultCaCertPath))
+					})
 
-				// Request
-				assert.Equal(t, "GET", exchange.Request.Method,
-					"Request method should be GET for %s", tt.host)
-				assert.Contains(t, exchange.Request.URL, tt.host,
-					"Request URL should contain %s", tt.host)
+					curlCmd := fmt.Sprintf(
+						"curl -sS --cacert %s %s -o /dev/null -w '%%{http_code}'",
+						types.DefaultCaCertPath, tt.url,
+					)
 
-				// Response
-				if assert.NotNil(t, exchange.Response,
-					"Response should be present for %s", tt.host) {
-					assert.Equal(t, 200, exchange.Response.StatusCode,
-						"Response status for %s should be 200", tt.host)
-					assert.Greater(t, exchange.Response.Body.Size, int64(0),
-						"Response body for %s should not be empty", tt.host)
+					cmd := newCmd(withTracing, []string{"sh", "-c", curlCmd})
 
-					d := string(exchange.Response.Body.Data)
-					assert.Contains(t, string(d), tt.contains,
-						"Response body from %s should contain %q", tt.host, tt.contains)
+					ctx, err := attestation.NewContext(
+						fmt.Sprintf("test-real-%s", tt.name),
+						[]attestation.Attestor{cmd, networkAttestor},
+					)
+					require.NoError(t, err)
 
-					// Payload hash should be recorded
-					assert.NotEmpty(t, exchange.Response.Body.Hash,
-						"Response body hash should be recorded for %s", tt.host)
-				}
+					err = ctx.RunAttestors()
+					require.NoError(t, err)
 
-				// Bytes received should be > 0
-				assert.Greater(t, conn.BytesReceived, uint64(0),
-					"Should have received bytes from %s", tt.host)
+					require.NotEmpty(t, networkAttestor.NetworkTrace.Connections,
+						"Should record at least one connection")
 
-				break
+					found := false
+					for _, conn := range networkAttestor.NetworkTrace.Connections {
+						if conn.Destination.Hostname != tt.host {
+							continue
+						}
+						found = true
+
+						assert.Equal(t, "https", conn.Protocol,
+							"Connection to %s should be https", tt.host)
+
+						assert.True(t, conn.Intercepted,
+							"Connection to %s should be intercepted", tt.host)
+
+						assert.Equal(t, uint16(443), conn.Destination.Port,
+							"Connection to %s should target port 443", tt.host)
+
+						if assert.NotNil(t, conn.TLS, "TLS info should be present for %s", tt.host) {
+							if assert.NotNil(t, conn.TLS.ClientHello,
+								"ClientHello should be recorded for %s", tt.host) {
+								assert.NotEmpty(t, conn.TLS.ClientHello.SupportedVersions,
+									"ClientHello should list TLS versions for %s", tt.host)
+								assert.NotEmpty(t, conn.TLS.ClientHello.CipherSuites,
+									"ClientHello should list cipher suites for %s", tt.host)
+							}
+						}
+
+						require.NotEmpty(t, conn.HTTPExchanges,
+							"Should have HTTP exchanges for %s", tt.host)
+
+						exchange := conn.HTTPExchanges[0]
+
+						assert.Equal(t, "GET", exchange.Request.Method,
+							"Request method should be GET for %s", tt.host)
+						assert.Contains(t, exchange.Request.URL, tt.host,
+							"Request URL should contain %s", tt.host)
+
+						if assert.NotNil(t, exchange.Response,
+							"Response should be present for %s", tt.host) {
+							assert.Equal(t, 200, exchange.Response.StatusCode,
+								"Response status for %s should be 200", tt.host)
+							assert.Greater(t, exchange.Response.Body.Size, int64(0),
+								"Response body for %s should not be empty", tt.host)
+
+							d := string(exchange.Response.Body.Data)
+							assert.Contains(t, string(d), tt.contains,
+								"Response body from %s should contain %q", tt.host, tt.contains)
+
+							assert.NotEmpty(t, exchange.Response.Body.Hash,
+								"Response body hash should be recorded for %s", tt.host)
+						}
+
+						assert.Greater(t, conn.BytesReceived, uint64(0),
+							"Should have received bytes from %s", tt.host)
+
+						break
+					}
+
+					assert.True(t, found,
+						"Should find an intercepted connection to %s", tt.host)
+				})
 			}
-
-			assert.True(t, found,
-				"Should find an intercepted connection to %s", tt.host)
 		})
 	}
 }
 
-func TestIntegrationOrphanedProcessSurvival(t *testing.T) {
-	skipIfNotRoot(t)
+func TestMain(m *testing.M) {
+	log.SetLogger(log.ConsoleLogger{})
 
-	const orphanTestPort = 19882
-	server := newTestTCPServer(t, orphanTestPort, []byte("PONG"))
-	defer server.wait()
-
-	config := types.Config{
-		ProxyPort:        testProxyPort + 8,
-		ProxyBindIPv4:    "127.0.0.1",
-		ObserveChildTree: true,
-		Payload:          types.PayloadConfig{RecordPayload: true},
-	}
-	networkAttestor := NewWithConfig(config)
-
-	// The parent script spawns a background task and immediately exits.
-	// The child sleeps for 1 second (becoming an orphan reparented to PID 1), then connects.
-	cmd := commandrun.New(
-		commandrun.WithCommand([]string{
-			"sh", "-c", fmt.Sprintf("(sleep 3 && echo 'ORPHAN' | nc -w 1 127.0.0.1 %d) & exit 0", orphanTestPort),
-		}),
-		commandrun.WithSilent(false),
-	)
-
-	ctx, err := attestation.NewContext("test-orphan", []attestation.Attestor{cmd, networkAttestor})
-	require.NoError(t, err)
-
-	err = ctx.RunAttestors()
-	require.NoError(t, err)
-	assertNoAttestorErrors(t, ctx)
-
-	assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should intercept connection from orphaned background process")
-}
-
-func TestIntegrationDeepNestingAndExecveSwap(t *testing.T) {
-	skipIfNotRoot(t)
-
-	// We set up three distinct servers to verify three network calls happening
-	// at different stages of the process tree's lifecycle and nesting depth.
-	port1, port2, port3 := 19890, 19891, 19892
-	srv1 := newTestTCPServer(t, port1, []byte("ACK1"))
-	srv2 := newTestTCPServer(t, port2, []byte("ACK2"))
-	srv3 := newTestTCPServer(t, port3, []byte("ACK3"))
-	defer srv1.wait()
-	defer srv2.wait()
-	defer srv3.wait()
-
-	config := types.Config{
-		ProxyPort:        testProxyPort + 9,
-		ProxyBindIPv4:    "127.0.0.1",
-		ObserveChildTree: true,
-		Payload: types.PayloadConfig{
-			RecordPayload: true,
-		},
-	}
-	networkAttestor := NewWithConfig(config)
-
-	// This python script compresses the CI pipeline lifecycle:
-	// 1. Python Main Thread connects to Port 1
-	// 2. Python Background Thread calls execve, swapping identity to 'sh'
-	// 3. The newly exec'd 'sh' connects to Port 2
-	// 4. The 'sh' spawns a deeply nested subshell 'sh', which connects to Port 3
-	pythonScript := fmt.Sprintf(`
-import os, threading, socket, time
-
-# Connection 1: Synchronous call from the main thread
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect(("127.0.0.1", %d))
-s.sendall(b"PAYLOAD_1")
-s.close()
-
-def do_exec():
-    # Execute Connection 2 natively, then spawn a nested shell for Connection 3
-    cmd = "echo 'PAYLOAD_2' | nc -w 1 127.0.0.1 %d && sh -c 'echo \"PAYLOAD_3\" | nc -w 1 127.0.0.1 %d'"
-    os.execlp("sh", "sh", "-c", cmd)
-
-threading.Thread(target=do_exec).start()
-
-# Wait to be slaughtered by the kernel during the swap
-while True:
-    time.sleep(1)
-`, port1, port2, port3)
-
-	// Write the script to a temp file to completely bypass shell quoting rules
-	tmpDir := t.TempDir()
-	scriptPath := filepath.Join(tmpDir, "deep_nest.py")
-	require.NoError(t, os.WriteFile(scriptPath, []byte(pythonScript), 0644))
-
-	// Wrap the Python script in multiple levels of shell nesting using the file path
-	deepNestCmd := fmt.Sprintf("sh -c \"sh -c 'python3 %s'\"", scriptPath)
-
-	cmd := commandrun.New(
-		commandrun.WithCommand([]string{"sh", "-c", deepNestCmd}),
-		commandrun.WithSilent(false),
-	)
-
-	ctx, err := attestation.NewContext("test-deep-nesting-exec", []attestation.Attestor{cmd, networkAttestor})
-	require.NoError(t, err)
-
-	err = ctx.RunAttestors()
-	require.NoError(t, err)
-	assertNoAttestorErrors(t, ctx)
-
-	// We must have exactly 3 recorded connections.
-	connections := networkAttestor.NetworkTrace.Connections
-	assert.Len(t, connections, 3, "Should intercept exactly 3 connections across the nested execve lifecycle")
-
-	// Validate the payloads to ensure the proxy successfully routed and hashed every step
-	// of the multi-threaded identity swap.
-	var payloads []string
-	for _, conn := range connections {
-		if len(conn.TCPPayloads) > 0 {
-			for _, p := range conn.TCPPayloads {
-				if p.Direction == "client_to_server" {
-					payloads = append(payloads, string(p.Payload.Data))
-				}
-			}
+	// Ensure the working directory is the package source directory so that
+	// testdata/ paths resolve correctly regardless of where go test was
+	// invoked from.
+	if _, filename, _, ok := runtime.Caller(0); ok {
+		dir := filepath.Dir(filename)
+		if err := os.Chdir(dir); err != nil {
+			log.Errorf("failed to chdir to package dir %s: %v", dir, err)
 		}
 	}
 
-	assert.Contains(t, payloads, "PAYLOAD_1", "Failed to capture pre-execve payload")
-	assert.Contains(t, payloads, "PAYLOAD_2\n", "Failed to capture post-execve payload (Ghost rescue failed)")
-	assert.Contains(t, payloads, "PAYLOAD_3\n", "Failed to capture deeply nested payload spawned by rescued ghost")
-}
-
-func TestMain(m *testing.M) {
-	log.SetLogger(log.ConsoleLogger{})
 	ec := m.Run()
 	os.Exit(ec)
+}
+
+// ---------------------------------------------------------------------------
+// C-based namespace tests
+// ---------------------------------------------------------------------------
+
+// compileCTest compiles a C source file from testdata/ into a temporary
+// binary and returns its path. The test_helpers.h header in testdata/ is
+// used via -I.
+func compileCTest(t *testing.T, name string) string {
+	t.Helper()
+	testdataDir := "testdata"
+	srcPath := filepath.Join(testdataDir, name+".c")
+	binPath := filepath.Join(t.TempDir(), name)
+	cmd := exec.Command("gcc", "-o", binPath, srcPath,
+		"-I"+testdataDir, "-Wall", "-Werror")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "compile %s: %s", name, string(out))
+	return binPath
+}
+
+// findPayload searches recorded connections for a client_to_server payload
+// matching want and returns true if found.
+func findPayload(conns []types.Connection, want string) bool {
+	for _, c := range conns {
+		for _, p := range c.TCPPayloads {
+			if p.Direction == "client_to_server" && string(p.Payload.Data) == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// TestIntegrationCloneNewPidNewNet verifies the core docker case: a child
+// created with CLONE_NEWPID | CLONE_NEWNET is frozen at execve, the sweep
+// loop injects a proxy into the new netns via setns, marks it ready, and
+func TestIntegrationCloneNewPidNewNet(t *testing.T) {
+	skipIfNotRoot(t)
+
+	bin := compileCTest(t, "t5_clone_newpid_newnet")
+
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			const port = 19901
+			server := newTestTCPServer(t, port, []byte("PONG"))
+			defer server.wait()
+
+			config := types.Config{
+				ProxyPort:        testProxyPort + 20,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: true,
+				Payload:          types.PayloadConfig{RecordPayload: true},
+			}
+			networkAttestor := NewWithConfig(config)
+
+			cmd := newCmd(withTracing, []string{bin, strconv.Itoa(port)})
+
+			ctx, err := attestation.NewContext("t5-clone-newpid-newnet",
+				[]attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+			assertNoAttestorErrors(t, ctx)
+
+			conns := networkAttestor.NetworkTrace.Connections
+			require.Len(t, conns, 1, "Should record one connection from the container netns")
+			assert.True(t, findPayload(conns, "DOCKER"), "Should capture DOCKER payload")
+		})
+	}
+}
+
+func TestIntegrationDeepNestingLevels(t *testing.T) {
+	skipIfNotRoot(t)
+
+	bin := compileCTest(t, "t6_deep_nesting_levels")
+
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			const port = 19902
+			server := newTestTCPServer(t, port, []byte("PONG"))
+			defer server.wait()
+
+			config := types.Config{
+				ProxyPort:        testProxyPort + 21,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: true,
+				Payload:          types.PayloadConfig{RecordPayload: true},
+			}
+			networkAttestor := NewWithConfig(config)
+
+			cmd := newCmd(withTracing, []string{bin, strconv.Itoa(port)})
+
+			ctx, err := attestation.NewContext("t6-deep-nesting",
+				[]attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+			assertNoAttestorErrors(t, ctx)
+
+			conns := networkAttestor.NetworkTrace.Connections
+			require.Len(t, conns, 1, "Should record one connection from depth-3 container")
+			assert.True(t, findPayload(conns, "DEEP"), "Should capture DEEP payload")
+		})
+	}
+}
+
+func TestIntegrationPidNsCleanup(t *testing.T) {
+	skipIfNotRoot(t)
+
+	bin := compileCTest(t, "t7_pid_ns_cleanup")
+
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			const port = 19903
+			server := newMultiConnTCPServer(t, port, []byte("PONG"), 2)
+			defer server.wait()
+
+			config := types.Config{
+				ProxyPort:        testProxyPort + 22,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: true,
+				Payload:          types.PayloadConfig{RecordPayload: true},
+			}
+			networkAttestor := NewWithConfig(config)
+
+			cmd := newCmd(withTracing, []string{bin, strconv.Itoa(port)})
+
+			ctx, err := attestation.NewContext("t7-pidns-cleanup",
+				[]attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+			assertNoAttestorErrors(t, ctx)
+
+			conns := networkAttestor.NetworkTrace.Connections
+			assert.Len(t, conns, 2, "Should record two connections (one per container)")
+			for _, c := range conns {
+				assert.True(t, findPayload([]types.Connection{c}, "CLEANUP"),
+					"Each container should have sent CLEANUP")
+				assert.True(t, c.Process.PID == 1, "Both should be in a separate namespace with PID 1")
+			}
+		})
+	}
+}
+
+func TestIntegrationUntrackedSibling(t *testing.T) {
+	skipIfNotRoot(t)
+
+	bin := compileCTest(t, "t5_clone_newpid_newnet")
+
+	for _, withTracing := range []bool{false, true} {
+		name := "hooks-only"
+		if withTracing {
+			name = "full-tracing"
+		}
+		t.Run(name, func(t *testing.T) {
+			const port = 19904
+			server := newTestTCPServer(t, port, []byte("PONG"))
+
+			config := types.Config{
+				ProxyPort:        testProxyPort + 23,
+				ProxyBindIPv4:    "127.0.0.1",
+				ObserveChildTree: false,
+				Payload:          types.PayloadConfig{RecordPayload: true},
+			}
+			networkAttestor := NewWithConfig(config)
+
+			cmd := newCmd(withTracing, []string{bin, strconv.Itoa(port)})
+
+			ctx, err := attestation.NewContext("t9-untracked-sibling",
+				[]attestation.Attestor{cmd, networkAttestor})
+			require.NoError(t, err)
+
+			err = ctx.RunAttestors()
+			require.NoError(t, err)
+			assertNoAttestorErrors(t, ctx)
+
+			conns := networkAttestor.NetworkTrace.Connections
+			assert.Empty(t, conns, "Should NOT record any connections from untracked sibling")
+
+			_ = server.listener.Close()
+			server.wait()
+		})
+	}
+}
+
+// newMultiConnTCPServer is like newTestTCPServer but accepts up to n
+// sequential connections.
+func newMultiConnTCPServer(t *testing.T, port int, response []byte, n int) *testTCPServer {
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	require.NoError(t, err)
+
+	server := &testTCPServer{
+		listener:     listener,
+		port:         port,
+		response:     response,
+		receivedData: make(chan []byte, n),
+		done:         make(chan struct{}),
+	}
+
+	go func() {
+		defer close(server.done)
+		defer listener.Close()
+		for i := 0; i < n; i++ {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			func() {
+				defer conn.Close()
+				_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+				data, err := io.ReadAll(conn)
+				if err != nil {
+					server.receivedData <- nil
+					return
+				}
+				server.receivedData <- data
+				if len(response) > 0 {
+					_, _ = conn.Write(response)
+				}
+			}()
+		}
+	}()
+	return server
 }
