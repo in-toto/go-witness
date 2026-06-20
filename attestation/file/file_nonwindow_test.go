@@ -42,7 +42,7 @@ func TestDirHash(t *testing.T) {
 	dirHashGlobItem, _ := glob.Compile(dirHash)
 	dirHashGlobs = append(dirHashGlobs, dirHashGlobItem)
 
-	artifacts, err := RecordArtifacts(dir, map[string]cryptoutil.DigestSet{}, []cryptoutil.DigestValue{{Hash: crypto.SHA256}}, map[string]struct{}{}, false, map[string]bool{}, dirHashGlobs)
+	artifacts, err := RecordArtifacts(dir, map[string]cryptoutil.DigestSet{}, []cryptoutil.DigestValue{{Hash: crypto.SHA256}}, map[string]struct{}{}, false, map[string]bool{}, dirHashGlobs, nil, nil)
 	require.NoError(t, err)
 
 	// Below command is example usage on the above created scenario for testdir.
@@ -74,7 +74,7 @@ func TestDirHashWithSymlink(t *testing.T) {
 	dirHashGlobItem, _ := glob.Compile(dirHash)
 	dirHashGlobs = append(dirHashGlobs, dirHashGlobItem)
 
-	artifacts, err := RecordArtifacts(dir, map[string]cryptoutil.DigestSet{}, []cryptoutil.DigestValue{{Hash: crypto.SHA256}}, map[string]struct{}{}, false, map[string]bool{}, dirHashGlobs)
+	artifacts, err := RecordArtifacts(dir, map[string]cryptoutil.DigestSet{}, []cryptoutil.DigestValue{{Hash: crypto.SHA256}}, map[string]struct{}{}, false, map[string]bool{}, dirHashGlobs, nil, nil)
 	require.NoError(t, err)
 
 	// Below command is example usage on the above created scenario for testdir.
