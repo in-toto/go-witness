@@ -15,13 +15,19 @@
 #ifndef WITNESS_COMMANDRUN_FILETRACE_COMMON_H
 #define WITNESS_COMMANDRUN_FILETRACE_COMMON_H
 
-/* Set by Go before load. Every program uses it to ignore processes outside the
- * command-run cgroup, which keeps witness' own file activity out of the output.
- */
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
-volatile const __u64 target_cgroup_id = 0;
+
+/* Cgroup allowlist populated by userspace. Every program uses it to ignore
+ * processes outside the cgroups being traced.
+ */
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 8192);
+	__type(key, __u64);
+	__type(value, __u8);
+} target_cgroups SEC(".maps");
 
 /* Shared ring-buffer payload consumed by ebpf_linux.go. Keep this layout in
  * sync with fileOpenEvent on the Go side.
@@ -64,10 +70,9 @@ struct {
 } events SEC(".maps");
 
 static __always_inline int commandrun_in_target_cgroup() {
-	if (target_cgroup_id == 0) {
-		return 0;
-	}
-	return bpf_get_current_cgroup_id() == target_cgroup_id;
+	__u64 cgroup_id = bpf_get_current_cgroup_id();
+	__u8 *enabled = bpf_map_lookup_elem(&target_cgroups, &cgroup_id);
+	return enabled != 0;
 }
 
 /* Return the current task's TGID/TID as seen from its innermost PID namespace,

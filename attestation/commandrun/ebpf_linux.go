@@ -62,8 +62,17 @@ type fileOpenEvent struct {
 // loadedEBPFTracer is the generic contract between a BPF backend and this
 // runner: an events map to read and a close function for links/objects.
 type loadedEBPFTracer struct {
-	events *ebpf.Map
-	close  func() error
+	events        *ebpf.Map
+	targetCgroups *ebpf.Map
+	close         func() error
+}
+
+func (t *loadedEBPFTracer) addCgroup(cgroupID uint64) error {
+	if t.targetCgroups == nil {
+		return fmt.Errorf("target cgroups map is not loaded")
+	}
+	var enabled uint8 = 1
+	return t.targetCgroups.Put(cgroupID, enabled)
 }
 
 const (

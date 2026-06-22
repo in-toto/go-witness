@@ -78,15 +78,15 @@ type filetraceSyscallProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type filetraceSyscallMapSpecs struct {
-	Events       *ebpf.MapSpec `ebpf:"events"`
-	PendingOpens *ebpf.MapSpec `ebpf:"pending_opens"`
+	Events        *ebpf.MapSpec `ebpf:"events"`
+	PendingOpens  *ebpf.MapSpec `ebpf:"pending_opens"`
+	TargetCgroups *ebpf.MapSpec `ebpf:"target_cgroups"`
 }
 
 // filetraceSyscallVariableSpecs contains global variables before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type filetraceSyscallVariableSpecs struct {
-	TargetCgroupId *ebpf.VariableSpec `ebpf:"target_cgroup_id"`
 }
 
 // filetraceSyscallObjects contains all objects after they have been loaded into the kernel.
@@ -109,14 +109,16 @@ func (o *filetraceSyscallObjects) Close() error {
 //
 // It can be passed to loadFiletraceSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type filetraceSyscallMaps struct {
-	Events       *ebpf.Map `ebpf:"events"`
-	PendingOpens *ebpf.Map `ebpf:"pending_opens"`
+	Events        *ebpf.Map `ebpf:"events"`
+	PendingOpens  *ebpf.Map `ebpf:"pending_opens"`
+	TargetCgroups *ebpf.Map `ebpf:"target_cgroups"`
 }
 
 func (m *filetraceSyscallMaps) Close() error {
 	return _FiletraceSyscallClose(
 		m.Events,
 		m.PendingOpens,
+		m.TargetCgroups,
 	)
 }
 
@@ -124,7 +126,6 @@ func (m *filetraceSyscallMaps) Close() error {
 //
 // It can be passed to loadFiletraceSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type filetraceSyscallVariables struct {
-	TargetCgroupId *ebpf.Variable `ebpf:"target_cgroup_id"`
 }
 
 // filetraceSyscallPrograms contains all programs after they have been loaded into the kernel.
