@@ -25,6 +25,7 @@ import (
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
 )
 
@@ -61,7 +62,21 @@ type CommandRunAttestor interface {
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
-	})
+	},
+		registry.StringConfigOption[attestation.Attestor](
+			"trace-backend",
+			"Tracing backend to use for command-run opened file capture. Supported values: default, ebpf",
+			TraceBackendDefault,
+			func(a attestation.Attestor, backend string) (attestation.Attestor, error) {
+				commandRun, ok := a.(*CommandRun)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a command-run attestor", a)
+				}
+				WithTraceBackend(backend)(commandRun)
+				return commandRun, nil
+			},
+		),
+	)
 }
 
 type Option func(*CommandRun)
