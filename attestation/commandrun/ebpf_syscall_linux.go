@@ -39,9 +39,6 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load spec: %w", err)
 	}
-	if err := spec.Variables["target_cgroup_id"].Set(cgroupID); err != nil {
-		return nil, fmt.Errorf("set target cgroup id: %w", err)
-	}
 
 	var objs commandrunbpf.FiletraceSyscallObjects
 	if err := spec.LoadAndAssign(&objs, nil); err != nil {
@@ -76,11 +73,18 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 		links = append(links, l)
 	}
 
-	return &loadedEBPFTracer{
-		events: objs.Events,
+	tracer := &loadedEBPFTracer{
+		events:        objs.Events,
+		targetCgroups: objs.TargetCgroups,
 		close: func() error {
 			closeLinks(links)
 			return objs.Close()
 		},
-	}, nil
+	}
+	if err := tracer.addCgroup(cgroupID); err != nil {
+		tracer.close()
+		return nil, fmt.Errorf("add target cgroup: %w", err)
+	}
+
+	return tracer, nil
 }
