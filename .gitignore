@@ -18,8 +18,7 @@ profile.cov
 .aider*
 .DS_Store
 
-# Generated BPF headers
-attestation/networktrace/bpf/headers/vmlinux.h
+# vmlinux.h is committed (pinned) so BPF objects build reproducibly; do not ignore it.
 attestation/networktrace/bpf/compile_flags.txt
 
 !log/
