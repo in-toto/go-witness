@@ -70,6 +70,12 @@ type ExecuteHooks struct {
 
 	allFulfilled chan struct{}
 	closedOnce   sync.Once
+
+	// ranStage tracks which stages have already been run, so RunHooks is
+	// idempotent per stage. Hooks may perform one-shot side effects (e.g.
+	// closing a channel), so running a stage twice must be prevented even if
+	// multiple lifecycle paths call RunHooks.
+	ranStage map[ExecuteHookStage]bool
 }
 
 type registeredHook struct {
@@ -188,12 +194,20 @@ func (h *ExecuteHooks) unfulfilled() []ExecuteHookDeclaration {
 // This should be called by command-run at the appropriate lifecycle points.
 func (h *ExecuteHooks) RunHooks(stage ExecuteHookStage, pid int) error {
 	h.mu.Lock()
+	if h.ranStage[stage] {
+		h.mu.Unlock()
+		return nil
+	}
 	var stageHooks []registeredHook
 	for _, hook := range h.hooks {
 		if hook.stage == stage {
 			stageHooks = append(stageHooks, hook)
 		}
 	}
+	if h.ranStage == nil {
+		h.ranStage = make(map[ExecuteHookStage]bool)
+	}
+	h.ranStage[stage] = true
 	h.mu.Unlock()
 
 	if len(stageHooks) == 0 {
