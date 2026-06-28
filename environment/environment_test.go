@@ -170,6 +170,49 @@ func TestCapture_Capture(t *testing.T) {
 				"TEST_TEXT": "value",
 			},
 		},
+		{
+			// A malformed glob (unterminated character class) used to panic
+			// because the failed compile result was still appended to the
+			// match list and later dereferenced. It should now be skipped.
+			name: "Obfuscate with malformed glob does not panic",
+			fields: fields{
+				sensitiveVarsList: DefaultSensitiveEnvList(),
+				addSensitiveVarsList: map[string]struct{}{
+					"*[": {},
+				},
+				excludeSensitiveVarsList:    map[string]struct{}{},
+				filterVarsEnabled:           false,
+				disableSensitiveVarsDefault: true,
+			},
+			args: args{
+				env: []string{
+					"TEST_TEXT=value",
+				},
+			},
+			want: map[string]string{
+				"TEST_TEXT": "value",
+			},
+		},
+		{
+			name: "Filter with malformed glob does not panic",
+			fields: fields{
+				sensitiveVarsList: DefaultSensitiveEnvList(),
+				addSensitiveVarsList: map[string]struct{}{
+					"*[": {},
+				},
+				excludeSensitiveVarsList:    map[string]struct{}{},
+				filterVarsEnabled:           true,
+				disableSensitiveVarsDefault: true,
+			},
+			args: args{
+				env: []string{
+					"TEST_TEXT=value",
+				},
+			},
+			want: map[string]string{
+				"TEST_TEXT": "value",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
