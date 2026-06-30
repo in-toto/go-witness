@@ -23,6 +23,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"github.com/in-toto/go-witness/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -134,6 +136,15 @@ func skipIfNotRoot(t *testing.T) {
 	}
 }
 
+func assertNoAttestorErrors(t *testing.T, ctx *attestation.AttestationContext) {
+	t.Helper()
+	for _, ca := range ctx.CompletedAttestors() {
+		if ca.Error != nil {
+			t.Errorf("attestor %s failed unexpectedly: %v", ca.Attestor.Name(), ca.Error)
+		}
+	}
+}
+
 type testTCPServer struct {
 	listener     net.Listener
 	port         int
@@ -226,6 +237,7 @@ func TestIntegrationNetworkTrace(t *testing.T) {
 
 	err = ctx.RunAttestors()
 	require.NoError(t, err)
+	assertNoAttestorErrors(t, ctx)
 
 	receivedData := <-server.receivedData
 	assert.Equal(t, []byte(clientRequest), receivedData, "Server should receive exact request data")
@@ -301,6 +313,7 @@ func TestIntegrationZeroByteConnection(t *testing.T) {
 
 	err = ctx.RunAttestors()
 	require.NoError(t, err)
+	assertNoAttestorErrors(t, ctx)
 
 	receivedData := <-server.receivedData
 	assert.Equal(t, []byte{}, receivedData, "Server should receive zero-byte data")
@@ -380,9 +393,285 @@ func TestIntegrationHangingConnectionTeardown(t *testing.T) {
 	select {
 	case err := <-done:
 		require.NoError(t, err, "Attestors should run successfully and shut down cleanly")
+
+		// command run actually fails due to timeout
+		foundCmdError := false
+		for _, ca := range ctx.CompletedAttestors() {
+			if ca.Attestor.Name() == "command-run" {
+				require.Error(t, ca.Error, "Expected command-run attestor to fail due to SIGKILL")
+				assert.Contains(t, ca.Error.Error(), "exit status 124", "Expected attestor to fail due to SIGKILL")
+				foundCmdError = true
+				break
+			}
+		}
+		require.True(t, foundCmdError, "command-run attestor not found in completed attestors")
+
 	case <-time.After(10 * time.Second):
 		t.Fatal("DEADLOCK DETECTED: Test timed out! The proxy failed to forcefully close lingering connections during shutdown, causing io.Copy to block forever.")
 	}
+}
+
+func TestIntegrationExecveGhostThread(t *testing.T) {
+	skipIfNotRoot(t)
+
+	// This test forces a multi-threaded program to call execve from a background thread.
+	const testPort = 19880
+	server := newTestTCPServer(t, testPort, []byte("PONG"))
+	defer server.wait()
+
+	config := types.Config{
+		ProxyPort:        testProxyPort + 3,
+		ProxyBindIPv4:    "127.0.0.1",
+		ObserveChildTree: true,
+		Payload: types.PayloadConfig{
+			RecordPayload: true,
+		},
+	}
+	networkAttestor := NewWithConfig(config)
+
+	pythonScript := fmt.Sprintf(`
+import os, threading, time
+def do_exec():
+    time.sleep(0.1) # Brief pause to ensure the thread fully detaches
+    os.execlp("sh", "sh", "-c", "echo 'GHOST' | nc -w 1 127.0.0.1 %d")
+threading.Thread(target=do_exec).start()
+while True:
+    time.sleep(1) # Keep main thread alive to be swapped
+`, testPort)
+
+	// Write the script to a temp file
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "ghost.py")
+	require.NoError(t, os.WriteFile(scriptPath, []byte(pythonScript), 0644))
+
+	cmd := commandrun.New(
+		commandrun.WithCommand([]string{"python3", scriptPath}),
+		commandrun.WithSilent(false),
+	)
+
+	ctx, err := attestation.NewContext("test-ghost-thread", []attestation.Attestor{cmd, networkAttestor})
+	require.NoError(t, err)
+
+	err = ctx.RunAttestors()
+	require.NoError(t, err) // Should not hang or error out
+	assertNoAttestorErrors(t, ctx)
+
+	// Assert the proxy successfully tracked the ghost thread's execution
+	assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should intercept connection from rescued thread")
+}
+
+func TestIntegrationSIGKILLException(t *testing.T) {
+	skipIfNotRoot(t)
+
+	config := types.DefaultConfig()
+	config.ProxyPort = testProxyPort + 4
+	networkAttestor := NewWithConfig(config)
+
+	pidFile := filepath.Join(t.TempDir(), "witness_test_sigkill.pid")
+
+	cmd := commandrun.New(
+		commandrun.WithCommand([]string{"sh", "-c", fmt.Sprintf("echo $$ > %s && exec sleep 100", pidFile)}),
+		commandrun.WithSilent(false),
+	)
+
+	ctx, err := attestation.NewContext("test-sigkill", []attestation.Attestor{cmd, networkAttestor})
+	require.NoError(t, err)
+
+	go func() {
+		var pid int
+		for range 50 { // Poll for up to 5 seconds
+			time.Sleep(100 * time.Millisecond)
+			data, err := os.ReadFile(pidFile)
+			if err == nil && len(data) > 0 {
+				_, _ = fmt.Sscanf(string(data), "%d", &pid)
+				if pid > 0 {
+					err = unix.Kill(pid, unix.SIGKILL)
+					assert.NoError(t, err, "Failed to send SIGKILL to test process")
+					return
+				}
+			}
+		}
+	}()
+
+	err = ctx.RunAttestors()
+	// Note: RunAttestors() returns nil even when attestors fail.
+	// Errors are stored in CompletedAttestors(), so we check there.
+	require.NoError(t, err, "RunAttestors should not return error")
+
+	// Verify command-run attestor failed due to SIGKILL
+	foundCmdError := false
+	for _, ca := range ctx.CompletedAttestors() {
+		if ca.Attestor.Name() == "command-run" {
+			require.Error(t, ca.Error, "Expected command-run attestor to fail due to SIGKILL")
+			assert.Contains(t, ca.Error.Error(), "exit status 137", "Expected attestor to fail due to SIGKILL")
+			foundCmdError = true
+			break
+		}
+	}
+	require.True(t, foundCmdError, "command-run attestor not found in completed attestors")
+
+	// The fallback pre-exit hooks must have run
+	assert.False(t, networkAttestor.NetworkTrace.EndTime.IsZero(), "Proxy teardown should still execute via SIGKILL fallback")
+}
+
+func TestIntegrationNestedNamespaceTracking(t *testing.T) {
+	skipIfNotRoot(t)
+
+	const nsTestPort = 19881
+	server := newTestTCPServer(t, nsTestPort, []byte("PONG"))
+	defer server.wait()
+
+	config := types.Config{
+		ProxyPort:        testProxyPort + 5,
+		ProxyBindIPv4:    "127.0.0.1",
+		ObserveChildTree: true,
+		Payload:          types.PayloadConfig{RecordPayload: true},
+	}
+	networkAttestor := NewWithConfig(config)
+
+	// unshare -p -f creates a new isolated PID namespace for the command
+	cmd := commandrun.New(
+		commandrun.WithCommand([]string{
+			"unshare", "-p", "-f", "--mount-proc", "sh", "-c",
+			fmt.Sprintf("echo 'NS_TEST' | nc -w 1 127.0.0.1 %d", nsTestPort),
+		}),
+		commandrun.WithSilent(false),
+	)
+
+	ctx, err := attestation.NewContext("test-namespace", []attestation.Attestor{cmd, networkAttestor})
+	require.NoError(t, err)
+
+	err = ctx.RunAttestors()
+	require.NoError(t, err)
+	assertNoAttestorErrors(t, ctx)
+
+	// If get_tid_ns() works correctly, the proxy will capture the connection.
+	assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should intercept connection inside nested PID namespace")
+}
+
+func TestIntegrationOrphanedProcessSurvival(t *testing.T) {
+	skipIfNotRoot(t)
+
+	const orphanTestPort = 19882
+	server := newTestTCPServer(t, orphanTestPort, []byte("PONG"))
+	defer server.wait()
+
+	config := types.Config{
+		ProxyPort:        testProxyPort + 8,
+		ProxyBindIPv4:    "127.0.0.1",
+		ObserveChildTree: true,
+		Payload:          types.PayloadConfig{RecordPayload: true},
+	}
+	networkAttestor := NewWithConfig(config)
+
+	// The parent script spawns a background task and immediately exits.
+	// The child sleeps for 1 second (becoming an orphan reparented to PID 1), then connects.
+	cmd := commandrun.New(
+		commandrun.WithCommand([]string{
+			"sh", "-c", fmt.Sprintf("(sleep 3 && echo 'ORPHAN' | nc -w 1 127.0.0.1 %d) & exit 0", orphanTestPort),
+		}),
+		commandrun.WithSilent(false),
+	)
+
+	ctx, err := attestation.NewContext("test-orphan", []attestation.Attestor{cmd, networkAttestor})
+	require.NoError(t, err)
+
+	err = ctx.RunAttestors()
+	require.NoError(t, err)
+	assertNoAttestorErrors(t, ctx)
+
+	assert.Len(t, networkAttestor.NetworkTrace.Connections, 1, "Should intercept connection from orphaned background process")
+}
+
+func TestIntegrationDeepNestingAndExecveSwap(t *testing.T) {
+	skipIfNotRoot(t)
+
+	// We set up three distinct servers to verify three network calls happening
+	// at different stages of the process tree's lifecycle and nesting depth.
+	port1, port2, port3 := 19890, 19891, 19892
+	srv1 := newTestTCPServer(t, port1, []byte("ACK1"))
+	srv2 := newTestTCPServer(t, port2, []byte("ACK2"))
+	srv3 := newTestTCPServer(t, port3, []byte("ACK3"))
+	defer srv1.wait()
+	defer srv2.wait()
+	defer srv3.wait()
+
+	config := types.Config{
+		ProxyPort:        testProxyPort + 9,
+		ProxyBindIPv4:    "127.0.0.1",
+		ObserveChildTree: true,
+		Payload: types.PayloadConfig{
+			RecordPayload: true,
+		},
+	}
+	networkAttestor := NewWithConfig(config)
+
+	// This python script compresses the CI pipeline lifecycle:
+	// 1. Python Main Thread connects to Port 1
+	// 2. Python Background Thread calls execve, swapping identity to 'sh'
+	// 3. The newly exec'd 'sh' connects to Port 2
+	// 4. The 'sh' spawns a deeply nested subshell 'sh', which connects to Port 3
+	pythonScript := fmt.Sprintf(`
+import os, threading, socket, time
+
+# Connection 1: Synchronous call from the main thread
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(("127.0.0.1", %d))
+s.sendall(b"PAYLOAD_1")
+s.close()
+
+def do_exec():
+    # Execute Connection 2 natively, then spawn a nested shell for Connection 3
+    cmd = "echo 'PAYLOAD_2' | nc -w 1 127.0.0.1 %d && sh -c 'echo \"PAYLOAD_3\" | nc -w 1 127.0.0.1 %d'"
+    os.execlp("sh", "sh", "-c", cmd)
+
+threading.Thread(target=do_exec).start()
+
+# Wait to be slaughtered by the kernel during the swap
+while True:
+    time.sleep(1)
+`, port1, port2, port3)
+
+	// Write the script to a temp file to completely bypass shell quoting rules
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "deep_nest.py")
+	require.NoError(t, os.WriteFile(scriptPath, []byte(pythonScript), 0644))
+
+	// Wrap the Python script in multiple levels of shell nesting using the file path
+	deepNestCmd := fmt.Sprintf("sh -c \"sh -c 'python3 %s'\"", scriptPath)
+
+	cmd := commandrun.New(
+		commandrun.WithCommand([]string{"sh", "-c", deepNestCmd}),
+		commandrun.WithSilent(false),
+	)
+
+	ctx, err := attestation.NewContext("test-deep-nesting-exec", []attestation.Attestor{cmd, networkAttestor})
+	require.NoError(t, err)
+
+	err = ctx.RunAttestors()
+	require.NoError(t, err)
+	assertNoAttestorErrors(t, ctx)
+
+	// We must have exactly 3 recorded connections.
+	connections := networkAttestor.NetworkTrace.Connections
+	assert.Len(t, connections, 3, "Should intercept exactly 3 connections across the nested execve lifecycle")
+
+	// Validate the payloads to ensure the proxy successfully routed and hashed every step
+	// of the multi-threaded identity swap.
+	var payloads []string
+	for _, conn := range connections {
+		if len(conn.TCPPayloads) > 0 {
+			for _, p := range conn.TCPPayloads {
+				if p.Direction == "client_to_server" {
+					payloads = append(payloads, string(p.Payload.Data))
+				}
+			}
+		}
+	}
+
+	assert.Contains(t, payloads, "PAYLOAD_1", "Failed to capture pre-execve payload")
+	assert.Contains(t, payloads, "PAYLOAD_2\n", "Failed to capture post-execve payload (Ghost rescue failed)")
+	assert.Contains(t, payloads, "PAYLOAD_3\n", "Failed to capture deeply nested payload spawned by rescued ghost")
 }
 
 func TestMain(m *testing.M) {

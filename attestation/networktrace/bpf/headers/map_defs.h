@@ -37,18 +37,16 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, 10240);
-    __type(key, struct pid_allowlist_key);
-    __type(value, struct pid_allowlist_val);
-} pid_allowlist SEC(".maps");
+    __type(key, struct tid_allowlist_key);
+    __type(value, struct tid_allowlist_val);
+} tid_allowlist SEC(".maps");
 
-// Single-element map storing when monitoring started (boot time in ns).
-// Used to reject processes that reused a PID after monitoring began.
 struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(max_entries, 1);
-    __type(key, __u32);
-    __type(value, struct injection_time_val);
-} injection_time_map SEC(".maps");
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 10240);
+    __type(key, __u32);   // Global Host TID
+    __type(value, __u32); // Namespace-aware TID
+} pending_execs SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);

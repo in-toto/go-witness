@@ -18,7 +18,6 @@ package commandrun
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -36,6 +35,57 @@ const (
 	MAX_PATH_LEN = 4096
 )
 
+// four signals that put a (multithreaded) process into group-stop:
+// SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU.
+// Per ptrace(2) "Group-stop": only these four signals are stopping signals, so
+// if the tracer sees any other signal it cannot be a group-stop.
+func isStoppingSignal(sig unix.Signal) bool {
+	switch sig {
+	case unix.SIGSTOP, unix.SIGTSTP, unix.SIGTTIN, unix.SIGTTOU:
+		return true
+	}
+	return false
+}
+
+// waitAll wraps Wait4(-1, WALL) for a ptrace tracer's main loop.
+// EINTR can be caused by some syscalls on restart, from ptrace(2)
+// The excerpt:
+//
+//	however, kernel bugs exist which cause some system calls to fail
+//	with EINTR even though no observable signal is injected to the
+//	tracee.
+//
+// ECHILD is caused when waitAll is invoked but there are no more child processes.
+// It's hard to reproduce this case, when trackedTIDs have a phantom TID that
+// has already exited, but ignoring the error should not have any side effects.
+// trackedTIDs might have some late deletions, but all threads are reaped and tracked.
+func waitAll(status *unix.WaitStatus) (pid int, noChildren bool, err error) {
+	for {
+		pid, err = unix.Wait4(-1, status, unix.WALL, nil)
+		if err == unix.EINTR {
+			continue
+		}
+		if err == unix.ECHILD {
+			return 0, true, nil
+		}
+		return pid, false, err
+	}
+}
+
+// decodeExitStatus converts a wait-status encoding into the process exit code
+// convention used throughout: a normal exit yields its exit status, while a
+// signal death yields 128+signal.
+func decodeExitStatus(ws unix.WaitStatus) int {
+	switch {
+	case ws.Exited():
+		return ws.ExitStatus()
+	case ws.Signaled():
+		return 128 + int(ws.Signal())
+	default:
+		return int(ws)
+	}
+}
+
 type ptraceContext struct {
 	traceePid           int
 	mainProgram         string
@@ -48,6 +98,15 @@ type ptraceContext struct {
 	hooksOnly    bool
 	hasPreExec   bool
 	hasPreExit   bool
+}
+
+func (p *ptraceContext) runPreExit() {
+	if !p.hasPreExit {
+		return
+	}
+	if err := p.executeHooks.RunHooks(attestation.StagePreExit, p.traceePid); err != nil {
+		log.Errorf("PreExit hooks failed: %v", err)
+	}
 }
 
 func enableTracing(c *exec.Cmd) {
@@ -100,6 +159,8 @@ func (p *ptraceContext) runTrace() error {
 		defer p.retryOpenedFiles()
 	}
 
+	defer p.runPreExit()
+
 	status := unix.WaitStatus(0)
 	_, err := unix.Wait4(p.traceePid, &status, 0, nil)
 	if err != nil {
@@ -117,8 +178,7 @@ func (p *ptraceContext) runTrace() error {
 		log.Infof("Entering hooks-only mode")
 		if p.hasPreExit {
 			log.Infof("Waiting for process exit to run PreExit hooks")
-			// Change the signal handling in waitForExitOnly if ptrace options are changed from PTRACE_O_TRACEEXIT
-			if err := unix.PtraceSetOptions(p.traceePid, unix.PTRACE_O_TRACEEXIT); err != nil {
+			if err := unix.PtraceSetOptions(p.traceePid, unix.PTRACE_O_TRACEEXIT|unix.PTRACE_O_TRACEEXEC|unix.PTRACE_O_TRACECLONE|unix.PTRACE_O_TRACEFORK|unix.PTRACE_O_TRACEVFORK); err != nil {
 				return err
 			}
 			return p.waitForExitOnly()
@@ -151,18 +211,38 @@ func (p *ptraceContext) runTrace() error {
 		return err
 	}
 
-	for {
-		pid, err := unix.Wait4(-1, &status, unix.WALL, nil)
+	trackedTIDs := map[int]struct{}{p.traceePid: {}}
+	expectingSIGSTOP := make(map[int]bool) // Local map to track auto-attach signals
+
+	for len(trackedTIDs) > 0 { // Loop until all threads die
+		pid, noChildren, err := waitAll(&status)
 		if err != nil {
 			return err
 		}
-		if pid == p.traceePid && status.Exited() {
-			p.exitCode = status.ExitStatus()
-			return nil
+		if noChildren {
+			// The traced tree is gone (see waitAll); finish normally.
+			break
 		}
-		if pid == p.traceePid && status.Signaled() {
-			p.exitCode = 128 + int(status.Signal())
-			return nil
+
+		// If a task in the kernel dies or exits, it reports death via Exited or Signaled other than the TGID in case of
+		// execve(2) under ptrace. As in the man page:
+		//   Note: the thread
+		//     group leader does not report death via WIFEXITED(status) until
+		//     there is at least one other live thread.  This eliminates the
+		//     possibility that the tracer will see it dying and then
+		//     reappearing.
+		// It "may" (varies with kernel version) report direct Signaled with SIGKILL, but it is not guaranteed. So we need to track all threads and wait for them to die.
+		// This is also required to reap the zombie threads and avoid leaving them in the process table.
+		if status.Exited() || status.Signaled() {
+			delete(trackedTIDs, pid)
+			if pid == p.traceePid {
+				if status.Exited() {
+					p.exitCode = status.ExitStatus()
+				} else if status.Signaled() {
+					p.exitCode = 128 + int(status.Signal())
+				}
+			}
+			continue
 		}
 
 		if status.Stopped() {
@@ -178,6 +258,24 @@ func (p *ptraceContext) runTrace() error {
 			// Inject the signal back (e.g., SIGINT, SIGTERM, or Real SIGTRAP)
 			injectedSig := int(sig)
 
+			// Swallom any stop signals. During tracing these would be generated by two things:
+			// A) Auto attach SIGSTOP for fork/clone/vfork. The kernel sends a SIGSTOP to the
+			// new thread before it is scheduled, and the tracer sees this stop signal.
+			// We don't want to inject this signal back to the process since it would cause the process to stop and hang.
+			// B) Group-stops. They cause a multithreaded process to stop all threads, and the tracer sees this stop signal.
+			// We don't want to inject this signal back to the process since it would cause the process to stop and hang.
+			//
+			// This also means any custom stop signals sent to the process are also swalloed. This is an acceptable tradeoff
+			// since the process is being traced and we are not interested in stopping it, but rather tracing its syscalls and exit.
+			// Also SIGSTOP in particular can't be caught or ignored by the process. Other signals can be, but it is still an acceptable case.
+			if isStoppingSignal(sig) {
+				if expectingSIGSTOP[pid] {
+					delete(expectingSIGSTOP, pid)
+				}
+				injectedSig = 0
+				trackedTIDs[pid] = struct{}{}
+			}
+
 			if isSyscallTrap {
 				injectedSig = 0
 				if err := p.nextSyscall(pid); err != nil {
@@ -192,23 +290,76 @@ func (p *ptraceContext) runTrace() error {
 					// Case 2: Ptrace Event (Exit/Fork/Exec) -> Suppress signal
 					injectedSig = 0
 
-					if eventCode == unix.PTRACE_EVENT_EXIT && pid == p.traceePid && p.hasPreExit {
-						if err := p.executeHooks.RunHooks(attestation.StagePreExit, pid); err != nil {
-							log.Errorf("PreExit hooks failed: %v", err)
+					switch eventCode {
+					case unix.PTRACE_EVENT_CLONE, unix.PTRACE_EVENT_FORK, unix.PTRACE_EVENT_VFORK:
+						newTIDMsg, _ := unix.PtraceGetEventMsg(pid)
+						newTID := int(newTIDMsg)
+						if _, known := trackedTIDs[newTID]; !known {
+							expectingSIGSTOP[newTID] = true
+							trackedTIDs[newTID] = struct{}{}
 						}
+					case unix.PTRACE_EVENT_EXEC:
+						oldTID, err := unix.PtraceGetEventMsg(pid)
+						if err == nil {
+							delete(trackedTIDs, int(oldTID))
+						}
+						trackedTIDs[pid] = struct{}{}
+
+					case unix.PTRACE_EVENT_EXIT:
+						// PTRACE_EVENT_EXIT is the kernel's authoritative,
+						// per-TID "this task is going away" notification. It is
+						// reported under the dying task's own TID, before any
+						// execve TID reuse, and (unlike the final WIFEXITED
+						// reap) is not withheld by the deferred thread-group-
+						// leader death rule. We therefore treat it as the point
+						// at which a TID leaves the tracked set. This keeps
+						// trackedTIDs in lockstep with the kernel and avoids
+						// phantom TIDs that would otherwise cause Wait4 to
+						// return ECHILD with a non-empty set.
+						if pid == p.traceePid {
+							exitStatus, err := unix.PtraceGetEventMsg(pid)
+							if err == nil {
+								p.exitCode = decodeExitStatus(unix.WaitStatus(exitStatus))
+							}
+						}
+
+						// Run the PreExit hook when the last tracked thread is
+						// exiting, while it is still frozen here so cleanup
+						// observes a paused process.
+						if len(trackedTIDs) == 1 {
+							if p.hasPreExit {
+								log.Infof("Last thread pausing for exit. Running PreExit hooks.")
+							}
+							p.runPreExit()
+						}
+
+						delete(trackedTIDs, pid)
 					}
 				}
 			}
 
 			if err := unix.PtraceSyscall(pid, injectedSig); err != nil {
-				log.Debugf("(tracing) ptrace syscall error: %w", err)
+				// The tracee may have died while stopped; ESRCH means it is
+				// gone, so drop it and keep reaping the remaining threads
+				// instead of abandoning the wait loop.
+				if err == unix.ESRCH {
+					delete(trackedTIDs, pid)
+				} else {
+					log.Debugf("(tracing) ptrace syscall error: %v", err)
+				}
 			}
 		} else {
 			if err := unix.PtraceSyscall(pid, 0); err != nil {
-				log.Debugf("(tracing) got error from ptrace syscall: %w", err)
+				if err == unix.ESRCH {
+					delete(trackedTIDs, pid)
+				} else {
+					log.Debugf("(tracing) got error from ptrace syscall: %v", err)
+				}
 			}
 		}
 	}
+
+	return nil
 }
 
 func (p *ptraceContext) waitForExitOnly() error {
@@ -219,72 +370,95 @@ func (p *ptraceContext) waitForExitOnly() error {
 		return fmt.Errorf("failed to continue: %w", err)
 	}
 
-	for {
-		_, err := unix.Wait4(p.traceePid, &status, 0, nil)
+	trackedTIDs := map[int]struct{}{p.traceePid: {}}
+	expectingSIGSTOP := make(map[int]bool) // Local map to track auto-attach signals
+
+	defer p.runPreExit()
+
+	for len(trackedTIDs) > 0 {
+		pid, noChildren, err := waitAll(&status)
 		if err != nil {
 			return fmt.Errorf("wait4 failed: %w", err)
 		}
-
-		if status.Exited() {
-			p.exitCode = status.ExitStatus()
-			return nil
+		if noChildren {
+			break
 		}
-		if status.Signaled() {
-			p.exitCode = 128 + int(status.Signal())
-			return nil
+
+		if status.Exited() || status.Signaled() {
+			delete(trackedTIDs, pid)
+			if pid == p.traceePid {
+				if status.Exited() {
+					p.exitCode = status.ExitStatus()
+				} else if status.Signaled() {
+					p.exitCode = 128 + int(status.Signal())
+				}
+			}
+			continue // Wait for remaining threads
 		}
 
 		if status.Stopped() {
 			sig := status.StopSignal()
-
 			injectedSig := int(sig)
+
+			if isStoppingSignal(sig) {
+				if expectingSIGSTOP[pid] {
+					delete(expectingSIGSTOP, pid)
+				}
+				injectedSig = 0
+				trackedTIDs[pid] = struct{}{}
+			}
 
 			if sig == unix.SIGTRAP {
 				eventCode := (uint32(status) >> 16) & 0xFFFF
 
 				if eventCode != 0 {
-					// Ptrace Event (EXIT) -> Swallow signal
-					injectedSig = 0
+					injectedSig = 0 // Swallow signal
 
-					// As we setup with only PTRACE_O_TRACEEXIT, only this event would be emitted
-					// Still, eventCode != 0 and eventCode == unix.PTRACE_EVENT_EXIT are separated for defensive
-					// programming
-					if eventCode == unix.PTRACE_EVENT_EXIT {
-						log.Infof("caught exit event for pid %d", p.traceePid)
-						if err := p.executeHooks.RunHooks(attestation.StagePreExit, p.traceePid); err != nil {
-							log.Errorf("PreExit hooks failed: %v", err)
+					switch eventCode {
+					case unix.PTRACE_EVENT_CLONE, unix.PTRACE_EVENT_FORK, unix.PTRACE_EVENT_VFORK:
+						newTIDMsg, _ := unix.PtraceGetEventMsg(pid)
+						newTID := int(newTIDMsg)
+						if _, known := trackedTIDs[newTID]; !known {
+							expectingSIGSTOP[newTID] = true
+							trackedTIDs[newTID] = struct{}{}
 						}
-
-						exitStatus, err := unix.PtraceGetEventMsg(p.traceePid)
+					case unix.PTRACE_EVENT_EXEC:
+						oldTID, err := unix.PtraceGetEventMsg(pid)
 						if err == nil {
-							p.exitCode = int(exitStatus >> 8)
+							delete(trackedTIDs, int(oldTID))
 						}
-
-						// Cont is required after PTRACE_EVENT_EXIT event stop, tracee is alive, needs to be cont
-						err = unix.PtraceCont(p.traceePid, 0)
-						if err != nil {
-							log.Errorf("Final PtraceCont failed (process likely already dead): %v", err)
-						}
-						// clear the zombie process using a wait signal
-						wPid, err := unix.Wait4(p.traceePid, &status, 0, nil)
-						if err != nil {
-							// ECHILD - child process has likely already been cleared
-							if !errors.Is(err, unix.ECHILD) {
-								log.Errorf("wPid: %d, wait4 failed: %v", wPid, err)
+						trackedTIDs[pid] = struct{}{}
+					case unix.PTRACE_EVENT_EXIT:
+						if pid == p.traceePid {
+							exitStatus, err := unix.PtraceGetEventMsg(pid)
+							if err == nil {
+								p.exitCode = decodeExitStatus(unix.WaitStatus(exitStatus))
 							}
 						}
-						return nil
+
+						if len(trackedTIDs) == 1 {
+							if p.hasPreExit {
+								log.Infof("Last thread pausing for exit. Running PreExit hooks.")
+							}
+							p.runPreExit()
+						}
+
+						delete(trackedTIDs, pid)
 					}
 				}
-				// If eventCode == 0, it is a REAL trap (int3).
-				// injectedSig remains SIGTRAP (5).
 			}
 
-			if err := unix.PtraceCont(p.traceePid, injectedSig); err != nil {
-				return fmt.Errorf("failed to continue with signal %d: %w", injectedSig, err)
+			if err := unix.PtraceCont(pid, injectedSig); err != nil {
+				if err == unix.ESRCH {
+					delete(trackedTIDs, pid)
+				} else {
+					log.Debugf("(tracing) failed to continue with signal %d: %v", injectedSig, err)
+				}
 			}
 		}
 	}
+
+	return nil
 }
 
 func (p *ptraceContext) retryOpenedFiles() {
