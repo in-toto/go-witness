@@ -273,3 +273,31 @@ func Test_preExecHookWithTracing(t *testing.T) {
 		t.Error("tracing was enabled but no processes were recorded")
 	}
 }
+
+func Test_tracingChildProcessENOENT(t *testing.T) {
+	cmd := New(
+		WithCommand([]string{"sh", "-c", "cat /tmp/this_file_should_not_exist_in_attestation || true"}),
+		WithSilent(true),
+		WithTracing(true),
+	)
+
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{cmd})
+	if err != nil {
+		t.Fatalf("failed to create attestation context: %v", err)
+	}
+
+	if err := ctx.RunAttestors(); err != nil {
+		t.Fatalf("failed to run attestors: %v", err)
+	}
+
+	if len(cmd.Processes) == 0 {
+		t.Error("tracing was enabled but no processes were recorded")
+	}
+
+	// Verify that the nonexistent file is NOT present in any process's OpenedFiles
+	for _, p := range cmd.Processes {
+		if _, ok := p.OpenedFiles["/tmp/this_file_should_not_exist_in_attestation"]; ok {
+			t.Errorf("found nonexistent file in OpenedFiles for PID %d: %s", p.ProcessID, "/tmp/this_file_should_not_exist_in_attestation")
+		}
+	}
+}
