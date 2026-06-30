@@ -62,9 +62,14 @@ func setupFulcioTestService(t *testing.T) (*dummyCAClientService, string) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	service.client = client
+
+	t.Cleanup(func() {
+		service.server.Stop()
+	})
+
 	go func() {
 		if err := service.server.Serve(lis); err != nil {
-			log.Fatalf("failed to serve: %v", err)
+			t.Logf("failed to serve: %v", err)
 		}
 	}()
 	return service, fmt.Sprintf("localhost:%d", lis.Addr().(*net.TCPAddr).Port)
@@ -220,8 +225,7 @@ func TestGetCert(t *testing.T) {
 
 func TestSigner(t *testing.T) {
 	// Setup dummy CA client service
-	service, url := setupFulcioTestService(t)
-	defer service.server.Stop()
+	_, url := setupFulcioTestService(t)
 
 	ctx := context.Background()
 
@@ -431,9 +435,14 @@ func setupRetryFulcioTestService(t *testing.T, maxFailures int32) (*retryCAClien
 		t.Fatalf("failed to create client: %v", err)
 	}
 	service.client = client
+
+	t.Cleanup(func() {
+		service.server.Stop()
+	})
+
 	go func() {
 		if err := service.server.Serve(lis); err != nil {
-			log.Fatalf("failed to serve: %v", err)
+			t.Logf("failed to serve: %v", err)
 		}
 	}()
 	return service, fmt.Sprintf("localhost:%d", lis.Addr().(*net.TCPAddr).Port)
@@ -445,7 +454,6 @@ func TestGetCertRetryLogic(t *testing.T) {
 	t.Run("successful retry after transient failure", func(t *testing.T) {
 		// Setup service that fails first 2 attempts, succeeds on 3rd
 		service, _ := setupRetryFulcioTestService(t, 2)
-		defer service.server.Stop()
 
 		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		require.NoError(t, err)
@@ -466,7 +474,6 @@ func TestGetCertRetryLogic(t *testing.T) {
 	t.Run("max retries exceeded", func(t *testing.T) {
 		// Setup service that always fails
 		service, _ := setupRetryFulcioTestService(t, 5)
-		defer service.server.Stop()
 
 		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		require.NoError(t, err)
@@ -481,7 +488,6 @@ func TestGetCertRetryLogic(t *testing.T) {
 
 	t.Run("invalid token format validation", func(t *testing.T) {
 		service, _ := setupFulcioTestService(t)
-		defer service.server.Stop()
 
 		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		require.NoError(t, err)
@@ -499,7 +505,6 @@ func TestGetCertRetryLogic(t *testing.T) {
 
 	t.Run("token without required claims", func(t *testing.T) {
 		service, _ := setupFulcioTestService(t)
-		defer service.server.Stop()
 
 		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		require.NoError(t, err)
@@ -535,10 +540,12 @@ func TestGetCertNonRetryableErrors(t *testing.T) {
 
 		go func() {
 			if err := service.server.Serve(lis); err != nil {
-				log.Fatalf("failed to serve: %v", err)
+				t.Logf("failed to serve: %v", err)
 			}
 		}()
-		defer service.server.Stop()
+		t.Cleanup(func() {
+			service.server.Stop()
+		})
 
 		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		require.NoError(t, err)
