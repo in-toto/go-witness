@@ -498,4 +498,3 @@ func getSpecBypassIsVulnFromStatus(status []byte) bool {
 
 	return false
 }
-
