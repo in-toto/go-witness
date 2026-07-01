@@ -17,6 +17,7 @@
 package commandrun
 
 import (
+	"os"
 	"testing"
 
 	"github.com/in-toto/go-witness/attestation"
@@ -275,8 +276,13 @@ func Test_preExecHookWithTracing(t *testing.T) {
 }
 
 func Test_tracingChildProcessENOENT(t *testing.T) {
+	testFile := "/tmp/this_file_should_not_exist_in_attestation"
+	if _, err := os.Stat(testFile); !os.IsNotExist(err) {
+		t.Skipf("skipping test because file %s actually exists on the system", testFile)
+	}
+
 	cmd := New(
-		WithCommand([]string{"sh", "-c", "cat /tmp/this_file_should_not_exist_in_attestation || true"}),
+		WithCommand([]string{"sh", "-c", "cat " + testFile + " || true"}),
 		WithSilent(true),
 		WithTracing(true),
 	)
