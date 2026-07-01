@@ -289,21 +289,21 @@ func (p *ptraceContext) waitForExitOnly() error {
 
 func (p *ptraceContext) retryOpenedFiles() {
 	// after tracing, look through opened files to try to resolve any newly created files
-	procInfo := p.getProcInfo(p.traceePid)
+	for _, procInfo := range p.processes {
+		for file, digestSet := range procInfo.OpenedFiles {
+			if digestSet != nil {
+				continue
+			}
 
-	for file, digestSet := range procInfo.OpenedFiles {
-		if digestSet != nil {
-			continue
+			newDigest, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
+
+			if err != nil {
+				delete(procInfo.OpenedFiles, file)
+				continue
+			}
+
+			procInfo.OpenedFiles[file] = newDigest
 		}
-
-		newDigest, err := cryptoutil.CalculateDigestSetFromFile(file, p.hash)
-
-		if err != nil {
-			delete(procInfo.OpenedFiles, file)
-			continue
-		}
-
-		procInfo.OpenedFiles[file] = newDigest
 	}
 }
 
