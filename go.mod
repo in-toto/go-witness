@@ -16,6 +16,7 @@ require (
 	github.com/digitorus/pkcs7 v0.0.0-20250730155240-ffadbf3f398c
 	github.com/digitorus/timestamp v0.0.0-20250524132541-c45532741eea
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
+	github.com/elazarl/goproxy v1.7.2
 	github.com/fkautz/omnitrail-go v0.0.0-20240613153526-999f2e7d0fc9
 	github.com/gabriel-vasile/mimetype v1.4.13
 	github.com/go-git/go-git/v5 v5.19.1
