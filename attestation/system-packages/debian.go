@@ -41,7 +41,7 @@ func (b *DebianBackend) DetermineOSInfo() (string, string, string, error) {
 }
 
 func (b *DebianBackend) GatherPackages() ([]Package, error) {
-	cmd := b.execCommand("dpkg-query", "-W", "-f", "${Package}\t${Version}\n")
+	cmd := b.execCommand(trustedToolPath("dpkg-query"), "-W", "-f", "${Package}\t${Version}\n")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err

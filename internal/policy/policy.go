@@ -19,6 +19,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"reflect"
 
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/dsse"
@@ -39,6 +40,11 @@ type VerifyPolicySignatureOptions struct {
 	policyOrganizations        []string
 	policyURIs                 []string
 	fulcioCertExtensions       certificate.Extensions
+	// certConstraintsSet records whether the caller explicitly supplied the CN/SAN identity
+	// constraints (via VerifyWithPolicyCertConstraints). When true the supplied values are honored
+	// exactly, so an empty field means "the certificate must have none". When false the caller has
+	// not opted in to SAN/CN constraints, so those fields are not enforced.
+	certConstraintsSet bool
 }
 
 type Option func(*VerifyPolicySignatureOptions)
@@ -68,12 +74,19 @@ func VerifyWithPolicyCAIntermediates(intermediates []*x509.Certificate) Option {
 }
 
 func NewVerifyPolicySignatureOptions(opts ...Option) *VerifyPolicySignatureOptions {
+	// Default the certificate-identity constraints to empty rather than the wildcard "*". An empty
+	// constraint is not AllowAll the way "*" is: checkCertConstraint treats "*" as matching anything,
+	// whereas an empty constraint matches only a certificate that carries no such attribute. More
+	// importantly, the x509 opt-in gate in VerifyPolicySignature refuses an x509 signer entirely until
+	// the caller explicitly configures an identity (CN/SAN constraints or Fulcio extensions), so a
+	// wildcard default would make trusting a CA implicitly trust every certificate that chains to it,
+	// while these empty defaults do not.
 	vo := &VerifyPolicySignatureOptions{
-		policyCommonName:    "*",
-		policyDNSNames:      []string{"*"},
-		policyOrganizations: []string{"*"},
-		policyURIs:          []string{"*"},
-		policyEmails:        []string{"*"},
+		policyCommonName:    "",
+		policyDNSNames:      []string{},
+		policyOrganizations: []string{},
+		policyURIs:          []string{},
+		policyEmails:        []string{},
 	}
 
 	for _, opt := range opts {
@@ -96,7 +109,22 @@ func VerifyWithPolicyCertConstraints(commonName string, dnsNames []string, email
 		vo.policyEmails = emails
 		vo.policyOrganizations = organizations
 		vo.policyURIs = uris
+		vo.certConstraintsSet = true
 	}
+}
+
+// extensionsConfigured reports whether any Fulcio certificate extension constraint was set. It
+// treats any non-zero field as a configured constraint so that constraints remain detected even if
+// Fulcio adds non-string extension fields in the future; relying on the string kind alone would
+// silently fail open for such fields.
+func extensionsConfigured(vo *VerifyPolicySignatureOptions) bool {
+	ev := reflect.ValueOf(vo.fulcioCertExtensions)
+	for i := 0; i < ev.NumField(); i++ {
+		if !ev.Field(i).IsZero() {
+			return true
+		}
+	}
+	return false
 }
 
 func VerifyPolicySignature(ctx context.Context, envelope dsse.Envelope, vo *VerifyPolicySignatureOptions) error {
@@ -107,6 +135,14 @@ func VerifyPolicySignature(ctx context.Context, envelope dsse.Envelope, vo *Veri
 
 	var passed bool
 	for _, verifier := range passedPolicyVerifiers {
+		// A CheckedVerifier whose signature failed cryptographic verification carries a
+		// non-nil Error. Such an entry must never confer trust, regardless of whether its
+		// certificate matches the configured policy constraints.
+		if verifier.Error != nil {
+			log.Debugf("Policy Verifier failed signature verification: %v, continuing...", verifier.Error)
+			continue
+		}
+
 		kid, err := verifier.Verifier.KeyID()
 		if err != nil {
 			return fmt.Errorf("could not get verifier key id: %w", err)
@@ -115,6 +151,18 @@ func VerifyPolicySignature(ctx context.Context, envelope dsse.Envelope, vo *Veri
 		var f policy.Functionary
 		trustBundle := make(map[string]policy.TrustBundle)
 		if _, ok := verifier.Verifier.(*cryptoutil.X509Verifier); ok {
+			// Require an explicit identity opt-in before accepting an x509 policy signer. Trusting a
+			// CA alone must not accept every certificate that chains to it (including an
+			// identity-less certificate, which the empty constraints would otherwise pass since
+			// checkCertConstraint succeeds when both constraint and attribute are empty). The opt-in
+			// is either explicit CN/SAN constraints (VerifyWithPolicyCertConstraints) or Fulcio
+			// extension constraints.
+			extSet := extensionsConfigured(vo)
+			if !vo.certConstraintsSet && !extSet {
+				log.Debugf("Policy Verifier %s is x509 but no certificate identity constraints were configured; refusing, continuing...", kid)
+				continue
+			}
+
 			rootIDs := make([]string, 0)
 			for _, root := range vo.policyCARoots {
 				id := base64.StdEncoding.EncodeToString(root.Raw)
@@ -124,17 +172,31 @@ func VerifyPolicySignature(ctx context.Context, envelope dsse.Envelope, vo *Veri
 				}
 			}
 
+			constraint := policy.CertConstraint{
+				Roots:      rootIDs,
+				Extensions: vo.fulcioCertExtensions,
+			}
+			if vo.certConstraintsSet {
+				// Honor the caller's CN/SAN constraints exactly; an empty field means the
+				// certificate must carry no such value.
+				constraint.CommonName = vo.policyCommonName
+				constraint.DNSNames = vo.policyDNSNames
+				constraint.Emails = vo.policyEmails
+				constraint.Organizations = vo.policyOrganizations
+				constraint.URIs = vo.policyURIs
+			} else {
+				// Only Fulcio extension constraints were configured; the extensions are the identity
+				// opt-in, so do not additionally restrict the CN/SAN fields.
+				constraint.CommonName = "*"
+				constraint.DNSNames = []string{"*"}
+				constraint.Emails = []string{"*"}
+				constraint.Organizations = []string{"*"}
+				constraint.URIs = []string{"*"}
+			}
+
 			f = policy.Functionary{
-				Type: "root",
-				CertConstraint: policy.CertConstraint{
-					Roots:         rootIDs,
-					CommonName:    vo.policyCommonName,
-					URIs:          vo.policyURIs,
-					Emails:        vo.policyEmails,
-					Organizations: vo.policyOrganizations,
-					DNSNames:      vo.policyDNSNames,
-					Extensions:    vo.fulcioCertExtensions,
-				},
+				Type:           "root",
+				CertConstraint: constraint,
 			}
 
 		} else {
