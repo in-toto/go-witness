@@ -39,6 +39,13 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 			return err
 		}
 
+		// Normalize to forward slashes so the recorded artifact keys (and the
+		// glob matching below) are platform-independent. On Windows filepath.Rel
+		// returns backslash-separated paths, which would otherwise produce
+		// different attestation subject names and break dirHashGlob matching
+		// compared to other operating systems.
+		relPath = filepath.ToSlash(relPath)
+
 		if info.IsDir() {
 			dirHashMatch := false
 			for _, globItem := range dirHashGlob {
@@ -54,7 +61,7 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 					return err
 				}
 
-				artifacts[relPath+string(os.PathSeparator)] = dir
+				artifacts[relPath+"/"] = dir
 				return filepath.SkipDir
 			}
 
@@ -82,10 +89,13 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 			}
 
 			for artifactPath, artifact := range symlinkedArtifacts {
-				// all artifacts in the symlink should be recorded relative to our basepath
-				joinedPath := filepath.Join(relPath, artifactPath)
+				// all artifacts in the symlink should be recorded relative to our basepath.
+				// ToSlash keeps the joined key forward-slashed so it stays
+				// platform-independent on Windows (filepath.Join would reintroduce
+				// the OS separator).
+				joinedPath := filepath.ToSlash(filepath.Join(relPath, artifactPath))
 				if shouldRecord(joinedPath, artifact, baseArtifacts, processWasTraced, openedFiles) {
-					artifacts[filepath.Join(relPath, artifactPath)] = artifact
+					artifacts[joinedPath] = artifact
 				}
 			}
 
