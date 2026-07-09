@@ -91,6 +91,15 @@ func (e ErrMismatchArtifact) Error() string {
 	return fmt.Sprintf("mismatched digests for %v", e.Path)
 }
 
+// ErrNoArtifactOverlap is returned when an artifactsFrom comparison finds no path in common between
+// a step's materials and the referenced step's artifacts, meaning nothing actually flowed between
+// the steps and the edge would otherwise pass vacuously.
+type ErrNoArtifactOverlap struct{}
+
+func (e ErrNoArtifactOverlap) Error() string {
+	return "no artifacts in common between the step's materials and the referenced step's artifacts"
+}
+
 type ErrRegoInvalidData struct {
 	Path     string
 	Expected string

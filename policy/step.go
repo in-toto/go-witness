@@ -146,12 +146,15 @@ func (s Step) validateAttestations(collectionResults []source.CollectionVerifica
 	}
 
 	for _, collection := range collectionResults {
-		if collection.Collection.Name != s.Name && collection.Collection.Name != "" {
+		// Require an exact name match. An empty collection name must not act as a wildcard that
+		// matches every step, or a name-agnostic VerifiedSourcer could route an unnamed collection to
+		// a step it was never scoped to.
+		if collection.Collection.Name != s.Name {
 			log.Debugf("Skipping collection %s as it is not for step %s", collection.Collection.Name, s.Name)
 			continue
 		}
 
-		found := make(map[string]attestation.Attestor)
+		found := make(map[string][]attestation.Attestor)
 		reasons := make([]string, 0)
 		passed := true
 		if len(collection.Errors) > 0 {
@@ -161,23 +164,37 @@ func (s Step) validateAttestations(collectionResults []source.CollectionVerifica
 			}
 		}
 
+		// A step that declares no required attestations is a no-op gate: the expected-attestation
+		// loop below never runs, so the collection would be accepted without verifying anything.
+		// Fail closed so an empty attestations list is never a silent pass-through.
+		if len(s.Attestations) == 0 {
+			passed = false
+			reasons = append(reasons, fmt.Sprintf("step %s declares no required attestations; an empty attestations list is not a valid gate", s.Name))
+		}
+
 		for _, attestation := range collection.Collection.Attestations {
-			found[attestation.Type] = attestation.Attestation
+			found[attestation.Type] = append(found[attestation.Type], attestation.Attestation)
 		}
 
 		for _, expected := range s.Attestations {
-			attestor, ok := found[expected.Type]
+			attestors, ok := found[expected.Type]
 			if !ok {
 				passed = false
 				reasons = append(reasons, ErrMissingAttestation{
 					Step:        s.Name,
 					Attestation: expected.Type,
 				}.Error())
+				continue
 			}
 
-			if err := EvaluateRegoPolicy(attestor, expected.RegoPolicies); err != nil {
-				passed = false
-				reasons = append(reasons, err.Error())
+			// Evaluate the rego policy against every attestor of the expected type, not just the
+			// last one. Otherwise a policy-violating attestor could be hidden behind an appended
+			// benign attestor of the same predicate type.
+			for _, attestor := range attestors {
+				if err := EvaluateRegoPolicy(attestor, expected.RegoPolicies); err != nil {
+					passed = false
+					reasons = append(reasons, err.Error())
+				}
 			}
 		}
 

@@ -609,3 +609,85 @@ func TestCheckFunctionaries(t *testing.T) {
 		assert.Equal(t, testCase.expectedResults, resultCheckFields)
 	}
 }
+
+// A single distinct collection that matches on every search-depth iteration must be counted once,
+// not once per iteration.
+func TestVerifyDeduplicatesCollectionsAcrossDepth(t *testing.T) {
+	_, verifier, pubKeyPem, err := createTestKey()
+	require.NoError(t, err)
+	keyID, err := verifier.KeyID()
+	require.NoError(t, err)
+
+	pol := Policy{
+		Expires:    metav1.NewTime(time.Now().Add(time.Hour)),
+		PublicKeys: map[string]PublicKey{keyID: {KeyID: keyID, Key: pubKeyPem}},
+		Steps: map[string]Step{
+			"step1": {Name: "step1",
+				Functionaries: []Functionary{{Type: "PublicKey", PublicKeyID: keyID}},
+				Attestations:  []Attestation{{Type: commandrun.Type}}},
+		},
+	}
+
+	cr := commandrun.New()
+	cr.Cmd = []string{"go", "build"}
+	coll := attestation.NewCollection("step1", []attestation.CompletedAttestor{{Attestor: cr, StartTime: time.Now(), EndTime: time.Now()}})
+	cjson, err := json.Marshal(&coll)
+	require.NoError(t, err)
+	stmt, err := intoto.NewStatement(attestation.CollectionType, cjson, map[string]cryptoutil.DigestSet{"x": {cryptoutil.DigestValue{Hash: crypto.SHA256}: "x"}})
+	require.NoError(t, err)
+
+	one := source.CollectionVerificationResult{
+		Verifiers:          []cryptoutil.Verifier{verifier},
+		CollectionEnvelope: source.CollectionEnvelope{Statement: stmt, Collection: coll, Reference: "1"},
+	}
+
+	_, results, err := pol.Verify(context.Background(),
+		WithSubjectDigests([]string{"x"}),
+		WithSearchDepth(3),
+		WithVerifiedSource(newDummyVerifiedSourcer([]source.CollectionVerificationResult{one})),
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, len(results["step1"].Passed),
+		"the same collection was merged once per depth iteration instead of being de-duplicated")
+}
+
+// A policy that defines no steps imposes no requirements and must not pass verification.
+func TestVerifyFailsPolicyWithNoSteps(t *testing.T) {
+	pol := Policy{
+		Expires: metav1.NewTime(time.Now().Add(1 * time.Hour)),
+		Steps:   map[string]Step{},
+	}
+
+	pass, _, err := pol.Verify(
+		context.Background(),
+		WithSubjectDigests([]string{"any-subject"}),
+		WithVerifiedSource(newDummyVerifiedSourcer(nil)),
+	)
+	require.NoError(t, err)
+	require.False(t, pass, "a policy that defines no steps proves nothing and must not pass verification")
+}
+
+// An artifactsFrom edge whose downstream materials share no path with the upstream artifacts must be
+// rejected rather than passing vacuously.
+func TestCompareArtifactsRejectsZeroOverlap(t *testing.T) {
+	sha256 := cryptoutil.DigestValue{Hash: crypto.SHA256}
+
+	upstreamArtifacts := map[string]cryptoutil.DigestSet{
+		"bin/app": {sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+	}
+	// Downstream materials share no path with the upstream artifacts: nothing flowed.
+	downstreamMaterials := map[string]cryptoutil.DigestSet{
+		"src/unrelated.go": {sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	}
+
+	// A genuine overlap with a mismatching digest is rejected.
+	mismatch := map[string]cryptoutil.DigestSet{
+		"bin/app": {sha256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+	}
+	require.Error(t, compareArtifacts(mismatch, upstreamArtifacts),
+		"a present artifact with a wrong digest must be rejected")
+
+	require.Error(t, compareArtifacts(downstreamMaterials, upstreamArtifacts),
+		"an artifactsFrom edge with no genuine artifact flow must not pass vacuously")
+}

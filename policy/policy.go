@@ -17,9 +17,14 @@ package policy
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -254,16 +259,15 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 			stepResult := step.validateAttestations(functionaryCheckResults.Passed)
 			stepResult.Rejected = append(stepResult.Rejected, functionaryCheckResults.Rejected...)
 
-			// We perform many searches against the same step, so we need to merge the relevant fields
-			if resultsByStep[stepName].Step == "" {
-				resultsByStep[stepName] = stepResult
-			} else {
-				if result, ok := resultsByStep[stepName]; ok {
-					result.Passed = append(result.Passed, stepResult.Passed...)
-					result.Rejected = append(result.Rejected, stepResult.Rejected...)
-					resultsByStep[stepName] = result
-				}
-			}
+			// We perform many searches against the same step (once per search-depth iteration), so we
+			// merge the results. A single distinct collection can match on more than one iteration,
+			// so de-duplicate by content identity to avoid counting it multiple times in Passed,
+			// which would otherwise inflate any quorum/coverage decision a consumer makes.
+			merged := resultsByStep[stepName]
+			merged.Step = stepName
+			merged.Passed = appendUniqueCollections(merged.Passed, stepResult.Passed)
+			merged.Rejected = appendUniqueRejected(merged.Rejected, stepResult.Rejected)
+			resultsByStep[stepName] = merged
 
 			for _, coll := range stepResult.Passed {
 				for _, digestSet := range coll.Collection.BackRefs() {
@@ -280,15 +284,121 @@ func (p Policy) Verify(ctx context.Context, opts ...VerifyOption) (bool, map[str
 		return false, nil, fmt.Errorf("failed to verify artifacts: %w", err)
 	}
 
-	pass := true
+	// A policy that defines no steps imposes no requirements and therefore proves nothing; treat it
+	// as a verification failure rather than a vacuous pass.
+	pass := len(p.Steps) > 0
 	for _, result := range resultsByStep {
-		p := result.Analyze()
-		if !p {
+		stepPass := result.Analyze()
+		if !stepPass {
 			pass = false
 		}
 	}
 
 	return pass, resultsByStep, nil
+}
+
+// collectionIdentity derives a content-based identity for a verified collection so the same
+// distinct attestation is recognized across search-depth iterations. It is keyed on the statement
+// content and the verified signer key IDs rather than the envelope reference, because a reference
+// (for example MemorySource's) is only unique within a single source: a MultiSource composed of
+// independent sources can legitimately return distinct envelopes that share a source-local
+// reference, and those must not be collapsed. Identical statement content accepted under different
+// functionaries remains distinct because the verified signer key IDs are part of the identity.
+func collectionIdentity(c source.CollectionVerificationResult) string {
+	h := sha256.New()
+
+	// Length-prefix every field before hashing so the statement bytes and the signer key IDs are
+	// unambiguously framed. Without a delimiter, a concatenation such as statement||signer could in
+	// principle be reproduced by a different (statement, signer-set) pair and collapse two distinct
+	// collections; explicit framing removes that ambiguity.
+	writeField := func(b []byte) {
+		var n [8]byte
+		binary.BigEndian.PutUint64(n[:], uint64(len(b)))
+		h.Write(n[:])
+		h.Write(b)
+	}
+
+	stmt, err := json.Marshal(c.Statement)
+	if err != nil {
+		// A verified statement should always marshal; if it somehow does not, do not silently
+		// collapse this collection with others by contributing nothing. Fold the error into the
+		// identity so an unmarshalable statement stays distinct.
+		stmt = []byte("collectionIdentity: unmarshalable statement: " + err.Error())
+	}
+	writeField(stmt)
+
+	// Key on the verified signer identities, not the raw envelope signature list. DSSE signatures
+	// cover only the payload, so unverified signature entries can be appended without invalidating
+	// the attestation; keying on those would let a duplicate evade de-duplication by changing its
+	// identity. The accepted functionaries' key IDs are trusted and stable across re-signing (unlike
+	// randomized signature bytes). Sort so ordering does not affect the identity.
+	signerSet := make(map[string]struct{}, len(c.ValidFunctionaries))
+	for _, v := range c.ValidFunctionaries {
+		kid, err := v.KeyID()
+		if err != nil {
+			continue
+		}
+		signerSet[kid] = struct{}{}
+	}
+	signers := make([]string, 0, len(signerSet))
+	for kid := range signerSet {
+		signers = append(signers, kid)
+	}
+	sort.Strings(signers)
+	for _, s := range signers {
+		writeField([]byte(s))
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// appendUniqueCollections appends additions to existing, skipping any collection whose content
+// identity has already been seen.
+func appendUniqueCollections(existing, additions []source.CollectionVerificationResult) []source.CollectionVerificationResult {
+	seen := make(map[string]struct{}, len(existing))
+	for _, c := range existing {
+		seen[collectionIdentity(c)] = struct{}{}
+	}
+
+	for _, c := range additions {
+		id := collectionIdentity(c)
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		existing = append(existing, c)
+	}
+
+	return existing
+}
+
+// appendUniqueRejected appends rejected collections, collapsing only entries that repeat the same
+// collection AND the same rejection reason across search-depth iterations. The reason is part of the
+// key so a collection that fails several distinct checks keeps every cause for diagnostics.
+func appendUniqueRejected(existing, additions []RejectedCollection) []RejectedCollection {
+	key := func(c RejectedCollection) string {
+		reason := ""
+		if c.Reason != nil {
+			reason = c.Reason.Error()
+		}
+		return collectionIdentity(c.Collection) + "\x00" + reason
+	}
+
+	seen := make(map[string]struct{}, len(existing))
+	for _, c := range existing {
+		seen[key(c)] = struct{}{}
+	}
+
+	for _, c := range additions {
+		k := key(c)
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		existing = append(existing, c)
+	}
+
+	return existing
 }
 
 // checkFunctionaries checks to make sure the signature on each statement corresponds to a trusted functionary for
@@ -305,10 +415,13 @@ func (step Step) checkFunctionaries(statements []source.CollectionVerificationRe
 			for _, verifier := range statement.Verifiers {
 				for _, functionary := range step.Functionaries {
 					if err := functionary.Validate(verifier, trustBundles); err != nil {
-						statements[i].Warnings = append(statement.Warnings, fmt.Sprintf("failed to validate functionary of KeyID %s in step %s: %s", functionary.PublicKeyID, step.Name, err.Error()))
+						// Append to statements[i], not the range-copy `statement`: reading from the
+						// copy (which is never updated in this loop) discards every prior entry, so a
+						// collection with multiple valid functionaries would retain only the last one.
+						statements[i].Warnings = append(statements[i].Warnings, fmt.Sprintf("failed to validate functionary of KeyID %s in step %s: %s", functionary.PublicKeyID, step.Name, err.Error()))
 						continue
 					} else {
-						statements[i].ValidFunctionaries = append(statement.ValidFunctionaries, verifier)
+						statements[i].ValidFunctionaries = append(statements[i].ValidFunctionaries, verifier)
 					}
 				}
 			}
@@ -343,8 +456,8 @@ func (p Policy) verifyArtifacts(resultsByStep map[string]StepResult) (map[string
 		}
 
 		reasons := []error{}
-		for _, collection := range resultsByStep[step.Name].Passed {
-			if err := verifyCollectionArtifacts(step, collection, resultsByStep); err == nil {
+		for i := range resultsByStep[step.Name].Passed {
+			if err := verifyCollectionArtifacts(step, &resultsByStep[step.Name].Passed[i], resultsByStep); err == nil {
 				accepted = true
 			} else {
 				reasons = append(reasons, err)
@@ -370,22 +483,32 @@ func (p Policy) verifyArtifacts(resultsByStep map[string]StepResult) (map[string
 	return resultsByStep, nil
 }
 
-func verifyCollectionArtifacts(step Step, collection source.CollectionVerificationResult, collectionsByStep map[string]StepResult) error {
+func verifyCollectionArtifacts(step Step, collection *source.CollectionVerificationResult, collectionsByStep map[string]StepResult) error {
 	mats := collection.Collection.Materials()
-	reasons := []string{}
 	for _, artifactsFrom := range step.ArtifactsFrom {
-		accepted := make([]source.CollectionVerificationResult, 0)
+		reasons := []string{}
+		seenReasons := map[string]struct{}{}
+		// The edge is satisfied if at least one passed upstream collection genuinely shares an
+		// artifact with this step's materials and every shared digest matches. A candidate that has
+		// no overlap or a mismatching digest is not the source, so skip it and keep looking rather
+		// than terminating on the first non-match. Reasons are de-duplicated so searching multiple
+		// candidates does not repeat the same failure.
+		accepted := make([]source.CollectionVerificationResult, 0, 1)
 		for _, testCollection := range collectionsByStep[artifactsFrom].Passed {
 			if err := compareArtifacts(mats, testCollection.Collection.Artifacts()); err != nil {
-				collection.Warnings = append(collection.Warnings, fmt.Sprintf("failed to verify artifacts for step %s: %v", step.Name, err))
-				reasons = append(reasons, err.Error())
-				break
+				if _, ok := seenReasons[err.Error()]; !ok {
+					seenReasons[err.Error()] = struct{}{}
+					reasons = append(reasons, err.Error())
+					collection.Warnings = append(collection.Warnings, fmt.Sprintf("failed to verify artifacts for step %s: %v", step.Name, err))
+				}
+				continue
 			}
 
 			accepted = append(accepted, testCollection)
+			break
 		}
 
-		if len(accepted) <= 0 {
+		if len(accepted) == 0 {
 			return ErrVerifyArtifactsFailed{Reasons: reasons}
 		}
 	}
@@ -394,12 +517,14 @@ func verifyCollectionArtifacts(step Step, collection source.CollectionVerificati
 }
 
 func compareArtifacts(mats map[string]cryptoutil.DigestSet, arts map[string]cryptoutil.DigestSet) error {
+	overlap := 0
 	for path, mat := range mats {
 		art, ok := arts[path]
 		if !ok {
 			continue
 		}
 
+		overlap++
 		if !mat.Equal(art) {
 			return ErrMismatchArtifact{
 				Artifact: art,
@@ -407,6 +532,13 @@ func compareArtifacts(mats map[string]cryptoutil.DigestSet, arts map[string]cryp
 				Path:     path,
 			}
 		}
+	}
+
+	// An artifactsFrom edge means the downstream materials came from the upstream artifacts. If the
+	// two share no path at all, nothing actually flowed between the steps and the comparison would
+	// otherwise pass vacuously, so reject it.
+	if overlap == 0 {
+		return ErrNoArtifactOverlap{}
 	}
 
 	return nil
