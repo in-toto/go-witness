@@ -25,6 +25,7 @@ import (
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
 )
 
@@ -32,6 +33,13 @@ const (
 	Name    = "command-run"
 	Type    = "https://witness.dev/attestations/command-run/v0.1"
 	RunType = attestation.ExecuteRunType
+)
+
+// List of supported tracing backends. The CLI provides these through the --trace-backend
+// argument. Default (Linux): ptrace.
+const (
+	TraceBackendDefault = "default"
+	TraceBackendEBPF    = "ebpf"
 )
 
 // This is a hacky way to create a compile time error in case the attestor
@@ -54,7 +62,21 @@ type CommandRunAttestor interface {
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
-	})
+	},
+		registry.StringConfigOption[attestation.Attestor](
+			"trace-backend",
+			"Tracing backend to use for command-run opened file capture. Supported values: default, ebpf",
+			TraceBackendDefault,
+			func(a attestation.Attestor, backend string) (attestation.Attestor, error) {
+				commandRun, ok := a.(*CommandRun)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a command-run attestor", a)
+				}
+				WithTraceBackend(backend)(commandRun)
+				return commandRun, nil
+			},
+		),
+	)
 }
 
 type Option func(*CommandRun)
@@ -77,6 +99,12 @@ func WithTracing(enabled bool) Option {
 	}
 }
 
+func WithTraceBackend(backend string) Option {
+	return func(cr *CommandRun) {
+		cr.traceBackend = backend
+	}
+}
+
 func WithSilent(silent bool) Option {
 	return func(cr *CommandRun) {
 		cr.silent = silent
@@ -84,7 +112,9 @@ func WithSilent(silent bool) Option {
 }
 
 func New(opts ...Option) *CommandRun {
-	cr := &CommandRun{}
+	cr := &CommandRun{
+		traceBackend: TraceBackendDefault,
+	}
 
 	for _, opt := range opts {
 		opt(cr)
@@ -116,6 +146,7 @@ type CommandRun struct {
 	silent        bool
 	materials     map[string]cryptoutil.DigestSet
 	enableTracing bool
+	traceBackend  string
 	executeHooks  *attestation.ExecuteHooks
 }
 
@@ -159,6 +190,10 @@ func (rc *CommandRun) TracingEnabled() bool {
 	return rc.enableTracing
 }
 
+func (rc *CommandRun) IsExperimental() bool {
+	return rc.Data().traceBackend != TraceBackendDefault
+}
+
 // CommandRun saves the execute hooks using the same mechanism, even though
 // it doesn't declare any hooks itself. It is the hook runner. Maybe a hack.
 func (rc *CommandRun) DeclareHooks(hooks *attestation.ExecuteHooks) error {
@@ -167,6 +202,10 @@ func (rc *CommandRun) DeclareHooks(hooks *attestation.ExecuteHooks) error {
 }
 
 func (rc *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
+	if err := rc.validateTraceBackend(); err != nil {
+		return err
+	}
+
 	c := exec.Command(rc.Cmd[0], rc.Cmd[1:]...)
 	c.Dir = ctx.WorkingDir()
 	stdoutBuffer := bytes.Buffer{}
@@ -197,8 +236,11 @@ func (rc *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	hasPreExec := rc.executeHooks.HasHooks(attestation.StagePreExec)
 	hasPreExit := rc.executeHooks.HasHooks(attestation.StagePreExit)
 	needsHookTracing := hasPreExec || hasPreExit
+	needsPtraceTracing := needsHookTracing || (rc.enableTracing && !rc.usesEBPFTracing())
 
-	if rc.enableTracing || needsHookTracing {
+	// Keep ptrace only for hook-driven execution. Plain command-run tracing can
+	// use the eBPF file observer without thread pinning or ptrace signal handling.
+	if needsPtraceTracing {
 		// Locking the thread before enabling tracing and starting the command execution (fork and exec)
 		// Only the parent thread that called fork/clone can issue the subsequent tracing commands
 		runtime.LockOSThread()
@@ -206,24 +248,41 @@ func (rc *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		enableTracing(c)
 	}
 
-	if err := c.Start(); err != nil {
-		return err
-	}
-
 	var err error
 
-	if rc.enableTracing {
-		rc.Processes, err = rc.trace(c, ctx, hasPreExec, hasPreExit)
-	} else if needsHookTracing {
-		err = rc.runWithHooks(c, hasPreExec, hasPreExit)
+	if rc.enableTracing && rc.usesEBPFTracing() {
+		rc.Processes, err = rc.traceWithEBPF(c, ctx, hasPreExec, hasPreExit)
 	} else {
-		err = c.Wait()
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			rc.ExitCode = exitErr.ExitCode()
+		if err := c.Start(); err != nil {
+			return err
+		}
+
+		if rc.enableTracing {
+			rc.Processes, err = rc.trace(c, ctx, hasPreExec, hasPreExit)
+		} else if needsHookTracing {
+			err = rc.runWithHooks(c, hasPreExec, hasPreExit)
+		} else {
+			err = c.Wait()
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				rc.ExitCode = exitErr.ExitCode()
+			}
 		}
 	}
 
 	rc.Stdout = stdoutBuffer.String()
 	rc.Stderr = stderrBuffer.String()
 	return err
+}
+
+func (rc *CommandRun) validateTraceBackend() error {
+	if rc.traceBackend == "" {
+		rc.traceBackend = TraceBackendDefault
+	}
+
+	switch rc.traceBackend {
+	case TraceBackendDefault, TraceBackendEBPF:
+		return nil
+	default:
+		return fmt.Errorf("unsupported trace backend %q", rc.traceBackend)
+	}
 }
