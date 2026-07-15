@@ -17,6 +17,8 @@
 package types
 
 const (
+	DefaultCaCertPath    = "./witness_nettrace_proxy/ca_cert.pem"
+	DefaultCaKeyPath     = "./witness_nettrace_proxy/ca_key.pem"
 	DefaultProxyPort     = 8888
 	DefaultProxyBindIPv4 = "127.0.0.1"
 )
@@ -33,6 +35,14 @@ type Config struct {
 	ProxyPort     uint16 `json:"proxy_port"`
 	ProxyBindIPv4 string `json:"proxy_bind_ipv4"`
 
+	EnableHTTPInspection bool `json:"enabled_http_inspection"`
+
+	// TLS/Certificate configuration for HTTPS interception
+	GenerateCA bool   `json:"generate_ca"`
+	CACertPath string `json:"ca_cert_path,omitempty"`
+	CAKeyPath  string `json:"ca_key_path,omitempty"`
+	SkipVerify bool   `json:"skip_verify"`
+
 	// Payload recording options
 	Payload PayloadConfig `json:"payload"`
 }
@@ -40,9 +50,16 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() Config {
 	return Config{
-		ProxyPort:        DefaultProxyPort,
-		ProxyBindIPv4:    DefaultProxyBindIPv4,
-		ObserveChildTree: true,
-		Payload:          DefaultPayloadConfig(),
+		ProxyPort:            DefaultProxyPort,
+		ProxyBindIPv4:        DefaultProxyBindIPv4,
+		GenerateCA:           true,
+		CACertPath:           DefaultCaCertPath,
+		CAKeyPath:            DefaultCaKeyPath,
+		ObserveChildTree:     true,
+		EnableHTTPInspection: true,
+		ObservePIDs:          make([]uint32, 0),
+		ObserveCgroups:       make([]string, 0),
+		ObserveCommands:      make([]string, 0),
+		Payload:              DefaultPayloadConfig(),
 	}
 }

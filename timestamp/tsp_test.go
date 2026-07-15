@@ -17,10 +17,18 @@ package timestamp
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/asn1"
+	"math/big"
 	"testing"
+	"time"
 
+	tstamp "github.com/digitorus/timestamp"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/in-toto/go-witness/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -113,4 +121,134 @@ func TestTSP(t *testing.T) {
 		assert.Error(t, err)
 		assert.Zero(t, signedTime)
 	})
+}
+
+var (
+	oidEKUTimeStamping = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 8}
+	oidEKUServerAuth   = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 1}
+)
+
+// makeEKUExtension builds an extended-key-usage extension (OID 2.5.29.37) with the given EKU OIDs
+// and criticality. It is needed because x509.CreateCertificate always marks the template
+// ExtKeyUsage field non-critical, while RFC 3161 requires the TSA EKU extension to be critical.
+func makeEKUExtension(t *testing.T, critical bool, ekus ...asn1.ObjectIdentifier) pkix.Extension {
+	t.Helper()
+	val, err := asn1.Marshal(ekus)
+	require.NoError(t, err)
+	return pkix.Extension{Id: asn1.ObjectIdentifier{2, 5, 29, 37}, Critical: critical, Value: val}
+}
+
+// issueAndVerify signs a timestamp with a leaf built from leafTmpl under root, then runs the
+// verifier with root as the sole trust anchor and returns the verifier's result.
+func issueAndVerify(t *testing.T, rootCert *x509.Certificate, rootKey interface{}, leafTmpl *x509.Certificate) (time.Time, error) {
+	t.Helper()
+	leafPriv, leafPub, err := test.CreateRsaKey()
+	require.NoError(t, err)
+	leafCert, err := test.CreateCert(rootKey, leafPub, leafTmpl, rootCert)
+	require.NoError(t, err)
+
+	signedData := []byte("the signature bytes being timestamped")
+	digest := sha256.Sum256(signedData)
+	ts := tstamp.Timestamp{
+		HashAlgorithm:     crypto.SHA256,
+		HashedMessage:     digest[:],
+		Time:              time.Now().UTC(),
+		Nonce:             big.NewInt(0).SetBytes([]byte{0x1, 0x2, 0x3}),
+		Policy:            []int{2, 4, 5, 6},
+		Accuracy:          time.Second,
+		AddTSACertificate: true,
+	}
+	respBytes, err := ts.CreateResponseWithOpts(leafCert, leafPriv, crypto.SHA256)
+	require.NoError(t, err)
+	parsed, err := tstamp.ParseResponse(respBytes)
+	require.NoError(t, err)
+
+	return NewVerifier(VerifyWithCerts([]*x509.Certificate{rootCert})).
+		Verify(context.Background(), bytes.NewReader(parsed.RawToken), bytes.NewReader(signedData))
+}
+
+func baseLeafTemplate(cn string) *x509.Certificate {
+	return &x509.Certificate{
+		Subject:               pkix.Name{CommonName: cn},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+	}
+}
+
+// A TSA signing certificate that lacks the id-kp-timeStamping EKU (here it carries ServerAuth) must
+// be rejected as a timestamp signer.
+func TestVerifyRejectsCertWithoutTimestampingEKU(t *testing.T) {
+	rootCert, rootKey, err := test.CreateRoot()
+	require.NoError(t, err)
+
+	leafPriv, leafPub, err := test.CreateRsaKey()
+	require.NoError(t, err)
+	leafTmpl := &x509.Certificate{
+		Subject:               pkix.Name{CommonName: "not-a-timestamper.example"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+	leafCert, err := test.CreateCert(rootKey, leafPub, leafTmpl, rootCert)
+	require.NoError(t, err)
+
+	signedData := []byte("the signature bytes being timestamped")
+	digest := sha256.Sum256(signedData)
+	ts := tstamp.Timestamp{
+		HashAlgorithm:     crypto.SHA256,
+		HashedMessage:     digest[:],
+		Time:              time.Now().UTC(),
+		Nonce:             big.NewInt(0).SetBytes([]byte{0x1, 0x2, 0x3}),
+		Policy:            []int{2, 4, 5, 6},
+		Accuracy:          time.Second,
+		AddTSACertificate: true,
+	}
+	respBytes, err := ts.CreateResponseWithOpts(leafCert, leafPriv, crypto.SHA256)
+	require.NoError(t, err)
+	parsed, err := tstamp.ParseResponse(respBytes)
+	require.NoError(t, err)
+
+	_, err = NewVerifier(VerifyWithCerts([]*x509.Certificate{rootCert})).
+		Verify(context.Background(), bytes.NewReader(parsed.RawToken), bytes.NewReader(signedData))
+	require.Error(t, err, "timestamp accepted from a certificate without the id-kp-timeStamping EKU")
+}
+
+// A leaf carrying a sole, critical timestamping EKU is a valid TSA signer and must be accepted.
+func TestVerifyAcceptsSoleCriticalTimestampingEKU(t *testing.T) {
+	rootCert, rootKey, err := test.CreateRoot()
+	require.NoError(t, err)
+	leafTmpl := baseLeafTemplate("valid-tsa.example")
+	leafTmpl.ExtraExtensions = []pkix.Extension{makeEKUExtension(t, true, oidEKUTimeStamping)}
+
+	tt, err := issueAndVerify(t, rootCert, rootKey, leafTmpl)
+	require.NoError(t, err, "a leaf with a sole, critical timestamping EKU must be accepted")
+	require.False(t, tt.IsZero())
+}
+
+// A timestamping EKU that is not marked critical must be rejected, as RFC 3161 requires the EKU
+// extension to be critical.
+func TestVerifyRejectsNonCriticalTimestampingEKU(t *testing.T) {
+	rootCert, rootKey, err := test.CreateRoot()
+	require.NoError(t, err)
+	leafTmpl := baseLeafTemplate("noncritical-tsa.example")
+	leafTmpl.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageTimeStamping} // marked non-critical by Go
+
+	_, err = issueAndVerify(t, rootCert, rootKey, leafTmpl)
+	require.ErrorContains(t, err, "must be marked critical")
+}
+
+// A certificate that carries timestamping alongside another EKU must be rejected: RFC 3161 requires
+// timestamping to be the sole extended key usage.
+func TestVerifyRejectsMultipleEKUs(t *testing.T) {
+	rootCert, rootKey, err := test.CreateRoot()
+	require.NoError(t, err)
+	leafTmpl := baseLeafTemplate("multi-eku-tsa.example")
+	leafTmpl.ExtraExtensions = []pkix.Extension{makeEKUExtension(t, true, oidEKUTimeStamping, oidEKUServerAuth)}
+
+	_, err = issueAndVerify(t, rootCert, rootKey, leafTmpl)
+	require.ErrorContains(t, err, "only EKU")
 }
