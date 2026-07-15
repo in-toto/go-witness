@@ -82,7 +82,7 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 		},
 	}
 	if err := tracer.addCgroup(cgroupID); err != nil {
-		tracer.close()
+		_ = tracer.close()
 		return nil, fmt.Errorf("add target cgroup: %w", err)
 	}
 

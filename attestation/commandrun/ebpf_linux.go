@@ -131,12 +131,12 @@ func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationCo
 	case TraceBackendEBPF:
 		loaded, err = loadSyscallEBPFTracer(cgroupID)
 	default:
-		return nil, fmt.Errorf("Unknown EBPF backend: %s", rc.traceBackend)
+		return nil, fmt.Errorf("unknown EBPF backend: %s", rc.traceBackend)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load command-run eBPF file tracer: %w", err)
 	}
-	defer loaded.close()
+	defer func() { _ = loaded.close() }()
 
 	log.Infof("Using tracer: %s for command-run", rc.traceBackend)
 
