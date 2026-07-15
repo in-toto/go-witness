@@ -1,4 +1,4 @@
-// go:build ignore
+//go:build ignore
 
 // Copyright 2026 The Witness Contributors
 //
