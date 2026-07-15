@@ -1,0 +1,104 @@
+# Copyright 2026 The Witness Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Rebuilds the networktrace attestor's eBPF objects from the committed C
+# sources and pinned vmlinux.h, then fails if the result differs from the
+# committed *.o / generated *.go. This proves the checked-in BPF bytecode is
+# exactly what the committed source produces (binary equivalence), so a
+# tampered or stale object cannot slip in.
+#
+# Reproducibility relies on pinning every build input:
+#   - the toolchain (clang/llvm) via the cilium ebpf-builder container, pinned by digest
+#   - the kernel types via the committed headers/vmlinux.h
+#   - bpf2go + the Go toolchain via go.mod
+#   - the absolute build path: clang emits a handful of BTF forward-decl types in
+#     a build-path-dependent order, so the objects are only byte-reproducible when
+#     built from an identical path. We copy the checkout to a fixed /src and build
+#     there, matching the documented `docker run -v "$PWD":/src -w /src` recipe.
+name: Verify BPF
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "release-*"]
+    paths:
+      - "attestation/networktrace/bpf/**"
+      - ".github/workflows/verify-bpf.yml"
+      - "go.mod"
+      - "go.sum"
+  pull_request:
+    paths:
+      - "attestation/networktrace/bpf/**"
+      - ".github/workflows/verify-bpf.yml"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-bpf:
+    name: Verify BPF binary equivalence
+    runs-on: ubuntu-latest
+    # Pinned LLVM toolchain (clang-22 / llvm-strip-22) + bpftool + Go, matching
+    # the environment cilium/ebpf itself builds its BPF objects in. Pinning by
+    # digest makes clang byte-identical across CI runs and local `act` runs.
+    container:
+      image: ghcr.io/cilium/ebpf-builder:1777990914@sha256:22ce6d5aad2f15df921db21770e759554cbda52f6d4e291b1ff58b4b9a5d6fcb
+    env:
+      # The image ships an older Go than go.mod requires; allow it to fetch the
+      # pinned toolchain. clang (not Go) determines the BPF object bytes.
+      GOTOOLCHAIN: auto
+      GOFLAGS: -mod=readonly
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Mark git directories as safe
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory /src
+
+      - name: Pin clang/llvm-strip to v22
+        # bpf2go invokes the unversioned `clang`/`llvm-strip`; the image only
+        # ships the versioned binaries, so expose them under the expected names.
+        run: |
+          ln -sf /usr/bin/clang-22 /usr/local/bin/clang
+          ln -sf /usr/bin/llvm-strip-22 /usr/local/bin/llvm-strip
+          clang --version | head -1
+
+      - name: Regenerate BPF objects from committed sources
+        # Build from a fixed canonical path (/src) so the BTF byte layout is
+        # reproducible (see header comment). Runs the bpf2go directives in gen.go
+        # against the committed *.bpf.c and headers/vmlinux.h. Does NOT regenerate
+        # vmlinux.h (that is a pinned input).
+        run: |
+          rm -rf /src
+          cp -a "$GITHUB_WORKSPACE" /src
+          cd /src
+          go generate ./attestation/networktrace/bpf/...
+
+      - name: Verify committed objects match the fresh build
+        run: |
+          cd /src
+          if ! git diff --exit-code -- attestation/networktrace/bpf; then
+            echo "::error::Committed BPF objects differ from a fresh build of the committed sources."
+            echo "Regenerate them with the pinned toolchain and canonical build path, then commit:"
+            echo ""
+            echo "  docker run --rm -v \"\$PWD\":/src -w /src \\"
+            echo "    ghcr.io/cilium/ebpf-builder:1777990914 bash -c '\\"
+            echo "      ln -sf /usr/bin/clang-22 /usr/local/bin/clang && \\"
+            echo "      ln -sf /usr/bin/llvm-strip-22 /usr/local/bin/llvm-strip && \\"
+            echo "      GOTOOLCHAIN=auto go generate ./attestation/networktrace/bpf/...'"
+            exit 1
+          fi
+          echo "Committed BPF objects are byte-for-byte reproducible from the committed sources."
