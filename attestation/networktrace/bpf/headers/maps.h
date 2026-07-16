@@ -32,13 +32,12 @@ struct orig_dst_val {
     char comm[MAX_COMM_LEN];  // Process name
 };
 
-struct pid_allowlist_key {
-    __u32 pid;
+struct tid_allowlist_key {
+    __u32 tid;
 };
 
-struct pid_allowlist_val {
-    __u8 nested_allowed;  // whether nested children are also allowed (upto
-                          // MAX_PARENT_WALK)
+struct tid_allowlist_val {
+    __u8 nested_allowed;  // whether to auto-allow child threads via tracepoint
 };
 
 // Key for injection_time_map (single element, key is always 0)

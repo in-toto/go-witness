@@ -147,10 +147,9 @@ func Load(cfg LoadConfig) (*State, error) {
 		MapReplacements: map[string]*ebpf.Map{
 			"orig_dst_map":           connectObjs.OrigDstMap,
 			"orig_dst_map_v6":        connectObjs.OrigDstMapV6,
-			"pid_allowlist":          connectObjs.PidAllowlist,
+			"tid_allowlist":          connectObjs.TidAllowlist,
 			"comm_allowlist":         connectObjs.CommAllowlist,
 			"cgroup_allowlist":       connectObjs.CgroupAllowlist,
-			"injection_time_map":     connectObjs.InjectionTimeMap,
 			"tuple_to_cookie_map":    connectObjs.TupleToCookieMap,
 			"tuple_to_cookie_map_v6": connectObjs.TupleToCookieMapV6,
 		},
@@ -160,6 +159,26 @@ func Load(cfg LoadConfig) (*State, error) {
 	if err := sockopsSpec.LoadAndAssign(&sockopsObjs, &sockopsOpts); err != nil {
 		connectObjs.Close()
 		return nil, fmt.Errorf("load sockops objects: %w", err)
+	}
+
+	taskTrackerSpec, err := loadTask_tracker()
+	if err != nil {
+		connectObjs.Close()
+		sockopsObjs.Close()
+		return nil, fmt.Errorf("load task_tracker spec: %w", err)
+	}
+
+	taskTrackerOpts := ebpf.CollectionOptions{
+		MapReplacements: map[string]*ebpf.Map{
+			"tid_allowlist": connectObjs.TidAllowlist,
+		},
+	}
+
+	var taskTrackerObjs task_trackerObjects
+	if err := taskTrackerSpec.LoadAndAssign(&taskTrackerObjs, &taskTrackerOpts); err != nil {
+		connectObjs.Close()
+		sockopsObjs.Close()
+		return nil, fmt.Errorf("load task_tracker objects: %w", err)
 	}
 
 	type progAttachment struct {
@@ -180,10 +199,9 @@ func Load(cfg LoadConfig) (*State, error) {
 		Maps: &Maps{
 			OrigDstMap:       connectObjs.OrigDstMap,
 			OrigDstMapV6:     connectObjs.OrigDstMapV6,
-			PIDAllowlist:     connectObjs.PidAllowlist,
+			TIDAllowlist:     connectObjs.TidAllowlist,
 			CommAllowlist:    connectObjs.CommAllowlist,
 			CgroupAllowlist:  connectObjs.CgroupAllowlist,
-			InjectionTimeMap: connectObjs.InjectionTimeMap,
 			TupleCookieMap:   connectObjs.TupleToCookieMap,
 			TupleCookieMapV6: connectObjs.TupleToCookieMapV6,
 		},
@@ -191,7 +209,7 @@ func Load(cfg LoadConfig) (*State, error) {
 
 	// Track programs for closing (maps are already referenced via Maps struct
 	// and will be closed by connectObjs/sockopsObjs closers)
-	state.closers = append(state.closers, &connectObjs, &sockopsObjs)
+	state.closers = append(state.closers, &connectObjs, &sockopsObjs, &taskTrackerObjs)
 
 	for _, att := range attachments {
 		if att.prog == nil {
@@ -213,6 +231,56 @@ func Load(cfg LoadConfig) (*State, error) {
 		state.closers = append(state.closers, l)
 	}
 
+	// Attach tracepoints for process lifecycle tracking
+	forkLink, err := link.Tracepoint("sched", "sched_process_fork", taskTrackerObjs.HandleSchedProcessFork, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sched_process_fork tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, forkLink)
+
+	exitLink, err := link.Tracepoint("sched", "sched_process_exit", taskTrackerObjs.HandleSchedProcessExit, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sched_process_exit tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, exitLink)
+
+	execLink, err := link.Tracepoint("sched", "sched_process_exec", taskTrackerObjs.HandleSchedProcessExec, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sched_process_exec tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, execLink)
+
+	execEnterLink, err := link.Tracepoint("syscalls", "sys_enter_execve", taskTrackerObjs.SysEnterExecve, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sys_enter_execve tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, execEnterLink)
+
+	execveatEnterLink, err := link.Tracepoint("syscalls", "sys_enter_execveat", taskTrackerObjs.SysEnterExecveat, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sys_enter_execveat tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, execveatEnterLink)
+
+	execExitLink, err := link.Tracepoint("syscalls", "sys_exit_execve", taskTrackerObjs.SysExitExecve, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sys_exit_execve tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, execExitLink)
+
+	execveatExitLink, err := link.Tracepoint("syscalls", "sys_exit_execveat", taskTrackerObjs.SysExitExecveat, nil)
+	if err != nil {
+		state.Close()
+		return nil, fmt.Errorf("attach sys_exit_execveat tracepoint: %w", err)
+	}
+	state.closers = append(state.closers, execveatExitLink)
+
 	return state, nil
 }
 
@@ -220,10 +288,9 @@ func Load(cfg LoadConfig) (*State, error) {
 type Maps struct {
 	OrigDstMap       *ebpf.Map
 	OrigDstMapV6     *ebpf.Map
-	PIDAllowlist     *ebpf.Map
+	TIDAllowlist     *ebpf.Map
 	CommAllowlist    *ebpf.Map
 	CgroupAllowlist  *ebpf.Map
-	InjectionTimeMap *ebpf.Map
 	TupleCookieMap   *ebpf.Map
 	TupleCookieMapV6 *ebpf.Map
 }
@@ -249,38 +316,22 @@ func (m *Maps) LookupOrigDstV6(sockCookie uint64) (*ConnectionMetadata, error) {
 }
 
 // LoadUserConfig loads the user configuration into the BPF maps.
-// It sets the injection_time to the current boot time, which is used to
-// reject processes that reuse a PID after monitoring started.
+// PIDs are added to tid_allowlist, and child processes are automatically
+// tracked via sched_process_fork tracepoint.
 func (m *Maps) LoadUserConfig(config types.Config) error {
-	// Set injection_time first - this must happen before adding PIDs
-	// so that BPF can correctly validate processes
-	injectionTime, err := GetBootTimeNs()
-	if err != nil {
-		return fmt.Errorf("get boot time: %w", err)
-	}
-
-	injectionKey := uint32(0)
-	injectionVal := connectInjectionTimeVal{
-		InjectionTime: injectionTime,
-	}
-	if err := m.InjectionTimeMap.Put(&injectionKey, &injectionVal); err != nil {
-		return fmt.Errorf("set injection_time: %w", err)
-	}
-
-	// Add PIDs to allowlist (key is just PID now, no start_time)
 	for _, pid := range config.ObservePIDs {
-		key := connectPidAllowlistKey{
-			Pid: pid,
+		key := connectTidAllowlistKey{
+			Tid: pid,
 		}
-		val := connectPidAllowlistVal{
+		val := connectTidAllowlistVal{
 			NestedAllowed: 0,
 		}
 		if config.ObserveChildTree {
 			val.NestedAllowed = 1
 		}
 
-		if err := m.PIDAllowlist.Put(&key, &val); err != nil {
-			return fmt.Errorf("put pid %d in allowlist: %w", pid, err)
+		if err := m.TIDAllowlist.Put(&key, &val); err != nil {
+			return fmt.Errorf("put pid %d in tid_allowlist: %w", pid, err)
 		}
 	}
 

@@ -254,7 +254,21 @@ func (rc *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		rc.Processes, err = rc.traceWithEBPF(c, ctx, hasPreExec, hasPreExit)
 	} else {
 		if err := c.Start(); err != nil {
+			// Ensure cooperating attestors blocked on PreExit are released even
+			// when the process never started. RunHooks is idempotent per stage.
+			if hasPreExit {
+				_ = rc.executeHooks.RunHooks(attestation.StagePreExit, 0)
+			}
 			return err
+		}
+
+		// Safety net: guarantee PreExit hooks run exactly once for this command,
+		// regardless of which execution path is taken or how it returns. The tracer
+		// normally runs PreExit at the precise moment the process is exiting; this
+		// deferred call (idempotent via RunHooks) covers any early-return/error
+		// path so cooperating attestors (e.g. networktrace) never strand.
+		if hasPreExit {
+			defer func() { _ = rc.executeHooks.RunHooks(attestation.StagePreExit, c.Process.Pid) }()
 		}
 
 		if rc.enableTracing {

@@ -171,7 +171,14 @@ func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationCo
 		reader.Close()
 		readerWg.Wait()
 		pctx.finishDigestWorkers()
+		if hasPreExit {
+			_ = rc.executeHooks.RunHooks(attestation.StagePreExit, c.Process.Pid)
+		}
 		return nil, err
+	}
+
+	if hasPreExit {
+		defer func() { _ = rc.executeHooks.RunHooks(attestation.StagePreExit, c.Process.Pid) }()
 	}
 
 	pctx.mu.Lock()

@@ -40,13 +40,15 @@ int intercept_connect4(struct bpf_sock_addr* ctx) {
     struct task_struct* task = (struct task_struct*)bpf_get_current_task();
    
     __u64 cookie = bpf_get_socket_cookie(ctx);
-    __u32 pid = get_pid_ns(task);
+    __u32 tid = get_tid_ns(task);  // TID for allowlist check
+    __u32 pid = get_pid_ns(task);  // PID for metadata
     __u64 cgroup_id = bpf_get_current_cgroup_id();
 
     char comm[MAX_COMM_LEN];
     bpf_get_current_comm(&comm, sizeof(comm));
 
-    int should_intercept_result = should_intercept(pid, cgroup_id, comm);
+    DEBUG_LOG("connect4: CHECK tid=%d pid=%d cgroup=%llu comm=%s", tid, pid, cgroup_id, comm);
+    int should_intercept_result = should_intercept(tid, cgroup_id, comm);
 
     if (!should_intercept_result) {
         return 1;
@@ -102,13 +104,15 @@ int intercept_connect6(struct bpf_sock_addr* ctx) {
     struct task_struct* task = (struct task_struct*)bpf_get_current_task();
 
     __u64 cookie = bpf_get_socket_cookie(ctx);
-    __u32 pid = get_pid_ns(task);
+    __u32 tid = get_tid_ns(task);  // TID for allowlist check
+    __u32 pid = get_pid_ns(task);  // PID for metadata
     __u64 cgroup_id = bpf_get_current_cgroup_id();
 
     char comm[MAX_COMM_LEN];
     bpf_get_current_comm(&comm, sizeof(comm));
 
-    int should_intercept_result = should_intercept(pid, cgroup_id, comm);
+    DEBUG_LOG("connect6: CHECK tid=%d pid=%d cgroup=%llu comm=%s", tid, pid, cgroup_id, comm);
+    int should_intercept_result = should_intercept(tid, cgroup_id, comm);
 
     if (!should_intercept_result) {
         return 1;
