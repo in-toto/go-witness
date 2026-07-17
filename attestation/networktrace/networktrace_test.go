@@ -456,6 +456,10 @@ func TestIntegrationCurlHTTPS(t *testing.T) {
 	networkAttestor := NewWithConfig(config)
 	log.SetLogger(log.ConsoleLogger{})
 
+	t.Cleanup(func() {
+		os.RemoveAll(filepath.Dir(types.DefaultCaCertPath))
+	})
+
 	// Use --resolve so curl connects to "localhost" (which sends SNI in the TLS
 	// ClientHello) while actually hitting 127.0.0.1:<port>.  The proxy's MITM
 	// cert will be generated for "localhost" thanks to the SNI.
@@ -656,6 +660,10 @@ func TestIntegrationNestedNamespaceTracking(t *testing.T) {
 // It is skipped automatically when either condition is not met.
 func TestIntegrationRealWorldHTTPS(t *testing.T) {
 	skipIfNotRoot(t)
+
+	t.Cleanup(func() {
+		os.RemoveAll(filepath.Dir(types.DefaultCaCertPath))
+	})
 
 	// Quick connectivity check — skip if we can't reach the internet
 	dialConn, err := net.DialTimeout("tcp", "pypi.org:443", 3*time.Second)
