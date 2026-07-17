@@ -65,6 +65,18 @@ jobs:
           go-version-file: "go.mod"
       - run: go test -v -coverprofile=profile -covermode=atomic ./...
 
+  # commandrun on linux uses ptrace. ptrace can have race conditions dependent on the kernel
+  # event delivery, etc. Best to run these several times to make sure ptrace is copacetic. 
+  race-test-commandrun:
+    needs: [fmt]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: "go.mod"
+      - run: go test -race -v -count=100 -timeout=30m ./attestation/commandrun
+
   unit-plus-integration-test-privileged:
     needs: [ unit-test ]
     uses: ./.github/workflows/witness.yml

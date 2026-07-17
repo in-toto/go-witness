@@ -283,6 +283,11 @@ func (rc *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 		}
 	}
 
+	if needsPtraceTracing {
+		// call c.Wait() to wait for the internal goroutines to write to the stderr and stdout
+		_ = c.Wait()
+	}
+
 	rc.Stdout = stdoutBuffer.String()
 	rc.Stderr = stderrBuffer.String()
 	return err

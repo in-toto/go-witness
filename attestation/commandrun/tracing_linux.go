@@ -288,7 +288,11 @@ func (p *ptraceContext) runTrace() error {
 	procInfo := p.getProcInfo(p.traceePid)
 	procInfo.Program = p.mainProgram
 
+	// trackedTIDs contains tasks whose terminal wait status has not been
+	// consumed. PTRACE_EVENT_EXIT is only a stop before death, so observing it
+	// must not remove a task from this set.
 	trackedTIDs := map[int]struct{}{p.traceePid: {}}
+	exitingTIDs := make(map[int]struct{})
 	seizeHandoff := true
 	gateInjected := make(map[int]bool)
 	gateParked := make(map[int]bool)
@@ -318,6 +322,7 @@ func (p *ptraceContext) runTrace() error {
 		// This is also required to reap the zombie threads and avoid leaving them in the process table.
 		if status.Exited() || status.Signaled() {
 			delete(trackedTIDs, pid)
+			delete(exitingTIDs, pid)
 			if pid == p.traceePid {
 				if status.Exited() {
 					p.exitCode = status.ExitStatus()
@@ -339,10 +344,8 @@ func (p *ptraceContext) runTrace() error {
 				eventCode == uint32(unix.PTRACE_EVENT_STOP) {
 				seizeHandoff = false
 				if err := unix.PtraceSyscall(pid, 0); err != nil {
-					if errors.Is(err, unix.ESRCH) {
-						delete(trackedTIDs, pid)
-					} else {
-						log.Debugf("(tracing) handoff PtraceSyscall failed: %v", err)
+					if !errors.Is(err, unix.ESRCH) {
+						return fmt.Errorf("continue task %d after seize handoff: %w", pid, err)
 					}
 				}
 				continue
@@ -351,9 +354,7 @@ func (p *ptraceContext) runTrace() error {
 			if sig == unix.SIGCONT && gateParked[pid] {
 				delete(gateParked, pid)
 				if err := unix.PtraceSyscall(pid, 0); err != nil && !errors.Is(err, unix.ESRCH) {
-					log.Debugf("(tracing) gate resume failed: %v", err)
-				} else if errors.Is(err, unix.ESRCH) {
-					delete(trackedTIDs, pid)
+					return fmt.Errorf("resume gated task %d: %w", pid, err)
 				}
 				continue
 			}
@@ -363,10 +364,9 @@ func (p *ptraceContext) runTrace() error {
 				trackedTIDs[pid] = struct{}{}
 				if err := unix.PtraceSyscall(pid, int(unix.SIGSTOP)); err != nil {
 					if errors.Is(err, unix.ESRCH) {
-						delete(trackedTIDs, pid)
 						delete(gateInjected, pid)
 					} else {
-						log.Debugf("(tracing) gate inject failed: %v", err)
+						return fmt.Errorf("inject gate stop into task %d: %w", pid, err)
 					}
 				}
 				continue
@@ -417,6 +417,7 @@ func (p *ptraceContext) runTrace() error {
 						oldTID, err := unix.PtraceGetEventMsg(pid)
 						if err == nil {
 							delete(trackedTIDs, int(oldTID))
+							delete(exitingTIDs, int(oldTID))
 						}
 						trackedTIDs[pid] = struct{}{}
 
@@ -428,25 +429,24 @@ func (p *ptraceContext) runTrace() error {
 							}
 						}
 
-						// Run the PreExit hook when the last tracked thread is
-						// exiting, while it is still frozen here so cleanup
-						// observes a paused process.
-						if len(trackedTIDs) == 1 {
+						exitingTIDs[pid] = struct{}{}
+
+						// Run PreExit once every unreaped task has reached its
+						// exit-event stop. Terminal statuses can arrive between
+						// exit events, so compare the two live sets rather than
+						// relying on the current tracked count being one.
+						if len(exitingTIDs) == len(trackedTIDs) {
 							if p.hasPreExit {
 								log.Infof("Last thread pausing for exit. Running PreExit hooks.")
 							}
 							p.runPreExit()
 						}
 
-						delete(trackedTIDs, pid)
-
 						// PTRACE_EVENT_EXIT requires PTRACE_CONT (not
 						// PTRACE_SYSCALL) to finish exiting.
 						if err := unix.PtraceCont(pid, 0); err != nil {
-							if errors.Is(err, unix.ESRCH) {
-								delete(trackedTIDs, pid)
-							} else {
-								log.Debugf("(tracing) ptrace cont exit error: %v", err)
+							if !errors.Is(err, unix.ESRCH) {
+								return fmt.Errorf("continue exiting task %d: %w", pid, err)
 							}
 						}
 						continue
@@ -455,28 +455,21 @@ func (p *ptraceContext) runTrace() error {
 			}
 
 			if err := unix.PtraceSyscall(pid, injectedSig); err != nil {
-				// The tracee may have died while stopped; ESRCH means it is
-				// gone, so drop it and keep reaping the remaining threads
-				// instead of abandoning the wait loop.
-				if errors.Is(err, unix.ESRCH) {
-					delete(trackedTIDs, pid)
-				} else {
-					log.Debugf("(tracing) ptrace syscall error: %v", err)
+				// ESRCH can race with task death; retain the TID until its
+				// terminal status is reaped (or wait4 reports ECHILD).
+				if !errors.Is(err, unix.ESRCH) {
+					return fmt.Errorf("continue task %d to next syscall: %w", pid, err)
 				}
 			}
 		} else {
 			if err := unix.PtraceSyscall(pid, 0); err != nil {
-				if errors.Is(err, unix.ESRCH) {
-					delete(trackedTIDs, pid)
-				} else {
-					log.Debugf("(tracing) got error from ptrace syscall: %v", err)
+				if !errors.Is(err, unix.ESRCH) {
+					return fmt.Errorf("continue task %d to next syscall: %w", pid, err)
 				}
 			}
 		}
 	}
 
-	// See comment in waitForExitOnly()
-	p.reapRemainingTasks()
 	return nil
 }
 
@@ -485,7 +478,11 @@ func (p *ptraceContext) waitForExitOnly() error {
 
 	log.Debugf("continuing process to wait for exit")
 
+	// Keep tasks tracked through PTRACE_EVENT_EXIT until their terminal wait
+	// status is consumed. This makes this loop responsible for both advancing
+	// and reaping every tracee it discovers.
 	trackedTIDs := map[int]struct{}{p.traceePid: {}}
+	exitingTIDs := make(map[int]struct{})
 	seizeHandoff := true
 	gateInjected := make(map[int]bool)
 	gateParked := make(map[int]bool)
@@ -519,6 +516,7 @@ func (p *ptraceContext) waitForExitOnly() error {
 				}(),
 				len(trackedTIDs))
 			delete(trackedTIDs, pid)
+			delete(exitingTIDs, pid)
 			if pid == p.traceePid {
 				if status.Exited() {
 					p.exitCode = status.ExitStatus()
@@ -547,10 +545,8 @@ func (p *ptraceContext) waitForExitOnly() error {
 				seizeHandoff = false
 				log.Debugf("(tracing) post-seize handoff pid=%d => PtraceCont(0)", pid)
 				if err := unix.PtraceCont(pid, 0); err != nil {
-					if errors.Is(err, unix.ESRCH) {
-						delete(trackedTIDs, pid)
-					} else {
-						log.Debugf("(tracing) handoff PtraceCont failed: %v", err)
+					if !errors.Is(err, unix.ESRCH) {
+						return fmt.Errorf("continue task %d after seize handoff: %w", pid, err)
 					}
 				}
 				continue
@@ -562,9 +558,7 @@ func (p *ptraceContext) waitForExitOnly() error {
 				delete(gateParked, pid)
 				log.Debugf("(tracing) network-trace gate SIGCONT resume pid=%d", pid)
 				if err := unix.PtraceCont(pid, 0); err != nil && !errors.Is(err, unix.ESRCH) {
-					log.Debugf("(tracing) gate resume failed: %v", err)
-				} else if errors.Is(err, unix.ESRCH) {
-					delete(trackedTIDs, pid)
+					return fmt.Errorf("resume gated task %d: %w", pid, err)
 				}
 				continue
 			}
@@ -578,10 +572,9 @@ func (p *ptraceContext) waitForExitOnly() error {
 				trackedTIDs[pid] = struct{}{}
 				if err := unix.PtraceCont(pid, int(unix.SIGSTOP)); err != nil {
 					if errors.Is(err, unix.ESRCH) {
-						delete(trackedTIDs, pid)
 						delete(gateInjected, pid)
 					} else {
-						log.Debugf("(tracing) gate inject failed: %v", err)
+						return fmt.Errorf("inject gate stop into task %d: %w", pid, err)
 					}
 				}
 				continue
@@ -627,6 +620,7 @@ func (p *ptraceContext) waitForExitOnly() error {
 						oldTID, err := unix.PtraceGetEventMsg(pid)
 						if err == nil {
 							delete(trackedTIDs, int(oldTID))
+							delete(exitingTIDs, int(oldTID))
 						}
 						trackedTIDs[pid] = struct{}{}
 					case unix.PTRACE_EVENT_EXIT:
@@ -637,62 +631,27 @@ func (p *ptraceContext) waitForExitOnly() error {
 							}
 						}
 
-						if len(trackedTIDs) == 1 {
+						exitingTIDs[pid] = struct{}{}
+						if len(exitingTIDs) == len(trackedTIDs) {
 							if p.hasPreExit {
 								log.Infof("Last thread pausing for exit. Running PreExit hooks.")
 							}
 							p.runPreExit()
 						}
 
-						delete(trackedTIDs, pid)
 					}
 				}
 			}
 
 			if err := unix.PtraceCont(pid, injectedSig); err != nil {
-				if errors.Is(err, unix.ESRCH) {
-					delete(trackedTIDs, pid)
-				} else {
-					log.Debugf("(tracing) failed to continue with signal %d: %v", injectedSig, err)
+				if !errors.Is(err, unix.ESRCH) {
+					return fmt.Errorf("continue task %d with signal %d: %w", pid, injectedSig, err)
 				}
 			}
 		}
 	}
 
-	// The loop exits when trackedTIDs is drained, always at
-	// PTRACE_EVENT_EXIT but the PtraceCont that follows sends the
-	// tracee to its final WIFEXITED, which arrives after the loop has
-	// stopped checking Wait4. Reap any remaining exit notifications to
-	// prevent the tracee from lingering as a zombie (Z or Z+). It needs
-	// to be a loop as which signal gets delivered to tracer depends on the kernel
-	// (for multiple threads) PTRACE_EVENT_EXIT or WIFEXITED.
-	p.reapRemainingTasks()
-
 	return nil
-}
-
-func (p *ptraceContext) reapRemainingTasks() {
-	for {
-		var status unix.WaitStatus
-		w, err := unix.Wait4(-1, &status, unix.WALL, nil)
-		if errors.Is(err, unix.EINTR) {
-			continue
-		}
-		if errors.Is(err, unix.ECHILD) {
-			break
-		}
-		// no need to set exit code, set at previous exits or PTRACE_EVENT_EXIT
-		if w > 0 {
-			log.Debugf("(tracing) final reap pid=%d exited=%v signaled=%v code=%d",
-				w, status.Exited(), status.Signaled(),
-				func() int {
-					if status.Exited() {
-						return status.ExitStatus()
-					}
-					return -1
-				}())
-		}
-	}
 }
 
 func (p *ptraceContext) retryOpenedFiles() {
