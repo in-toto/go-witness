@@ -18,7 +18,7 @@ require (
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
 	github.com/elazarl/goproxy v1.7.2
 	github.com/fkautz/omnitrail-go v0.0.0-20240613153526-999f2e7d0fc9
-	github.com/gabriel-vasile/mimetype v1.4.13
+	github.com/gabriel-vasile/mimetype v1.4.15
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/google/go-containerregistry v0.21.7
