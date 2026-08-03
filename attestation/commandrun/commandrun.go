@@ -21,6 +21,8 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/in-toto/go-witness/attestation"
@@ -76,7 +78,60 @@ func init() {
 				return commandRun, nil
 			},
 		),
+		registry.BoolConfigOption[attestation.Attestor](
+			"track-cgroup",
+			"Trace activity within new cgroups created by descendants of the build process or daemon pids. Requires trace-backend=ebpf",
+			false,
+			func(a attestation.Attestor, enabled bool) (attestation.Attestor, error) {
+				commandRun, ok := a.(*CommandRun)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a command-run attestor", a)
+				}
+				WithTrackCgroup(enabled)(commandRun)
+				return commandRun, nil
+			},
+		),
+		registry.StringConfigOption[attestation.Attestor](
+			"daemons",
+			"Comma-separated host PIDs of daemons (e.g. dockerd) to trace in addition to the build process. Requires trace-backend=ebpf",
+			"",
+			func(a attestation.Attestor, daemons string) (attestation.Attestor, error) {
+				commandRun, ok := a.(*CommandRun)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a command-run attestor", a)
+				}
+				pids, err := parseDaemonPIDs(daemons)
+				if err != nil {
+					return a, err
+				}
+				WithDaemonPIDs(pids)(commandRun)
+				return commandRun, nil
+			},
+		),
 	)
+}
+
+// Parse comma-separated --attestor-command-run-daemons
+func parseDaemonPIDs(daemons string) ([]int, error) {
+	daemons = strings.TrimSpace(daemons)
+	if daemons == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(daemons, ",")
+	pids := make([]int, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		pid, err := strconv.Atoi(part)
+		if err != nil || pid <= 0 {
+			return nil, fmt.Errorf("invalid daemon pid %q: must be a positive integer", part)
+		}
+		pids = append(pids, pid)
+	}
+	return pids, nil
 }
 
 type Option func(*CommandRun)
@@ -111,6 +166,18 @@ func WithSilent(silent bool) Option {
 	}
 }
 
+func WithTrackCgroup(enabled bool) Option {
+	return func(cr *CommandRun) {
+		cr.trackCgroup = enabled
+	}
+}
+
+func WithDaemonPIDs(pids []int) Option {
+	return func(cr *CommandRun) {
+		cr.daemonPIDs = append(cr.daemonPIDs, pids...)
+	}
+}
+
 func New(opts ...Option) *CommandRun {
 	cr := &CommandRun{
 		traceBackend: TraceBackendDefault,
@@ -134,6 +201,18 @@ type ProcessInfo struct {
 	OpenedFiles      map[string]cryptoutil.DigestSet `json:"openedfiles,omitempty"`
 	Environ          string                          `json:"environ,omitempty"`
 	SpecBypassIsVuln bool                            `json:"specbypassisvuln,omitempty"`
+	HostProcessID    int                             `json:"hostprocessid,omitempty"`
+	CgroupID         uint64                          `json:"cgroupid,omitempty"`
+	CgroupPath       string                          `json:"cgrouppath,omitempty"`
+	Mounts           []Mount                         `json:"mounts,omitempty"`
+}
+
+type Mount struct {
+	Device    string `json:"device,omitempty"`
+	Directory string `json:"directory,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Data      string `json:"data,omitempty"`
+	Flags     uint64 `json:"flags,omitempty"`
 }
 
 type CommandRun struct {
@@ -148,6 +227,8 @@ type CommandRun struct {
 	enableTracing bool
 	traceBackend  string
 	executeHooks  *attestation.ExecuteHooks
+	trackCgroup   bool
+	daemonPIDs    []int
 }
 
 func (rc *CommandRun) Schema() *jsonschema.Schema {
