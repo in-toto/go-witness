@@ -37,6 +37,7 @@ struct pending_open {
 	__u64 filename;
 	__s32 dfd;
 	__s64 error;
+	__u8 truncated;
 	char path[256];
 };
 
@@ -51,11 +52,12 @@ struct {
 // - Try reading the path.
 // - Store pending_open to be decoded upon sys_exit
 static __always_inline int save_open_event(const char *filename, __s32 dfd) {
-	if (!commandrun_in_target_cgroup()) {
+	if (!commandrun_should_trace()) {
 		return 0;
 	}
 
-	__u64 pid_tgid = get_ns_pidtgid();
+	// Keyed by the host (real) pid/tgid, not the namespace-local one.
+	__u64 pid_tgid = bpf_get_current_pid_tgid();
 	struct pending_open pending = {
 	    .filename = (__u64)filename,
 	    .dfd = dfd,
@@ -63,13 +65,17 @@ static __always_inline int save_open_event(const char *filename, __s32 dfd) {
 	};
 
 	// Try to read the path buffer as a string on sys_enter for open.
-	// If this fails the pending_open event is marked as such so that it can
+	// If this fails (or is truncated) the pending_open event is marked as such so that it can
 	// be retried at sys_exit.
 	long copied = bpf_probe_read_user_str(pending.path,
 					      sizeof(pending.path), filename);
 	if (copied < 0) {
 		pending.error = copied;
 		pending.path[0] = '\0';
+	} else if (copied == (long)sizeof(pending.path)) {
+		// If the buffer is filled exactly to the size of buffer the
+		// string may be truncated.
+		pending.truncated = 1;
 	}
 
 	long update_ret =
@@ -85,7 +91,7 @@ static __always_inline int save_open_event(const char *filename, __s32 dfd) {
 // - Upon success or failure, dispatch an event to the ring buffer to be decoded
 // outside of eBPF in go.
 static __always_inline int submit_pending_open_event(__s64 ret) {
-	__u64 pid_tgid = get_ns_pidtgid();
+	__u64 pid_tgid = bpf_get_current_pid_tgid();
 
 	// Do not submit failed opens, but remove the state saved on sys_enter.
 	if (ret < 0) {
@@ -100,7 +106,7 @@ static __always_inline int submit_pending_open_event(__s64 ret) {
 		return 0;
 	}
 
-	if (!commandrun_in_target_cgroup()) {
+	if (!commandrun_should_trace()) {
 		bpf_map_delete_elem(&pending_opens, &pid_tgid);
 		return 0;
 	}
@@ -113,14 +119,14 @@ static __always_inline int submit_pending_open_event(__s64 ret) {
 	}
 
 	event->event_type = EVENT_TYPE_OPEN;
-	event->pid = pid_tgid >> 32;
-	event->tid = pid_tgid;
+	set_event_pids(event);
+	event->cgroup_id = bpf_get_current_cgroup_id();
 	event->dfd = pending->dfd;
 	event->error = pending->error;
 
 	// If reading the path failed at sys_enter, try that again here.
 	// If this fails as well, return an error event.
-	if (pending->error < 0) {
+	if (pending->error < 0 || pending->truncated) {
 		const char *filename = (const char *)pending->filename;
 		long copied = bpf_probe_read_user_str(
 		    event->path, sizeof(event->path), filename);
@@ -138,8 +144,8 @@ static __always_inline int submit_pending_open_event(__s64 ret) {
 		return 0;
 	}
 
-	__builtin_memcpy(event->path, pending->path, sizeof(event->path));
-	event->path[sizeof(event->path) - 1] = '\0';
+	bpf_probe_read_kernel(event->path, sizeof(pending->path),
+			      pending->path);
 
 	bpf_ringbuf_submit(event, 0);
 	bpf_map_delete_elem(&pending_opens, &pid_tgid);
@@ -184,7 +190,9 @@ int trace_openat2_exit(struct trace_event_raw_sys_exit *ctx) {
  */
 SEC("tracepoint/sched/sched_process_exec")
 int trace_sched_process_exec(struct trace_event_raw_sched_process_exec *ctx) {
-	if (!commandrun_in_target_cgroup()) {
+	propagate_daemon_tasks();
+
+	if (!commandrun_should_trace()) {
 		return 0;
 	}
 
@@ -193,10 +201,9 @@ int trace_sched_process_exec(struct trace_event_raw_sched_process_exec *ctx) {
 	if (!event) {
 		return 0;
 	}
-	__u64 pid_tgid = get_ns_pidtgid();
 	event->event_type = EVENT_TYPE_EXEC;
-	event->pid = pid_tgid >> 32;
-	event->tid = pid_tgid;
+	set_event_pids(event);
+	event->cgroup_id = bpf_get_current_cgroup_id();
 	event->dfd = 0;
 	event->error = 0;
 
@@ -215,7 +222,7 @@ int trace_sched_process_exec(struct trace_event_raw_sched_process_exec *ctx) {
 
 SEC("tracepoint/sched/sched_process_exit")
 int trace_sched_process_exit(struct trace_event_raw_sys_exit *ctx) {
-	if (!commandrun_in_target_cgroup()) {
+	if (!commandrun_should_trace()) {
 		return 0;
 	}
 
@@ -225,14 +232,86 @@ int trace_sched_process_exit(struct trace_event_raw_sys_exit *ctx) {
 		return 0;
 	}
 	event->event_type = EVENT_TYPE_EXIT;
-
-	__u64 pid_tgid = get_ns_pidtgid();
-	event->pid = pid_tgid >> 32;
-	event->tid = pid_tgid;
+	set_event_pids(event);
+	event->cgroup_id = bpf_get_current_cgroup_id();
 
 	event->dfd = 0;
 	event->error = 0;
 	event->path[0] = '\0';
+	bpf_ringbuf_submit(event, 0);
+	return 0;
+}
+
+/* Records new cgroups created system-wide. They are then marked enabled if it
+ * was created by a process we were already tracing.
+ */
+SEC("tracepoint/cgroup/cgroup_mkdir")
+int trace_cgroup_mkdir(struct trace_event_raw_cgroup *ctx) {
+	__u64 pid_tgid = bpf_get_current_pid_tgid();
+	__u32 tgid = pid_tgid >> 32;
+
+	// If the PID creating this cgroup exists in our maps as a process of interest
+	// store the cgroup in target_cgroups.
+	if (!bpf_map_lookup_elem(&daemon_tasks, &tgid)) {
+		return 0;
+	}
+
+	__u64 cgroup_id = ctx->id;
+	__u8 enabled = 1;
+	bpf_map_update_elem(&target_cgroups, &cgroup_id, &enabled, BPF_ANY);
+
+	struct file_open_event *event =
+	    bpf_ringbuf_reserve(&events, sizeof(*event), 0);
+	if (!event) {
+		return 0;
+	}
+	event->event_type = EVENT_TYPE_CGROUP_MKDIR;
+	set_event_pids(event);
+	event->cgroup_id = cgroup_id;
+	event->dfd = 0;
+	event->error = 0;
+
+	__u16 path_offset = ctx->__data_loc_path & 0xffff;
+	long copied = bpf_probe_read_kernel_str(
+	    event->path, sizeof(event->path), (void *)ctx + path_offset);
+	if (copied < 0) {
+		event->path[0] = '\0';
+	}
+
+	bpf_ringbuf_submit(event, 0);
+	return 0;
+}
+
+/* Track new mounts, useful for snap BuildKit etc. in order to properly
+ * determine which file to hash*/
+SEC("tracepoint/syscalls/sys_enter_mount")
+int trace_mount(struct trace_event_raw_sys_enter *ctx) {
+	if (!commandrun_should_trace()) {
+		return 0;
+	}
+
+	struct file_open_event *event =
+	    bpf_ringbuf_reserve(&events, sizeof(*event), 0);
+	if (!event) {
+		return 0;
+	}
+
+	event->event_type = EVENT_TYPE_MOUNT;
+	set_event_pids(event);
+	event->cgroup_id = bpf_get_current_cgroup_id();
+	event->dfd = 0;
+	event->error = 0;
+	event->mount_flags = (__u64)ctx->args[3];
+
+	read_user_str_or_empty(event->path, sizeof(event->path),
+			       (const char *)ctx->args[1]);
+	read_user_str_or_empty(event->mount_dev, sizeof(event->mount_dev),
+			       (const char *)ctx->args[0]);
+	read_user_str_or_empty(event->mount_type, sizeof(event->mount_type),
+			       (const char *)ctx->args[2]);
+	read_user_str_or_empty(event->mount_data, sizeof(event->mount_data),
+			       (const char *)ctx->args[4]);
+
 	bpf_ringbuf_submit(event, 0);
 	return 0;
 }
