@@ -4,9 +4,15 @@
   "$defs": {
     "Attestor": {
       "properties": {
-        "flags": {
-          "additionalProperties": {
+        "command_line": {
+          "items": {
             "type": "string"
+          },
+          "type": "array"
+        },
+        "resolved": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ResolvedValue"
           },
           "type": "object"
         },
@@ -17,6 +23,12 @@
           "$ref": "#/$defs/DigestSet"
         },
         "config_content": {
+          "type": "object"
+        },
+        "attestors": {
+          "additionalProperties": {
+            "type": "object"
+          },
           "type": "object"
         },
         "working_directory": {
@@ -31,6 +43,19 @@
         "type": "string"
       },
       "type": "object"
+    },
+    "ResolvedValue": {
+      "properties": {
+        "value": true,
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "value"
+      ]
     }
   }
 }
