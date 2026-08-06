@@ -75,6 +75,13 @@ type MultiExporter interface {
 	ExportedAttestations() []Attestor
 }
 
+// Configurer allows attestors to expose their effective configuration so the
+// configuration attestor can record it. Implementations must only return config
+// set before the run started, never data gathered during Attest.
+type Configurer interface {
+	Configuration() map[string]any
+}
+
 // BackReffer allows attestors to indicate which of their subjects are good candidates
 // to find related attestations.  For example the git attestor's commit hash subject
 // is a good candidate to find all attestation collections that also refer to a specific

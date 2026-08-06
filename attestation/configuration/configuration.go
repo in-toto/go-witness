@@ -15,8 +15,8 @@
 package configuration
 
 import (
+	"fmt"
 	"os"
-	"strings"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
@@ -50,31 +50,49 @@ func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor { return New() })
 }
 
-type Attestor struct {
-	Flags         map[string]string      `json:"flags,omitempty"`
-	ConfigPath    string                 `json:"config_path,omitempty"`
-	ConfigDigest  cryptoutil.DigestSet   `json:"config_digest,omitempty"`
-	ConfigContent map[string]interface{} `json:"config_content,omitempty"`
-	WorkingDir    string                 `json:"working_directory,omitempty"`
+// ResolvedValue is a single configuration value as resolved by the frontend,
+// with its source: "commandline", "config", "env", or "default".
+type ResolvedValue struct {
+	Value  any    `json:"value"`
+	Source string `json:"source,omitempty"`
+}
 
-	osArgs func() []string
+type Attestor struct {
+	CommandLine   []string                  `json:"command_line,omitempty"`
+	Resolved      map[string]ResolvedValue  `json:"resolved,omitempty"`
+	ConfigPath    string                    `json:"config_path,omitempty"`
+	ConfigDigest  cryptoutil.DigestSet      `json:"config_digest,omitempty"`
+	ConfigContent map[string]any            `json:"config_content,omitempty"`
+	Attestors     map[string]map[string]any `json:"attestors,omitempty"`
+	WorkingDir    string                    `json:"working_directory,omitempty"`
 }
 
 type Option func(*Attestor)
 
-func WithCustomArgs(osArgs func() []string) Option {
+// WithCommandLine records the frontend's raw argv verbatim. The attestor never
+// reads os.Args itself so library consumers don't leak their host process args.
+func WithCommandLine(args []string) Option {
 	return func(a *Attestor) {
-		a.osArgs = osArgs
+		a.CommandLine = args
+	}
+}
+
+// WithResolvedConfig records the fully-merged config as resolved by the
+// frontend (e.g. pflag/viper for the witness CLI).
+func WithResolvedConfig(resolved map[string]ResolvedValue) Option {
+	return func(a *Attestor) {
+		a.Resolved = resolved
+	}
+}
+
+func WithConfigFile(path string) Option {
+	return func(a *Attestor) {
+		a.ConfigPath = path
 	}
 }
 
 func New(opts ...Option) *Attestor {
 	attestor := &Attestor{}
-
-	attestor.osArgs = func() []string {
-		return os.Args
-	}
-
 	for _, opt := range opts {
 		opt(attestor)
 	}
@@ -99,95 +117,45 @@ func (a *Attestor) Schema() *jsonschema.Schema {
 }
 
 func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
-	args := a.osArgs()
-	witnessArgs := extractWitnessArgs(args)
-	a.Flags = parseFlags(witnessArgs)
-
-	// Capture working directory
 	if wd := ctx.WorkingDir(); wd != "" {
 		a.WorkingDir = wd
 	} else if wd, err := os.Getwd(); err == nil {
 		a.WorkingDir = wd
 	}
 
-	// Config path is only set when explicitly passed via --config/-c.
-	// Witness removed default loading of .witness.yaml for security reasons,
-	// so an empty ConfigPath distinguishes "no config used" from a loaded file.
-	if v, ok := a.Flags["config"]; ok && v != "" {
-		a.ConfigPath = v
-	} else if v, ok := a.Flags["c"]; ok && v != "" {
-		a.ConfigPath = v
+	if a.ConfigPath != "" {
+		data, err := os.ReadFile(a.ConfigPath)
+		if err != nil {
+			return fmt.Errorf("failed to read config file %v: %w", a.ConfigPath, err)
+		}
+
+		digestSet, err := cryptoutil.CalculateDigestSetFromBytes(data, ctx.Hashes())
+		if err != nil {
+			return fmt.Errorf("failed to digest config file %v: %w", a.ConfigPath, err)
+		}
+		a.ConfigDigest = digestSet
+
+		var configData map[string]any
+		if err := yaml.Unmarshal(data, &configData); err != nil {
+			return fmt.Errorf("failed to parse config file %v: %w", a.ConfigPath, err)
+		}
+		a.ConfigContent = configData
 	}
 
-	if a.ConfigPath != "" {
-		if data, err := os.ReadFile(a.ConfigPath); err == nil {
-			digestSet, err := cryptoutil.CalculateDigestSetFromBytes(data, ctx.Hashes())
-			if err == nil {
-				a.ConfigDigest = digestSet
-			}
+	for _, att := range ctx.Attestors() {
+		if att.Name() == Name {
+			continue
+		}
 
-			var configData map[string]interface{}
-			if err := yaml.Unmarshal(data, &configData); err == nil {
-				a.ConfigContent = configData
+		if configurer, ok := att.(attestation.Configurer); ok {
+			if a.Attestors == nil {
+				a.Attestors = make(map[string]map[string]any)
 			}
+			a.Attestors[att.Name()] = configurer.Configuration()
 		}
 	}
 
 	return nil
-}
-
-// extractWitnessArgs splits the command line at "--" and returns only the witness portion
-// Example: ["witness", "run", "-a", "slsa", "--", "go", "build", "."] -> ["witness", "run", "-a", "slsa"]
-func extractWitnessArgs(args []string) []string {
-	for i, arg := range args {
-		if arg == "--" {
-			return args[:i]
-		}
-	}
-	return args
-}
-
-// parseFlags parses command line flags into a map
-func parseFlags(cmd []string) map[string]string {
-	flags := make(map[string]string)
-
-	for i := 1; i < len(cmd); i++ {
-		arg := cmd[i]
-
-		if strings.HasPrefix(arg, "--") {
-			key := strings.TrimPrefix(arg, "--")
-
-			if strings.Contains(key, "=") {
-				parts := strings.SplitN(key, "=", 2)
-				flags[parts[0]] = parts[1]
-				continue
-			}
-
-			if i+1 < len(cmd) && !strings.HasPrefix(cmd[i+1], "-") {
-				flags[key] = cmd[i+1]
-				i++
-			} else {
-				flags[key] = "true"
-			}
-		} else if strings.HasPrefix(arg, "-") && len(arg) > 1 && !strings.HasPrefix(arg, "--") {
-			key := strings.TrimPrefix(arg, "-")
-
-			if strings.Contains(key, "=") {
-				parts := strings.SplitN(key, "=", 2)
-				flags[parts[0]] = parts[1]
-				continue
-			}
-
-			if i+1 < len(cmd) && !strings.HasPrefix(cmd[i+1], "-") {
-				flags[key] = cmd[i+1]
-				i++
-			} else {
-				flags[key] = "true"
-			}
-		}
-	}
-
-	return flags
 }
 
 func (a *Attestor) Data() *Attestor {

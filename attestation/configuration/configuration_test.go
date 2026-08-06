@@ -21,7 +21,9 @@ import (
 	"testing"
 
 	"github.com/in-toto/go-witness/attestation"
+	"github.com/in-toto/go-witness/attestation/product"
 	"github.com/in-toto/go-witness/cryptoutil"
+	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,220 +43,66 @@ func TestRunType(t *testing.T) {
 	assert.Equal(t, attestation.PreMaterialRunType, attestor.RunType())
 }
 
-func TestAttest_BasicFlagCapture(t *testing.T) {
-	attestor := New(WithCustomArgs(func() []string {
-		return []string{"witness", "run", "-a", "configuration", "--step", "build", "-o", "output.json"}
-	}))
-	a := New()
-	ctx, err := attestation.NewContext("test", []attestation.Attestor{a})
-	require.NoError(t, err)
-	err = attestor.Attest(ctx)
-	require.NoError(t, err)
-	err = ctx.RunAttestors()
-	require.NoError(t, err)
+func TestAttest_CommandLineRecordedVerbatim(t *testing.T) {
+	args := []string{"witness", "run", "-a", "git", "-a", "slsa", "--step", "build", "--", "go", "build", "."}
+	attestor := New(WithCommandLine(args))
 
-	assert.Equal(t, "configuration", attestor.Flags["a"])
-	assert.Equal(t, "build", attestor.Flags["step"])
-	assert.Equal(t, "output.json", attestor.Flags["o"])
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
+	require.NoError(t, err)
+	require.NoError(t, attestor.Attest(ctx))
+
+	assert.Equal(t, args, attestor.CommandLine)
 }
 
-func TestAttest_MixedFlagFormats(t *testing.T) {
-	attestor := New(WithCustomArgs(func() []string {
-		return []string{
-			"witness", "run",
-			"-a", "configuration",
-			"--step=build",
-			"--trace",
-			"-o", "output.json",
-		}
-	}))
+func TestAttest_NoCommandLineByDefault(t *testing.T) {
+	attestor := New()
 
-	ctx, err := attestation.NewContext("test", []attestation.Attestor{})
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
 	require.NoError(t, err)
-	err = attestor.Attest(ctx)
-	require.NoError(t, err)
+	require.NoError(t, attestor.Attest(ctx))
 
-	assert.Equal(t, "configuration", attestor.Flags["a"])
-	assert.Equal(t, "build", attestor.Flags["step"])
-	assert.Equal(t, "true", attestor.Flags["trace"])
-	assert.Equal(t, "output.json", attestor.Flags["o"])
+	assert.Empty(t, attestor.CommandLine)
 }
 
-func TestAttest_FlagsWithCommandSeparator(t *testing.T) {
-	attestor := New(WithCustomArgs(func() []string {
-		return []string{
-			"witness", "run",
-			"-a", "configuration",
-			"--step", "build",
-			"--",
-			"go", "build", ".",
-		}
-	}))
+func TestAttest_ResolvedConfig(t *testing.T) {
+	resolved := map[string]ResolvedValue{
+		"step":                 {Value: "build", Source: "commandline"},
+		"attestors":            {Value: []string{"git", "slsa"}, Source: "commandline"},
+		"trace":                {Value: "false", Source: "default"},
+		"signer-file-key-path": {Value: "testkey.pem", Source: "config"},
+	}
+	attestor := New(WithResolvedConfig(resolved))
 
-	ctx, err := attestation.NewContext("test", []attestation.Attestor{})
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
 	require.NoError(t, err)
-	err = attestor.Attest(ctx)
-	require.NoError(t, err)
+	require.NoError(t, attestor.Attest(ctx))
 
-	// Should only capture witness flags, not command after --
-	assert.Equal(t, "configuration", attestor.Flags["a"])
-	assert.Equal(t, "build", attestor.Flags["step"])
-	assert.Len(t, attestor.Flags, 2)
+	assert.Equal(t, resolved, attestor.Resolved)
 }
 
-func TestAttest_CustomConfigPathLongFlag(t *testing.T) {
-	attestor := New(WithCustomArgs(func() []string {
-		return []string{"witness", "run", "--config", "custom.yaml"}
-	}))
+func TestAttest_NoConfigFile(t *testing.T) {
+	// ConfigPath stays empty so callers can distinguish "no config used"
+	// from a loaded file. Witness no longer defaults to .witness.yaml.
+	attestor := New()
 
-	ctx, err := attestation.NewContext("test", []attestation.Attestor{})
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
 	require.NoError(t, err)
-	err = attestor.Attest(ctx)
-	require.NoError(t, err)
-
-	assert.Equal(t, "custom.yaml", attestor.ConfigPath)
-}
-
-func TestAttest_NoConfigFlag(t *testing.T) {
-	// When no --config/-c flag is provided, ConfigPath must stay empty
-	// so callers can distinguish "no config used" from a loaded file.
-	// Witness no longer defaults to .witness.yaml.
-	attestor := New(WithCustomArgs(func() []string {
-		return []string{"witness", "run", "-a", "configuration", "--step", "build"}
-	}))
-
-	ctx, err := attestation.NewContext("test", []attestation.Attestor{})
-	require.NoError(t, err)
-	err = attestor.Attest(ctx)
-	require.NoError(t, err)
+	require.NoError(t, attestor.Attest(ctx))
 
 	assert.Empty(t, attestor.ConfigPath)
 	assert.Empty(t, attestor.ConfigDigest)
 	assert.Empty(t, attestor.ConfigContent)
 }
 
-func TestExtractWitnessArgs(t *testing.T) {
-	tests := []struct {
-		name     string
-		args     []string
-		expected []string
-	}{
-		{
-			name:     "no separator",
-			args:     []string{"witness", "run", "-a", "configuration"},
-			expected: []string{"witness", "run", "-a", "configuration"},
-		},
-		{
-			name:     "with separator",
-			args:     []string{"witness", "run", "-a", "configuration", "--", "go", "build", "."},
-			expected: []string{"witness", "run", "-a", "configuration"},
-		},
-		{
-			name:     "separator at end",
-			args:     []string{"witness", "run", "--"},
-			expected: []string{"witness", "run"},
-		},
-		{
-			name:     "empty args",
-			args:     []string{},
-			expected: []string{},
-		},
-		{
-			name:     "only command after separator",
-			args:     []string{"witness", "run", "--", "bash", "-c", "echo hi"},
-			expected: []string{"witness", "run"},
-		},
-	}
+func TestAttest_MissingConfigFileErrors(t *testing.T) {
+	attestor := New(WithConfigFile("does-not-exist.yaml"))
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := extractWitnessArgs(tt.args)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
+	require.NoError(t, err)
+	assert.Error(t, attestor.Attest(ctx))
 }
 
-func TestParseFlags(t *testing.T) {
-	tests := []struct {
-		name     string
-		cmd      []string
-		expected map[string]string
-	}{
-		{
-			name:     "empty command",
-			cmd:      []string{"witness"},
-			expected: map[string]string{},
-		},
-		{
-			name: "single long flag with space",
-			cmd:  []string{"witness", "--step", "build"},
-			expected: map[string]string{
-				"step": "build",
-			},
-		},
-		{
-			name: "single short flag",
-			cmd:  []string{"witness", "-a", "configuration"},
-			expected: map[string]string{
-				"a": "configuration",
-			},
-		},
-		{
-			name: "flag with equals",
-			cmd:  []string{"witness", "--step=build"},
-			expected: map[string]string{
-				"step": "build",
-			},
-		},
-		{
-			name: "short flag with equals",
-			cmd:  []string{"witness", "-o=output.json"},
-			expected: map[string]string{
-				"o": "output.json",
-			},
-		},
-		{
-			name: "boolean flag",
-			cmd:  []string{"witness", "--trace"},
-			expected: map[string]string{
-				"trace": "true",
-			},
-		},
-		{
-			name: "multiple flags mixed",
-			cmd:  []string{"witness", "-a", "configuration", "--step", "build", "--trace"},
-			expected: map[string]string{
-				"a":     "configuration",
-				"step":  "build",
-				"trace": "true",
-			},
-		},
-		{
-			name: "flags with special characters",
-			cmd:  []string{"witness", "--rekor-server", "https://rekor.sigstore.dev"},
-			expected: map[string]string{
-				"rekor-server": "https://rekor.sigstore.dev",
-			},
-		},
-		{
-			name: "flags with paths",
-			cmd:  []string{"witness", "--key", "/path/to/key.pem", "-o", "./output.json"},
-			expected: map[string]string{
-				"key": "/path/to/key.pem",
-				"o":   "./output.json",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := parseFlags(tt.cmd)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestConfigDigest_ValidYAML(t *testing.T) {
+func TestAttest_ConfigFileDigestAndContent(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "witness.yaml")
 
@@ -267,49 +115,80 @@ verify:
   policy: policy-signed.json
   publickey: testpub.pem
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
-	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
 
-	attestor := New(WithCustomArgs(func() []string {
-		return []string{"witness", "run", "--config", configPath}
-	}))
+	attestor := New(WithConfigFile(configPath))
 
-	ctx, err := attestation.NewContext("test", []attestation.Attestor{})
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor})
 	require.NoError(t, err)
-	err = attestor.Attest(ctx)
-	require.NoError(t, err)
+	require.NoError(t, attestor.Attest(ctx))
 
-	// Verify digest is calculated
-	assert.NotNil(t, attestor.ConfigDigest)
+	assert.Equal(t, configPath, attestor.ConfigPath)
 	assert.NotEmpty(t, attestor.ConfigDigest)
 
-	// Verify SHA256 digest exists
 	digestValue, exists := attestor.ConfigDigest[cryptoutil.DigestValue{
 		Hash:    crypto.SHA256,
 		GitOID:  false,
 		DirHash: false,
 	}]
 	assert.True(t, exists, "SHA256 digest should exist")
-	assert.NotEmpty(t, digestValue)
 	assert.Len(t, digestValue, 64, "SHA256 should be 64 hex characters")
 
-	// Verify content is parsed
-	assert.NotNil(t, attestor.ConfigContent)
-
-	// Verify run section
-	runConfig, ok := attestor.ConfigContent["run"].(map[string]interface{})
+	runConfig, ok := attestor.ConfigContent["run"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "testkey.pem", runConfig["signer-file-key-path"])
 	assert.Equal(t, false, runConfig["trace"])
 
-	// Verify verify section
-	verifyConfig, ok := attestor.ConfigContent["verify"].(map[string]interface{})
+	verifyConfig, ok := attestor.ConfigContent["verify"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "policy-signed.json", verifyConfig["policy"])
 	assert.Equal(t, "testpub.pem", verifyConfig["publickey"])
 
-	attestations, ok := verifyConfig["attestations"].([]interface{})
+	attestations, ok := verifyConfig["attestations"].([]any)
 	require.True(t, ok)
 	assert.Len(t, attestations, 1)
 	assert.Equal(t, "test-att.json", attestations[0])
+}
+
+type fakeConfigurableAttestor struct {
+	config map[string]any
+}
+
+func (f *fakeConfigurableAttestor) Name() string { return "fake" }
+func (f *fakeConfigurableAttestor) Type() string { return "https://witness.dev/attestations/fake/v0.1" }
+func (f *fakeConfigurableAttestor) RunType() attestation.RunType {
+	return attestation.PostProductRunType
+}
+func (f *fakeConfigurableAttestor) Schema() *jsonschema.Schema { return &jsonschema.Schema{} }
+func (f *fakeConfigurableAttestor) Attest(ctx *attestation.AttestationContext) error {
+	return nil
+}
+func (f *fakeConfigurableAttestor) Configuration() map[string]any { return f.config }
+
+func TestAttest_CollectsAttestorConfigurations(t *testing.T) {
+	fake := &fakeConfigurableAttestor{config: map[string]any{"fake-option": 42}}
+	prod := product.New(product.WithIncludeGlob("*.tar.gz"))
+	attestor := New()
+
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor, fake, prod})
+	require.NoError(t, err)
+	require.NoError(t, attestor.Attest(ctx))
+
+	require.Contains(t, attestor.Attestors, "fake")
+	assert.Equal(t, map[string]any{"fake-option": 42}, attestor.Attestors["fake"])
+
+	require.Contains(t, attestor.Attestors, "product")
+	assert.Equal(t, "*.tar.gz", attestor.Attestors["product"]["include-glob"])
+
+	assert.NotContains(t, attestor.Attestors, "configuration")
+}
+
+func TestAttest_WorkingDir(t *testing.T) {
+	attestor := New()
+
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{attestor}, attestation.WithWorkingDir("/some/dir"))
+	require.NoError(t, err)
+	require.NoError(t, attestor.Attest(ctx))
+
+	assert.Equal(t, "/some/dir", attestor.WorkingDir)
 }
