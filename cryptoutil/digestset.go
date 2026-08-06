@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"crypto"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -247,6 +248,9 @@ func CalculateDigestSetFromBytes(data []byte, hashes []DigestValue) (DigestSet, 
 	return CalculateDigestSet(bytes.NewReader(data), hashes)
 }
 
+// ErrNotHashable indicates the target path exists but could not be hashed.
+var ErrNotHashable = errors.New("not a hashable file")
+
 func CalculateDigestSetFromFile(path string, hashes []DigestValue) (DigestSet, error) {
 	// Use O_NONBLOCK so that FIFO opens are returned immediately instead of hanging/stalling.
 	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
@@ -261,7 +265,7 @@ func CalculateDigestSetFromFile(path string, hashes []DigestValue) (DigestSet, e
 	}
 
 	if !hashable {
-		return DigestSet{}, fmt.Errorf("%s is not a hashable file", path)
+		return DigestSet{}, fmt.Errorf("%s: %w", path, ErrNotHashable)
 	}
 
 	return CalculateDigestSet(file, hashes)
