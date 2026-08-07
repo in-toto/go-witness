@@ -16,11 +16,19 @@
 
 package types
 
+import "time"
+
 const (
 	DefaultCaCertPath    = "./witness_nettrace_proxy/ca_cert.pem"
 	DefaultCaKeyPath     = "./witness_nettrace_proxy/ca_key.pem"
 	DefaultProxyPort     = 8888
 	DefaultProxyBindIPv4 = "127.0.0.1"
+
+	// DefaultMaxStopDuration bounds how long a process may remain SIGSTOP'd by
+	// the namespace gate before the watchdog forcibly resumes it and the attestor
+	// fails closed. In healthy operation the gate-sweep wakes processes far
+	// sooner; the watchdog firing indicates a fault.
+	DefaultMaxStopDuration = time.Duration(100) * time.Millisecond
 )
 
 // Config controls the network trace attestor behavior
@@ -34,6 +42,11 @@ type Config struct {
 	// Proxy configuration
 	ProxyPort     uint16 `json:"proxy_port"`
 	ProxyBindIPv4 string `json:"proxy_bind_ipv4"`
+
+	// MaxStopDuration bounds how long the namespace gate may keep a process
+	// frozen (SIGSTOP) waiting for its namespace proxy. Exceeding it is treated
+	// as a fault: the watchdog resumes the process and the attestor fails closed.
+	MaxStopDuration time.Duration `json:"max_stop_duration_ms"`
 
 	EnableHTTPInspection bool `json:"enabled_http_inspection"`
 
@@ -52,6 +65,7 @@ func DefaultConfig() Config {
 	return Config{
 		ProxyPort:            DefaultProxyPort,
 		ProxyBindIPv4:        DefaultProxyBindIPv4,
+		MaxStopDuration:      DefaultMaxStopDuration,
 		GenerateCA:           true,
 		CACertPath:           DefaultCaCertPath,
 		CAKeyPath:            DefaultCaKeyPath,

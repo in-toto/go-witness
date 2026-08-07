@@ -32,22 +32,43 @@ struct orig_dst_val {
     char comm[MAX_COMM_LEN];  // Process name
 };
 
-struct tid_allowlist_key {
-    __u32 tid;
+// witness_pid_ns_tid_allowlist entries: every entry describes a thread that
+// lives in the witness PID namespace. Descendant PID namespaces are tracked
+// wholesale via tracked_pid_ns_map instead.
+//
+// A TID never changes PID namespace, so that's unique enough
+struct witness_pid_ns_tid_key {
+    __u32 tid;         // namespace-local thread id
 };
 
-struct tid_allowlist_val {
+struct witness_pid_ns_tid_val {
     __u8 nested_allowed;  // whether to auto-allow child threads via tracepoint
 };
 
-// Key for injection_time_map (single element, key is always 0)
-struct injection_time_key {
-    __u32 key;  // always 0
+// proxy_state_map: per network-namespace readiness latch.
+// Monotonic: userspace transitions ABSENT -> PROXY_READY and never back for the
+// lifetime of the namespace. eBPF only reads it.
+struct proxy_state_key {
+    __u32 netns_inum;
 };
 
-// Value storing when monitoring started (boot time in ns)
-struct injection_time_val {
-    __u64 injection_time;
+// the presence of the entry is the "set up a proxy for this
+// netns" request. Userspace consumes entries with LookupAndDelete and issues
+// SIGCONT.
+struct gate_key {
+    __u32 netns_inum;  // network namespace of the frozen task
+    __u32 tid;         // namespace-local thread id of the frozen task
+};
+
+struct gate_val {
+    __u32 host_tid;     // global (host) tid, used by userspace for kill()/SIGCONT
+    __u32 pad;
+    __u64 stop_ts_ns;   // bpf_ktime_get_ns() at the moment SIGSTOP was sent
+};
+
+// control_map: single-element array kill switch written only by userspace.
+struct control_val {
+    __u8 tracing_disabled;
 };
 
 struct comm_allowlist_key {
