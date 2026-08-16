@@ -258,7 +258,7 @@ func CalculateDigestSetFromFile(path string, hashes []DigestValue) (DigestSet, e
 
 	hashable, err := isHashableFile(file)
 	if err != nil {
-		return DigestSet{}, err
+		return DigestSet{}, fmt.Errorf("%s is not a hashable file", path)
 	}
 
 	if !hashable {
