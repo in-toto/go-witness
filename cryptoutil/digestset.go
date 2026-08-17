@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"crypto"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash"
 	"io"
