@@ -14,12 +14,14 @@ import (
 )
 
 type filetraceSyscallPendingOpen struct {
-	_        structs.HostLayout
-	Filename uint64
-	Dfd      int32
-	_        [4]byte
-	Error    int64
-	Path     [256]int8
+	_         structs.HostLayout
+	Filename  uint64
+	Dfd       int32
+	_         [4]byte
+	Error     int64
+	Truncated uint8
+	Path      [256]int8
+	_         [7]byte
 }
 
 // loadFiletraceSyscall returns the embedded CollectionSpec for filetraceSyscall.
@@ -64,6 +66,7 @@ type filetraceSyscallSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type filetraceSyscallProgramSpecs struct {
+	TraceCgroupMkdir      *ebpf.ProgramSpec `ebpf:"trace_cgroup_mkdir"`
 	TraceOpen             *ebpf.ProgramSpec `ebpf:"trace_open"`
 	TraceOpenExit         *ebpf.ProgramSpec `ebpf:"trace_open_exit"`
 	TraceOpenat           *ebpf.ProgramSpec `ebpf:"trace_openat"`
@@ -78,6 +81,7 @@ type filetraceSyscallProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type filetraceSyscallMapSpecs struct {
+	DaemonTasks   *ebpf.MapSpec `ebpf:"daemon_tasks"`
 	Events        *ebpf.MapSpec `ebpf:"events"`
 	PendingOpens  *ebpf.MapSpec `ebpf:"pending_opens"`
 	TargetCgroups *ebpf.MapSpec `ebpf:"target_cgroups"`
@@ -109,6 +113,7 @@ func (o *filetraceSyscallObjects) Close() error {
 //
 // It can be passed to loadFiletraceSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type filetraceSyscallMaps struct {
+	DaemonTasks   *ebpf.Map `ebpf:"daemon_tasks"`
 	Events        *ebpf.Map `ebpf:"events"`
 	PendingOpens  *ebpf.Map `ebpf:"pending_opens"`
 	TargetCgroups *ebpf.Map `ebpf:"target_cgroups"`
@@ -116,6 +121,7 @@ type filetraceSyscallMaps struct {
 
 func (m *filetraceSyscallMaps) Close() error {
 	return _FiletraceSyscallClose(
+		m.DaemonTasks,
 		m.Events,
 		m.PendingOpens,
 		m.TargetCgroups,
@@ -132,6 +138,7 @@ type filetraceSyscallVariables struct {
 //
 // It can be passed to loadFiletraceSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type filetraceSyscallPrograms struct {
+	TraceCgroupMkdir      *ebpf.Program `ebpf:"trace_cgroup_mkdir"`
 	TraceOpen             *ebpf.Program `ebpf:"trace_open"`
 	TraceOpenExit         *ebpf.Program `ebpf:"trace_open_exit"`
 	TraceOpenat           *ebpf.Program `ebpf:"trace_openat"`
@@ -144,6 +151,7 @@ type filetraceSyscallPrograms struct {
 
 func (p *filetraceSyscallPrograms) Close() error {
 	return _FiletraceSyscallClose(
+		p.TraceCgroupMkdir,
 		p.TraceOpen,
 		p.TraceOpenExit,
 		p.TraceOpenat,

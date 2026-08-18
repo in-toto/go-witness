@@ -22,6 +22,7 @@ import (
 	"hash"
 	"io"
 	"os"
+	"syscall"
 
 	"golang.org/x/mod/sumdb/dirhash"
 )
@@ -247,10 +248,12 @@ func CalculateDigestSetFromBytes(data []byte, hashes []DigestValue) (DigestSet, 
 }
 
 func CalculateDigestSetFromFile(path string, hashes []DigestValue) (DigestSet, error) {
-	file, err := os.Open(path)
+	// Use O_NONBLOCK so that FIFO opens are returned immediately instead of hanging/stalling.
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return DigestSet{}, err
 	}
+	defer file.Close()
 
 	hashable, err := isHashableFile(file)
 	if err != nil {
@@ -261,7 +264,6 @@ func CalculateDigestSetFromFile(path string, hashes []DigestValue) (DigestSet, e
 		return DigestSet{}, fmt.Errorf("%s is not a hashable file", path)
 	}
 
-	defer file.Close()
 	return CalculateDigestSet(file, hashes)
 }
 
@@ -303,31 +305,14 @@ func (ds *DigestSet) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func isHashableFile(f *os.File) (bool, error) {
-	stat, err := f.Stat()
+// isHashableFile reports whether file is safe to read and hash: a regular
+// file, or a symlink that resolves to one. Checked via fstat on the already
+// -open fd (not a separate stat on the path), so there's no TOCTOU window
+// between this check and the caller's read.
+func isHashableFile(file *os.File) (bool, error) {
+	stat, err := file.Stat()
 	if err != nil {
 		return false, err
 	}
-
-	mode := stat.Mode()
-
-	isSpecial := stat.Mode()&os.ModeCharDevice != 0
-
-	if isSpecial {
-		return false, nil
-	}
-
-	if mode.IsRegular() {
-		return true, nil
-	}
-
-	if mode.Perm().IsDir() {
-		return true, nil
-	}
-
-	if mode&os.ModeSymlink == 1 {
-		return true, nil
-	}
-
-	return false, nil
+	return stat.Mode().IsRegular(), nil
 }
