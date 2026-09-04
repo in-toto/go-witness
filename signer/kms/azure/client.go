@@ -294,13 +294,6 @@ func extractECPublicKey(jwk *azkeys.JSONWebKey) (*ecdsa.PublicKey, error) {
 		return nil, errors.New("EC key is missing required parameters")
 	}
 
-	// jwk.X and jwk.Y are already []byte, no need to decode
-	xBytes := jwk.X
-	yBytes := jwk.Y
-
-	x := new(big.Int).SetBytes(xBytes)
-	y := new(big.Int).SetBytes(yBytes)
-
 	var curve elliptic.Curve
 	switch *jwk.Crv {
 	case azkeys.CurveNameP256:
@@ -316,11 +309,17 @@ func extractECPublicKey(jwk *azkeys.JSONWebKey) (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("unsupported curve: %s", *jwk.Crv)
 	}
 
-	return &ecdsa.PublicKey{
-		Curve: curve,
-		X:     x,
-		Y:     y,
-	}, nil
+	coordLen := (curve.Params().BitSize + 7) / 8
+	if len(jwk.X) > coordLen || len(jwk.Y) > coordLen {
+		return nil, errors.New("invalid EC coordinate length")
+	}
+
+	uncompressed := make([]byte, 1+2*coordLen)
+	uncompressed[0] = 0x04
+	copy(uncompressed[1+coordLen-len(jwk.X):1+coordLen], jwk.X)
+	copy(uncompressed[1+2*coordLen-len(jwk.Y):1+2*coordLen], jwk.Y)
+
+	return ecdsa.ParseUncompressedPublicKey(curve, uncompressed)
 }
 
 func (a *azureClient) sign(ctx context.Context, digest []byte, hash crypto.Hash) ([]byte, error) {
