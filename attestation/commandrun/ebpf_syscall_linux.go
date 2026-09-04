@@ -26,15 +26,13 @@ import (
 	commandrunbpf "github.com/in-toto/go-witness/attestation/commandrun/bpf"
 )
 
-// File tracing for command-run using syscall tracepoints. Tracepoints are attached to both
-// sys_entry and sys_exit for open* and exec/exit which emit these events through a shared
-// ring buffer.
-// open* are used for tracking OpenedFiles, exec/exit to track lifecycle events.
-//
+// eBPF tracepoints for file and process tracing.
 // Args:
 //
-//	cgroupID:	cgroup for "/sys/fs/cgroup/witness-tracing" used to filter for events of interest.
-func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
+//	cgroupID:    cgroup for "/sys/fs/cgroup/witness-tracing" used to filter for events of interest.
+//	trackCgroup: attach cgroup tracing programs.
+//	daemonPIDs:  host PIDs of daemons.
+func loadSyscallEBPFTracer(cgroupID uint64, trackCgroup bool, daemonPIDs []int) (*loadedEBPFTracer, error) {
 	spec, err := commandrunbpf.LoadFiletraceSyscall()
 	if err != nil {
 		return nil, fmt.Errorf("load spec: %w", err)
@@ -45,8 +43,8 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 		return nil, fmt.Errorf("load objects: %w", err)
 	}
 
-	links := make([]link.Link, 0, 8)
-	for _, tp := range []struct {
+	// Default programs
+	tracepoints := []struct {
 		group    string
 		name     string
 		program  *ebpf.Program
@@ -60,7 +58,20 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 		{"syscalls", "sys_exit_openat2", objs.TraceOpenat2Exit, false},
 		{"sched", "sched_process_exec", objs.TraceSchedProcessExec, true},
 		{"sched", "sched_process_exit", objs.TraceSchedProcessExit, true},
-	} {
+	}
+
+	// Cgroup programs
+	if trackCgroup {
+		tracepoints = append(tracepoints, struct {
+			group    string
+			name     string
+			program  *ebpf.Program
+			required bool
+		}{"cgroup", "cgroup_mkdir", objs.TraceCgroupMkdir, true})
+	}
+
+	links := make([]link.Link, 0, len(tracepoints))
+	for _, tp := range tracepoints {
 		l, err := link.Tracepoint(tp.group, tp.name, tp.program, nil)
 		if err != nil {
 			if !tp.required && errors.Is(err, os.ErrNotExist) {
@@ -76,6 +87,7 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 	tracer := &loadedEBPFTracer{
 		events:        objs.Events,
 		targetCgroups: objs.TargetCgroups,
+		daemonTasks:   objs.DaemonTasks,
 		close: func() error {
 			closeLinks(links)
 			return objs.Close()
@@ -84,6 +96,13 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 	if err := tracer.addCgroup(cgroupID); err != nil {
 		_ = tracer.close()
 		return nil, fmt.Errorf("add target cgroup: %w", err)
+	}
+
+	for _, pid := range daemonPIDs {
+		if err := tracer.addDaemonPID(pid); err != nil {
+			_ = tracer.close()
+			return nil, fmt.Errorf("add daemon pid %d: %w", pid, err)
+		}
 	}
 
 	return tracer, nil
