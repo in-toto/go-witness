@@ -48,9 +48,9 @@ require (
 	golang.org/x/sys v0.46.0
 	google.golang.org/api v0.286.0
 	google.golang.org/grpc v1.82.1
-	k8s.io/api v0.35.7
-	k8s.io/apimachinery v0.35.7
-	k8s.io/client-go v0.35.6
+	k8s.io/api v0.35.8
+	k8s.io/apimachinery v0.35.8
+	k8s.io/client-go v0.35.8
 )
 
 require (
