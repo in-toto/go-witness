@@ -610,6 +610,45 @@ func TestCheckFunctionaries(t *testing.T) {
 	}
 }
 
+// A statement whose predicate type is not a witness collection must never be accepted,
+// even when it carries a valid signature from an authorized functionary. The predicate-type
+// check in checkFunctionaries must gate acceptance, not merely record a rejection reason.
+func TestCheckFunctionariesRejectsNonCollectionPredicate(t *testing.T) {
+	_, verifier, _, err := createTestKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyID, err := verifier.KeyID()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	step := Step{
+		Name: "step1",
+		Functionaries: []Functionary{
+			{Type: "PublicKey", PublicKeyID: keyID},
+		},
+		Attestations: []Attestation{
+			{Type: "dummy-prods"},
+		},
+	}
+
+	statements := []source.CollectionVerificationResult{
+		{
+			Verifiers: []cryptoutil.Verifier{verifier},
+			CollectionEnvelope: source.CollectionEnvelope{
+				Statement: intoto.Statement{PredicateType: "https://example.com/not-a-collection/v1"},
+			},
+		},
+	}
+
+	result := step.checkFunctionaries(statements, nil)
+
+	assert.Empty(t, result.Passed, "a non-collection predicate type must not be accepted even with a valid functionary")
+	assert.NotEmpty(t, result.Rejected, "a non-collection predicate type must be rejected")
+}
+
 // A single distinct collection that matches on every search-depth iteration must be counted once,
 // not once per iteration.
 func TestVerifyDeduplicatesCollectionsAcrossDepth(t *testing.T) {
