@@ -292,6 +292,13 @@ func (ctx *AttestationContext) CompletedAttestors() []CompletedAttestor {
 	return out
 }
 
+// Attestors returns the attestors that are part of this run.
+func (ctx *AttestationContext) Attestors() []Attestor {
+	out := make([]Attestor, len(ctx.attestors))
+	copy(out, ctx.attestors)
+	return out
+}
+
 func (ctx *AttestationContext) WorkingDir() string {
 	return ctx.workingDir
 }
