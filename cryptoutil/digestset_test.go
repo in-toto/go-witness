@@ -16,6 +16,9 @@ package cryptoutil
 
 import (
 	"crypto"
+	"os"
+	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -73,6 +76,50 @@ func TestDigestSetEqual_EdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.equal, tt.a.Equal(tt.b))
 			require.Equal(t, tt.equal, tt.b.Equal(tt.a), "Equal must be symmetric")
+		})
+	}
+}
+
+func TestIsHashableFile(t *testing.T) {
+	regular := filepath.Join(t.TempDir(), "regular")
+	require.NoError(t, os.WriteFile(regular, []byte("hello"), 0o644))
+
+	fifo := filepath.Join(t.TempDir(), "fifo")
+	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
+
+	dir := t.TempDir()
+
+	tests := []struct {
+		name     string
+		path     string
+		hashable bool
+	}{
+		{"regular file is hashable", regular, true},
+		{"directory is not hashable", dir, false},
+		{"named pipe is not hashable", fifo, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := os.OpenFile(tt.path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+			require.NoError(t, err)
+			defer f.Close()
+
+			hashable, err := isHashableFile(f)
+			require.NoError(t, err)
+			require.Equal(t, tt.hashable, hashable)
+
+			ds, err := CalculateDigestSetFromFile(tt.path, []DigestValue{{Hash: crypto.SHA256}})
+			if tt.hashable {
+				expected, expErr := CalculateDigestSetFromBytes([]byte("hello"), []DigestValue{{Hash: crypto.SHA256}})
+				require.NoError(t, expErr)
+				require.NoError(t, err)
+				require.Equal(t, expected, ds)
+			} else {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "not a hashable file")
+				require.Equal(t, DigestSet{}, ds)
+			}
 		})
 	}
 }
