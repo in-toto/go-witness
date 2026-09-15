@@ -71,7 +71,7 @@ func (r *RPMBackend) DetermineOSInfo() (string, string, string, error) {
 }
 
 func (r *RPMBackend) GatherPackages() ([]Package, error) {
-	cmd := r.execCommand("rpm", "-qa", "--qf", "%{NAME}\t%{VERSION}\n")
+	cmd := r.execCommand(trustedToolPath("rpm"), "-qa", "--qf", "%{NAME}\t%{VERSION}\n")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err

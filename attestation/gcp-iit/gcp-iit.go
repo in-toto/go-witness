@@ -143,17 +143,27 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	return nil
 }
 
-func (a *Attestor) getInstanceData() {
-	endpoints := map[string]string{
+// buildInstanceEndpoints returns the GCE metadata routes queried by
+// getInstanceData. It intentionally excludes project-id/project-number:
+// those values are always sourced from the identity JWT (see
+// parseJWTProjectInfo below), never from these per-instance routes, so
+// querying them here only produced a guaranteed 404 (the correct project-
+// level route is ProjectMetadataUrl, not InstanceMetadataUrl+"project/...")
+// and a spurious warning on every workload-identity attestation. See
+// https://github.com/in-toto/witness/issues/258.
+func buildInstanceEndpoints() map[string]string {
+	return map[string]string{
 		"hostname":         InstanceMetadataUrl + "hostname",
 		"id":               InstanceMetadataUrl + "id",
 		"zone":             InstanceMetadataUrl + "zone",
 		"cluster-name":     InstanceMetadataUrl + "attributes/cluster-name",
 		"cluster-uid":      InstanceMetadataUrl + "attributes/cluster-uid",
 		"cluster-location": InstanceMetadataUrl + "attributes/cluster-location",
-		"project-id":       InstanceMetadataUrl + "project/project-id",
-		"project-number":   InstanceMetadataUrl + "project/numeric-project-id",
 	}
+}
+
+func (a *Attestor) getInstanceData() {
+	endpoints := buildInstanceEndpoints()
 
 	metadata := make(map[string]string)
 

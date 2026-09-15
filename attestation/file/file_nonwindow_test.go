@@ -90,3 +90,97 @@ func TestDirHashWithSymlink(t *testing.T) {
 
 	require.Equal(t, dirDigestSetMap["dirHash"], dirHashSha256)
 }
+
+// RecordArtifacts must not follow a symlink whose target resolves outside the attested tree; an
+// out-of-tree file reachable only through such a symlink must never be recorded.
+func TestRecordArtifactsSkipsSymlinkOutsideBase(t *testing.T) {
+	// A directory outside the attested tree holding a file that must never be reached.
+	outside := t.TempDir()
+	outsidePath := filepath.Join(outside, "secret.txt")
+	require.NoError(t, os.WriteFile(outsidePath, []byte("out-of-tree"), 0o600))
+
+	// The attested tree: one in-tree file plus a symlink that escapes to the outside file.
+	base := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(base, "realfile.txt"), []byte("in-tree"), 0o644))
+	require.NoError(t, os.Symlink(outsidePath, filepath.Join(base, "escape.link")))
+
+	artifacts, err := RecordArtifacts(
+		base,
+		map[string]cryptoutil.DigestSet{},
+		[]cryptoutil.DigestValue{{Hash: crypto.SHA256}},
+		map[string]struct{}{},
+		false,
+		map[string]bool{},
+		[]glob.Glob{},
+	)
+	require.NoError(t, err)
+
+	// Nothing recorded should resolve to the out-of-tree file.
+	resolvedOutside, err := filepath.EvalSymlinks(outsidePath)
+	require.NoError(t, err)
+	for recorded := range artifacts {
+		abs, err := filepath.Abs(filepath.Join(base, recorded))
+		require.NoError(t, err)
+		resolved, err := filepath.EvalSymlinks(abs)
+		if err != nil {
+			continue
+		}
+		require.NotEqual(t, resolvedOutside, resolved,
+			"recorded artifact %q resolves outside the attested tree", recorded)
+	}
+}
+
+// Directory hashing follows symlinks while reading file contents and cannot selectively skip an
+// escaping symlink the way the per-file walk does, so RecordArtifacts must fail closed when a hashed
+// directory contains a symlink resolving outside the attested root.
+func TestRecordArtifactsDirHashRefusesEscapingSymlink(t *testing.T) {
+	outside := t.TempDir()
+	outsidePath := filepath.Join(outside, "secret.txt")
+	require.NoError(t, os.WriteFile(outsidePath, []byte("out-of-tree"), 0o600))
+
+	base := t.TempDir()
+	hashedDir := filepath.Join(base, "hasheddir")
+	require.NoError(t, os.Mkdir(hashedDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(hashedDir, "real.txt"), []byte("in-tree"), 0o644))
+	require.NoError(t, os.Symlink(outsidePath, filepath.Join(hashedDir, "escape.link")))
+
+	dirHash := []glob.Glob{glob.MustCompile("hasheddir")}
+
+	_, err := RecordArtifacts(
+		base,
+		map[string]cryptoutil.DigestSet{},
+		[]cryptoutil.DigestValue{{Hash: crypto.SHA256}},
+		map[string]struct{}{},
+		false,
+		map[string]bool{},
+		dirHash,
+	)
+	require.Error(t, err, "dir-hash mode must refuse a hashed directory containing an escaping symlink")
+	require.Contains(t, err.Error(), "refusing to hash directory")
+}
+
+// The escaping-symlink guard must be specific to symlinks that leave the attested root: a symlink
+// that stays within the root must not block directory hashing.
+func TestRecordArtifactsDirHashAllowsInTreeSymlink(t *testing.T) {
+	base := t.TempDir()
+	target := filepath.Join(base, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("in-tree-target"), 0o644))
+
+	hashedDir := filepath.Join(base, "hasheddir")
+	require.NoError(t, os.Mkdir(hashedDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(hashedDir, "real.txt"), []byte("in-tree"), 0o644))
+	require.NoError(t, os.Symlink(target, filepath.Join(hashedDir, "intree.link")))
+
+	dirHash := []glob.Glob{glob.MustCompile("hasheddir")}
+
+	_, err := RecordArtifacts(
+		base,
+		map[string]cryptoutil.DigestSet{},
+		[]cryptoutil.DigestValue{{Hash: crypto.SHA256}},
+		map[string]struct{}{},
+		false,
+		map[string]bool{},
+		dirHash,
+	)
+	require.NoError(t, err, "dir-hash mode must allow a hashed directory whose symlink stays within the attested root")
+}

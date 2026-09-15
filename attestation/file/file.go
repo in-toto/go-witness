@@ -15,9 +15,11 @@
 package file
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gobwas/glob"
 	"github.com/in-toto/go-witness/cryptoutil"
@@ -28,6 +30,13 @@ import (
 // If file already exists in baseArtifacts and the two artifacts are equal the artifact will not be in the
 // returned map of artifacts.
 func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.DigestSet, hashes []cryptoutil.DigestValue, visitedSymlinks map[string]struct{}, processWasTraced bool, openedFiles map[string]bool, dirHashGlob []glob.Glob) (map[string]cryptoutil.DigestSet, error) {
+	// Preserve the original attested root across symlink recursion so the boundary check always
+	// compares against the tree the caller asked to attest, not the narrower base of a followed
+	// in-tree symlink.
+	return recordArtifacts(basePath, basePath, baseArtifacts, hashes, visitedSymlinks, processWasTraced, openedFiles, dirHashGlob)
+}
+
+func recordArtifacts(basePath, root string, baseArtifacts map[string]cryptoutil.DigestSet, hashes []cryptoutil.DigestValue, visitedSymlinks map[string]struct{}, processWasTraced bool, openedFiles map[string]bool, dirHashGlob []glob.Glob) (map[string]cryptoutil.DigestSet, error) {
 	artifacts := make(map[string]cryptoutil.DigestSet)
 	err := filepath.Walk(basePath, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
@@ -48,6 +57,18 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 			}
 
 			if dirHashMatch {
+				// Directory hashing follows symlinks when reading file contents, which would
+				// otherwise re-introduce the out-of-tree read the normal walk guards against.
+				// Refuse to hash a directory that contains a symlink resolving outside the
+				// attested path rather than silently hashing the external target.
+				escapes, err := dirHasEscapingSymlink(path, root)
+				if err != nil {
+					return err
+				}
+				if escapes {
+					return fmt.Errorf("(file) refusing to hash directory %v: it contains a symlink resolving outside the attested path", path)
+				}
+
 				dir, err := cryptoutil.CalculateDigestSetFromDir(path, hashes)
 
 				if err != nil {
@@ -71,12 +92,24 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 				return err
 			}
 
+			// Do not follow a symlink whose target resolves outside the tree being attested.
+			// Otherwise a symlink placed in the attested directory could cause out-of-tree files
+			// (secrets, system files) to be opened, hashed, and recorded into the attestation.
+			within, err := pathWithinBase(root, linkedPath)
+			if err != nil {
+				return err
+			}
+			if !within {
+				log.Debugf("(file) skipping symlink %v: target %v resolves outside the attested path", path, linkedPath)
+				return nil
+			}
+
 			if _, ok := visitedSymlinks[linkedPath]; ok {
 				return nil
 			}
 
 			visitedSymlinks[linkedPath] = struct{}{}
-			symlinkedArtifacts, err := RecordArtifacts(linkedPath, baseArtifacts, hashes, visitedSymlinks, processWasTraced, openedFiles, dirHashGlob)
+			symlinkedArtifacts, err := recordArtifacts(linkedPath, root, baseArtifacts, hashes, visitedSymlinks, processWasTraced, openedFiles, dirHashGlob)
 			if err != nil {
 				return err
 			}
@@ -105,6 +138,71 @@ func RecordArtifacts(basePath string, baseArtifacts map[string]cryptoutil.Digest
 	})
 
 	return artifacts, err
+}
+
+// pathWithinBase reports whether resolvedTarget (an already symlink-resolved, absolute-or-relative
+// path) is contained within basePath. basePath is canonicalized with EvalSymlinks so the comparison
+// is not defeated by symlinked path components (for example /tmp -> /private/tmp on macOS). It is
+// used to ensure the file attestor does not follow a symlink outside the tree being attested.
+func pathWithinBase(basePath, resolvedTarget string) (bool, error) {
+	absBase, err := filepath.Abs(basePath)
+	if err != nil {
+		return false, err
+	}
+	if canonicalBase, err := filepath.EvalSymlinks(absBase); err == nil {
+		absBase = canonicalBase
+	}
+
+	absTarget, err := filepath.Abs(resolvedTarget)
+	if err != nil {
+		return false, err
+	}
+
+	rel, err := filepath.Rel(absBase, absTarget)
+	if err != nil {
+		return false, nil
+	}
+
+	// The target is within base unless the relative path escapes it with "..".
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// dirHasEscapingSymlink reports whether dir contains any symlink whose target resolves outside
+// basePath. It is used to refuse directory hashing when an out-of-tree symlink is present, since the
+// directory-hash path follows symlinks while reading and cannot selectively exclude them. Broken
+// symlinks are ignored.
+func dirHasEscapingSymlink(dir, basePath string) (bool, error) {
+	found := false
+	err := filepath.Walk(dir, func(p string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode()&fs.ModeSymlink == 0 {
+			return nil
+		}
+
+		resolved, err := filepath.EvalSymlinks(p)
+		if os.IsNotExist(err) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+
+		within, err := pathWithinBase(basePath, resolved)
+		if err != nil {
+			return err
+		}
+		if !within {
+			found = true
+		}
+		return nil
+	})
+
+	return found, err
 }
 
 // shouldRecord determines whether artifact should be recorded.

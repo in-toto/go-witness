@@ -120,9 +120,13 @@ func (r Registry[T]) SetDefaultVals(entity T, opts []Configurer) (T, error) {
 		switch o := opt.(type) {
 		case *ConfigOption[T, int]:
 			entity, err = o.Setter()(entity, o.DefaultVal())
+		case *ConfigOption[T, int64]:
+			entity, err = o.Setter()(entity, o.DefaultVal())
 		case *ConfigOption[T, string]:
 			entity, err = o.Setter()(entity, o.DefaultVal())
 		case *ConfigOption[T, []string]:
+			entity, err = o.Setter()(entity, o.DefaultVal())
+		case *ConfigOption[T, []int]:
 			entity, err = o.Setter()(entity, o.DefaultVal())
 		case *ConfigOption[T, bool]:
 			entity, err = o.Setter()(entity, o.DefaultVal())
