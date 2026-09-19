@@ -221,6 +221,10 @@ func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) er
 		clientConn.Close()
 		return fmt.Errorf("get connection metadata: %w", err)
 	}
+	if source, ok := clientConn.RemoteAddr().(*net.TCPAddr); ok {
+		metadata.SourceIP = source.IP
+		metadata.SourcePort = uint16(source.Port)
+	}
 
 	log.Infof("New connection: %s (cookie=%d/0x%x)", metadata, sockCookie, sockCookie)
 
@@ -373,15 +377,18 @@ func (p *TCPProxy) tryRouteToHTTPProxy(clientConn net.Conn, metadata *bpf.Connec
 }
 
 func (p *TCPProxy) getConnectionMetadata(sockCookie uint64, isIPv6 bool) (*bpf.ConnectionMetadata, error) {
+	// Atomically consume (lookup + delete) so the entry is handled exactly once
+	// and a recycled socket cookie can never read another connection's stale
+	// metadata.
 	if isIPv6 {
-		metadata, err := p.maps.LookupOrigDstV6(sockCookie)
+		metadata, err := p.maps.ConsumeOrigDstV6(sockCookie)
 		if err != nil {
 			return nil, fmt.Errorf("lookup IPv6 original destination: %w", err)
 		}
 		return metadata, nil
 	}
 
-	metadata, err := p.maps.LookupOrigDst(sockCookie)
+	metadata, err := p.maps.ConsumeOrigDst(sockCookie)
 	if err != nil {
 		return nil, fmt.Errorf("lookup IPv4 original destination: %w", err)
 	}

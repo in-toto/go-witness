@@ -23,31 +23,54 @@ struct orig_dst_key {
 };
 
 struct orig_dst_val {
-    __u32 orig_ip;    // Original destination IP (IPv4)
-    __u16 orig_port;  // Original destination port
+    __u32 orig_ip;        // Original destination IP (IPv4)
+    __u16 orig_port;      // Original destination port
     __u16 pad;
-    __u64 cgroup_id;  // Cgroup ID
-    __u32 pid;        // Process ID
-    __u32 pad2;
+    __u64 cgroup_id;      // Cgroup ID
+    __u32 pid;            // Process ID in the process's own PID namespace
+    __u32 witness_pid;    // Process ID as seen from the witness PID namespace
+    __u32 pid_ns_inum;    // PID namespace inode number
+    __u32 netns_inum;     // Network namespace inode number
     char comm[MAX_COMM_LEN];  // Process name
 };
 
-struct tid_allowlist_key {
-    __u32 tid;
+// witness_pid_ns_tid_allowlist entries: every entry describes a thread that
+// lives in the witness PID namespace. Descendant PID namespaces are tracked
+// wholesale via tracked_pid_ns_map instead.
+//
+// A TID never changes PID namespace, so that's unique enough
+struct witness_pid_ns_tid_key {
+    __u32 tid;         // namespace-local thread id
 };
 
-struct tid_allowlist_val {
+struct witness_pid_ns_tid_val {
     __u8 nested_allowed;  // whether to auto-allow child threads via tracepoint
 };
 
-// Key for injection_time_map (single element, key is always 0)
-struct injection_time_key {
-    __u32 key;  // always 0
+// proxy_state_map: per network-namespace readiness latch.
+// Monotonic: userspace transitions ABSENT -> PROXY_READY and never back for the
+// lifetime of the namespace. eBPF only reads it.
+struct proxy_state_key {
+    __u32 netns_inum;
 };
 
-// Value storing when monitoring started (boot time in ns)
-struct injection_time_val {
-    __u64 injection_time;
+// the presence of the entry is the "set up a proxy for this
+// netns" request. Userspace consumes entries with LookupAndDelete and issues
+// SIGCONT.
+struct gate_key {
+    __u32 netns_inum;  // network namespace of the frozen task
+    __u32 tid;         // namespace-local thread id of the frozen task
+};
+
+struct gate_val {
+    __u32 host_tid;     // global (host) tid, used by userspace for kill()/SIGCONT
+    __u32 pad;
+    __u64 stop_ts_ns;   // bpf_ktime_get_ns() at the moment SIGSTOP was sent
+};
+
+// control_map: single-element array kill switch written only by userspace.
+struct control_val {
+    __u8 tracing_disabled;
 };
 
 struct comm_allowlist_key {
@@ -85,13 +108,15 @@ struct orig_dst_key_v6 {
 };
 
 struct orig_dst_val_v6 {
-    __u8 orig_ip[16];  // IPv6 address
+    __u8 orig_ip[16];     // IPv6 address
     __u16 orig_port;
     __u16 pad;
     __u32 pad1;
     __u64 cgroup_id;
-    __u32 pid;
-    __u32 pad2;
+    __u32 pid;            // Process ID in the process's own PID namespace
+    __u32 witness_pid;    // Process ID as seen from the witness PID namespace
+    __u32 pid_ns_inum;    // PID namespace inode number
+    __u32 netns_inum;     // Network namespace inode number
     char comm[MAX_COMM_LEN];  // Process name
 };
 
