@@ -279,6 +279,11 @@ func TestIntegrationNetworkTrace(t *testing.T) {
 			assert.NotZero(t, conn.Process.PID, "Connection should record process PID")
 			assert.Equal(t, "nc", conn.Process.Comm, "Connection should record process command name")
 			assert.NotZero(t, conn.Process.CgroupID, "Connection should record process CgroupID")
+			assert.NotZero(t, conn.Process.PIDNamespace, "Connection should record PID namespace")
+			assert.NotZero(t, conn.Process.NetworkNamespace, "Connection should record network namespace")
+			assert.NotNil(t, conn.Source.IP, "Connection should record source IP")
+			assert.NotZero(t, conn.Source.Port, "Connection should record source port")
+			assert.Equal(t, conn.Process.PID, conn.Process.WitnessPID, "nc runs in the witness PID ns, so the witness PID must equal the namespace-local PID")
 
 			assert.Len(t, conn.TCPPayloads, 2, "Should record two payloads (request and response)")
 
@@ -1040,6 +1045,14 @@ func TestIntegrationCloneNewPidNewNet(t *testing.T) {
 			conns := networkAttestor.NetworkTrace.Connections
 			require.Len(t, conns, 1, "Should record one connection from the container netns")
 			assert.True(t, findPayload(conns, "DOCKER"), "Should capture DOCKER payload")
+			conn := conns[0]
+			assert.Equal(t, uint32(1), conn.Process.PID, "Connection should record the namespace-local PID")
+			assert.NotZero(t, conn.Process.WitnessPID, "Connection should record the witness-namespace PID")
+			assert.NotEqual(t, conn.Process.PID, conn.Process.WitnessPID, "Witness PID must differ from the namespace-local PID 1 in a child PID namespace")
+			assert.NotZero(t, conn.Process.PIDNamespace, "Connection should record PID namespace")
+			assert.NotZero(t, conn.Process.NetworkNamespace, "Connection should record network namespace")
+			assert.NotNil(t, conn.Source.IP, "Connection should record process socket source IP")
+			assert.NotZero(t, conn.Source.Port, "Connection should record process socket source port")
 		})
 	}
 }

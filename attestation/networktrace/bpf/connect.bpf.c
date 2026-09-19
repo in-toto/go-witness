@@ -47,6 +47,7 @@ int intercept_connect4(struct bpf_sock_addr* ctx) {
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     __u32 netns_inum = get_netns_inum(task);
     __u32 pid_ns_inum = get_pid_ns_inum(task);
+    __u32 witness_pid = get_witness_pid(task, pid_ns_inum, pid);
 
     char comm[MAX_COMM_LEN];
     bpf_get_current_comm(&comm, sizeof(comm));
@@ -85,6 +86,9 @@ int intercept_connect4(struct bpf_sock_addr* ctx) {
         .orig_port = dest_port,
         .cgroup_id = cgroup_id,
         .pid = pid,
+        .witness_pid = witness_pid,
+        .pid_ns_inum = pid_ns_inum,
+        .netns_inum = netns_inum,
     };
     __builtin_memcpy(orig_val.comm, comm, MAX_COMM_LEN);
 
@@ -121,6 +125,7 @@ int intercept_connect6(struct bpf_sock_addr* ctx) {
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     __u32 netns_inum = get_netns_inum(task);
     __u32 pid_ns_inum = get_pid_ns_inum(task);
+    __u32 witness_pid = get_witness_pid(task, pid_ns_inum, pid);
 
     char comm[MAX_COMM_LEN];
     bpf_get_current_comm(&comm, sizeof(comm));
@@ -154,6 +159,9 @@ int intercept_connect6(struct bpf_sock_addr* ctx) {
         .orig_port = dest_port,
         .cgroup_id = cgroup_id,
         .pid = pid,
+        .witness_pid = witness_pid,
+        .pid_ns_inum = pid_ns_inum,
+        .netns_inum = netns_inum,
     };
 
     // Copy IPv6 address - manual unroll to make bpf verifier happy

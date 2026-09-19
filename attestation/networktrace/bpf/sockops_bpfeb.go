@@ -52,26 +52,30 @@ type sockopsOrigDstKeyV6 struct {
 }
 
 type sockopsOrigDstVal struct {
-	_        structs.HostLayout
-	OrigIp   uint32
-	OrigPort uint16
-	Pad      uint16
-	CgroupId uint64
-	Pid      uint32
-	Pad2     uint32
-	Comm     [16]int8
+	_          structs.HostLayout
+	OrigIp     uint32
+	OrigPort   uint16
+	Pad        uint16
+	CgroupId   uint64
+	Pid        uint32
+	WitnessPid uint32
+	PidNsInum  uint32
+	NetnsInum  uint32
+	Comm       [16]int8
 }
 
 type sockopsOrigDstValV6 struct {
-	_        structs.HostLayout
-	OrigIp   [16]uint8
-	OrigPort uint16
-	Pad      uint16
-	Pad1     uint32
-	CgroupId uint64
-	Pid      uint32
-	Pad2     uint32
-	Comm     [16]int8
+	_          structs.HostLayout
+	OrigIp     [16]uint8
+	OrigPort   uint16
+	Pad        uint16
+	Pad1       uint32
+	CgroupId   uint64
+	Pid        uint32
+	WitnessPid uint32
+	PidNsInum  uint32
+	NetnsInum  uint32
+	Comm       [16]int8
 }
 
 type sockopsProxyStateKey struct {

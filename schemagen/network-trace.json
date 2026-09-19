@@ -392,6 +392,15 @@
         "pid": {
           "type": "integer"
         },
+        "witness_pid": {
+          "type": "integer"
+        },
+        "pid_namespace": {
+          "type": "integer"
+        },
+        "network_namespace": {
+          "type": "integer"
+        },
         "comm": {
           "type": "string"
         },
@@ -403,6 +412,9 @@
       "type": "object",
       "required": [
         "pid",
+        "witness_pid",
+        "pid_namespace",
+        "network_namespace",
         "comm"
       ]
     },

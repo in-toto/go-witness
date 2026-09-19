@@ -55,6 +55,27 @@ static __always_inline __u32 get_pid_ns(struct task_struct* task) {
   return ns_pid;
 }
 
+// get_witness_pid returns the process PID as seen from the witness PID
+// namespace (the PID namespace of the main witness process), for tasks in
+// that namespace and for tasks in any descendant PID namespace. NOT the
+// host/init-namespace PID.
+static __always_inline __u32 get_witness_pid(struct task_struct* task,
+                                             __u32 pid_ns_inum, __u32 ns_pid) {
+    if (pid_ns_inum == witness_pid_ns_inum) {
+        return ns_pid;
+    }
+    // Descendant PID namespace: index thread_pid.numbers[] at the cached
+    // witness-namespace level (same read + bounds-check pattern as netns_gate
+    // below in this file).
+    struct pid* tp = BPF_CORE_READ(task, group_leader, thread_pid);
+    if (!tp) return 0;
+    unsigned int task_level = BPF_CORE_READ(tp, level);
+    __u32 key = 0;
+    __u32* wlevel_ptr = bpf_map_lookup_elem(&witness_pid_ns_level_map, &key);
+    if (!wlevel_ptr || *wlevel_ptr > task_level) return 0;
+    return BPF_CORE_READ(tp, numbers[*wlevel_ptr].nr);
+}
+
 static __always_inline __u32 get_tid_ns(struct task_struct* task) {
   unsigned int level = BPF_CORE_READ(task, thread_pid, level);
   __u32 ns_tid = BPF_CORE_READ(task, thread_pid, numbers[level].nr);

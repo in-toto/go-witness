@@ -221,6 +221,10 @@ func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) er
 		clientConn.Close()
 		return fmt.Errorf("get connection metadata: %w", err)
 	}
+	if source, ok := clientConn.RemoteAddr().(*net.TCPAddr); ok {
+		metadata.SourceIP = source.IP
+		metadata.SourcePort = uint16(source.Port)
+	}
 
 	log.Infof("New connection: %s (cookie=%d/0x%x)", metadata, sockCookie, sockCookie)
 

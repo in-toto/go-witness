@@ -23,12 +23,14 @@ struct orig_dst_key {
 };
 
 struct orig_dst_val {
-    __u32 orig_ip;    // Original destination IP (IPv4)
-    __u16 orig_port;  // Original destination port
+    __u32 orig_ip;        // Original destination IP (IPv4)
+    __u16 orig_port;      // Original destination port
     __u16 pad;
-    __u64 cgroup_id;  // Cgroup ID
-    __u32 pid;        // Process ID
-    __u32 pad2;
+    __u64 cgroup_id;      // Cgroup ID
+    __u32 pid;            // Process ID in the process's own PID namespace
+    __u32 witness_pid;    // Process ID as seen from the witness PID namespace
+    __u32 pid_ns_inum;    // PID namespace inode number
+    __u32 netns_inum;     // Network namespace inode number
     char comm[MAX_COMM_LEN];  // Process name
 };
 
@@ -106,13 +108,15 @@ struct orig_dst_key_v6 {
 };
 
 struct orig_dst_val_v6 {
-    __u8 orig_ip[16];  // IPv6 address
+    __u8 orig_ip[16];     // IPv6 address
     __u16 orig_port;
     __u16 pad;
     __u32 pad1;
     __u64 cgroup_id;
-    __u32 pid;
-    __u32 pad2;
+    __u32 pid;            // Process ID in the process's own PID namespace
+    __u32 witness_pid;    // Process ID as seen from the witness PID namespace
+    __u32 pid_ns_inum;    // PID namespace inode number
+    __u32 netns_inum;     // Network namespace inode number
     char comm[MAX_COMM_LEN];  // Process name
 };
 

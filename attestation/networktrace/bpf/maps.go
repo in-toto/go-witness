@@ -77,41 +77,53 @@ func StringToCommInt8(s string) [MaxCommLen]int8 {
 
 // ConnectionMetadata contains all metadata about a connection
 type ConnectionMetadata struct {
-	SockCookie uint64
-	PID        uint32
-	CgroupID   uint64
-	Comm       string
-	OrigIP     net.IP
-	OrigPort   uint16
+	SockCookie       uint64
+	PID              uint32
+	WitnessPID       uint32
+	PIDNamespace     uint32
+	NetworkNamespace uint32
+	CgroupID         uint64
+	Comm             string
+	SourceIP         net.IP
+	SourcePort       uint16
+	OrigIP           net.IP
+	OrigPort         uint16
 }
 
 // String returns a human-readable representation
 func (m *ConnectionMetadata) String() string {
-	return fmt.Sprintf("pid=%d comm=%s (orig: %s:%d) cgroup=%d",
-		m.PID, m.Comm, m.OrigIP, m.OrigPort, m.CgroupID)
+	return fmt.Sprintf("pid=%d witness_pid=%d comm=%s source=%s:%d (orig: %s:%d) cgroup=%d pidns=%d netns=%d",
+		m.PID, m.WitnessPID, m.Comm, m.SourceIP, m.SourcePort, m.OrigIP, m.OrigPort,
+		m.CgroupID, m.PIDNamespace, m.NetworkNamespace)
 }
 
 // ToConnectionMetadata converts a connectOrigDstVal to ConnectionMetadata
 func (o *connectOrigDstVal) ToConnectionMetadata(cookie uint64) *ConnectionMetadata {
 	return &ConnectionMetadata{
-		SockCookie: cookie,
-		PID:        o.Pid,
-		CgroupID:   o.CgroupId,
-		Comm:       o.GetComm(),
-		OrigIP:     o.GetOrigIP(),
-		OrigPort:   o.OrigPort,
+		SockCookie:       cookie,
+		PID:              o.Pid,
+		WitnessPID:       o.WitnessPid,
+		PIDNamespace:     o.PidNsInum,
+		NetworkNamespace: o.NetnsInum,
+		CgroupID:         o.CgroupId,
+		Comm:             o.GetComm(),
+		OrigIP:           o.GetOrigIP(),
+		OrigPort:         o.OrigPort,
 	}
 }
 
 // ToConnectionMetadata converts a connectOrigDstValV6 to ConnectionMetadata
 func (o *connectOrigDstValV6) ToConnectionMetadata(cookie uint64) *ConnectionMetadata {
 	return &ConnectionMetadata{
-		SockCookie: cookie,
-		PID:        o.Pid,
-		CgroupID:   o.CgroupId,
-		Comm:       o.GetComm(),
-		OrigIP:     o.GetOrigIP(),
-		OrigPort:   o.OrigPort,
+		SockCookie:       cookie,
+		PID:              o.Pid,
+		WitnessPID:       o.WitnessPid,
+		PIDNamespace:     o.PidNsInum,
+		NetworkNamespace: o.NetnsInum,
+		CgroupID:         o.CgroupId,
+		Comm:             o.GetComm(),
+		OrigIP:           o.GetOrigIP(),
+		OrigPort:         o.OrigPort,
 	}
 }
 
