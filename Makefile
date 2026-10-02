@@ -42,20 +42,12 @@ lint: ## Run the linter
 check-aws-certs: ## Check the AWS public keys used to verify AWS IID documents
 	GOWORK=off go run -C ./attestation/aws-iid/check-certs/ . ../aws-certs.go
 
+# vmlinux.h current source:
+#   Ubuntu 24.04 LTS kernel, linux-image-unsigned-6.8.0-147-generic (amd64)
+#   https://launchpad.net/ubuntu/+archive/primary/+files/linux-image-unsigned-6.8.0-147-generic_6.8.0-147.147_amd64.deb
+#   sha256 8f1975936dd8820c9442c2ee7f1d48a5083f316548b3345b14703c8a42c79171
+# (bpftool v7.5.0, debian:trixie)
 VMLINUX_H := ./attestation/bpf-common/headers/vmlinux.h
-
-.PHONY: generate-vmlinux
-generate-vmlinux: $(VMLINUX_H)
-
-$(VMLINUX_H):
-	@echo "Generating vmlinux.h from kernel BTF..."
-	@command -v bpftool >/dev/null 2>&1 || { echo "Error: bpftool is required. Install with: apt install linux-tools-common linux-tools-$(uname -r)"; exit 1; }
-	mkdir -p ./attestation/bpf-common/headers && bpftool btf dump file /sys/kernel/btf/vmlinux format c > ./attestation/bpf-common/headers/vmlinux.h
-
-.PHONY: update-vmlinux
-update-vmlinux: ## Replace the committed vmlinux.h with one dumped from this machine's kernel BTF
-	rm -f $(VMLINUX_H)
-	$(MAKE) generate-vmlinux
 
 # Pinned BPF toolchain and platform to generate byte-identical .o files that are checked on CI.
 BPF_BUILDER_IMAGE ?= ghcr.io/cilium/ebpf-builder:1790757212@sha256:f2dad347fb941c1b2cc86ae51697155e2afb020cafb9680fff4f6540069f10f9

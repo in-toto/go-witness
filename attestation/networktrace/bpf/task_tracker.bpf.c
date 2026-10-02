@@ -156,7 +156,7 @@ int handle_sched_process_fork(struct trace_event_raw_sched_process_fork* ctx) {
 // A tracked_tasks member additionally decrements the live count; the unique
 // atomic 1 -> 0 transition publishes the successful tree exit.
 SEC("tracepoint/sched/sched_process_exit")
-int handle_sched_process_exit(struct trace_event_raw_sched_process_exit* ctx) {
+int handle_sched_process_exit(void* ctx) {
     struct task_struct* task = (struct task_struct*)bpf_get_current_task();
     __u32 tid = get_tid_ns(task);
     __u32 netns_inum = get_netns_inum(task);
