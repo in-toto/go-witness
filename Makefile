@@ -52,17 +52,25 @@ $(VMLINUX_H):
 	@command -v bpftool >/dev/null 2>&1 || { echo "Error: bpftool is required. Install with: apt install linux-tools-common linux-tools-$(uname -r)"; exit 1; }
 	mkdir -p ./attestation/bpf-common/headers && bpftool btf dump file /sys/kernel/btf/vmlinux format c > ./attestation/bpf-common/headers/vmlinux.h
 
-.PHONY: generate-commandrun-bpf
-generate-commandrun-bpf: generate-vmlinux ## Generate BPF bytecode and Go bindings for command-run file tracing
-	@echo "Generating command-run BPF code (requires clang and llvm)..."
-	go generate -tags linux ./attestation/commandrun/bpf/...
+.PHONY: update-vmlinux
+update-vmlinux: ## Replace the committed vmlinux.h with one dumped from this machine's kernel BTF
+	rm -f $(VMLINUX_H)
+	$(MAKE) generate-vmlinux
 
-.PHONY: generate-networktrace-bpf
-generate-networktrace-bpf: generate-vmlinux ## Generate BPF bytecode and Go bindings for network trace attestor
-	@echo "Generating BPF code (requires clang and llvm)..."
-	go generate ./attestation/networktrace/bpf/...
+# Pinned BPF toolchain and platform to generate byte-identical .o files that are checked on CI.
+BPF_BUILDER_IMAGE ?= ghcr.io/cilium/ebpf-builder:1790757212@sha256:f2dad347fb941c1b2cc86ae51697155e2afb020cafb9680fff4f6540069f10f9
+BPF_CLANG ?= clang-22
+CONTAINER_ENGINE ?= $(if $(shell command -v docker),docker,podman)
 
-.PHONY: generate-networktrace-bpf-debug
-generate-networktrace-bpf-debug: generate-vmlinux ## Generate networktrace BPF bytecode with debug logging enabled
-	@echo "Generating BPF code with DEBUG logging (requires clang and llvm)..."
-	BPF_CFLAGS="-DBPF_DEBUG" go generate ./attestation/networktrace/bpf/...
+.PHONY: generate-bpf
+generate-bpf: ## Regenerate all BPF objects and Go bindings with the pinned toolchain (needs docker or podman)
+	$(CONTAINER_ENGINE) run --rm --platform linux/amd64 \
+		--env GOFLAGS=-buildvcs=false \
+		--env BPF2GO_CC=$(BPF_CLANG) --env BPF_CFLAGS="$(BPF_CFLAGS)" \
+		-v "$(CURDIR)":/src -w /src \
+		$(BPF_BUILDER_IMAGE) \
+		go generate ./attestation/commandrun/bpf/... ./attestation/networktrace/bpf/...
+
+.PHONY: generate-bpf-debug
+generate-bpf-debug: ## generate with BPF debug logging. Don't commit.
+	$(MAKE) generate-bpf BPF_CFLAGS=-DBPF_DEBUG
