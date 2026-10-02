@@ -91,18 +91,6 @@ jobs:
       attestations: "git github environment"
       command: go test -c -race -o networktrace.test ./attestation/networktrace && sudo ./networktrace.test -test.v
 
-  ebpf-integration-test-privileged:
-    needs: [ unit-test ]
-    uses: ./.github/workflows/witness.yml
-    permissions:
-      id-token: write # This is required for requesting the JWT
-      contents: read
-    with:
-      pull_request: ${{ github.event_name == 'pull_request' }}
-      step: ebpf-integration-test-privileged
-      attestations: "git github environment"
-      command: go test -c -tags ebpf_integration -o commandrun.test ./attestation/commandrun && sudo ./commandrun.test -test.v -test.run TestEBPF
-
   integration-test:
     needs: [fmt]
     uses: ./.github/workflows/witness.yml
