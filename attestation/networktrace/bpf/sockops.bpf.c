@@ -158,6 +158,13 @@ int tcp_sockops(struct bpf_sock_ops* skops) {
                     bpf_map_lookup_elem(&tuple_to_cookie_map, &tkey);
                 if (tval) {
                     __u64 client_cookie = tval->client_cookie;
+                    // Reap the tuple entry: this lookup is its only consumer
+                    // (userspace never reads this map), so deleting after
+                    // extracting client_cookie keeps the map bounded to
+                    // in-flight + never-accepted connections; lingering
+                    // never-accepted entries are overwritten on eventual
+                    // tuple reuse (BPF_ANY).
+                    bpf_map_delete_elem(&tuple_to_cookie_map, &tkey);
 
                     // Lookup the original destination info from client cookie
                     struct orig_dst_key orig_key = {.sock_cookie =
@@ -219,6 +226,8 @@ int tcp_sockops(struct bpf_sock_ops* skops) {
                     bpf_map_lookup_elem(&tuple_to_cookie_map_v6, &tkey);
                 if (tval) {
                     __u64 client_cookie = tval->client_cookie;
+                    // Reap the tuple entry (see IPv4 block above).
+                    bpf_map_delete_elem(&tuple_to_cookie_map_v6, &tkey);
 
                     // Lookup the original destination info from client cookie
                     struct orig_dst_key_v6 orig_key = {.sock_cookie =

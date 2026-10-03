@@ -151,7 +151,7 @@ const (
 	LifecycleErrorTaskInsert
 	LifecycleErrorExecMigration
 	LifecycleErrorCounterUnderflow
-	LifecycleErrorControlState
+	LifecycleErrorMapUpdate
 )
 
 func (e LifecycleError) String() string {
@@ -166,8 +166,8 @@ func (e LifecycleError) String() string {
 		return "exec identity migration failed"
 	case LifecycleErrorCounterUnderflow:
 		return "live task counter underflow"
-	case LifecycleErrorControlState:
-		return "invalid control state"
+	case LifecycleErrorMapUpdate:
+		return "map update failed"
 	default:
 		return fmt.Sprintf("unknown lifecycle error %d", e)
 	}

@@ -104,8 +104,12 @@ int handle_sched_process_fork(struct trace_event_raw_sched_process_fork* ctx) {
     if (capture_parent) {
         if (child_pid_ns != parent_pid_ns) {
             __u8 one = 1;
-            bpf_map_update_elem(&tracked_pid_ns_map, &child_pid_ns, &one, BPF_ANY);
-            DEBUG_LOG("fork: marked child_pid_ns=%u as tracked", child_pid_ns);
+            if (bpf_map_update_elem(&tracked_pid_ns_map, &child_pid_ns, &one, BPF_ANY) != 0) {
+                LOG("fork: ERROR tracked_pid_ns_map update pid_ns=%u", child_pid_ns);
+                fail_lifecycle(LIFECYCLE_ERROR_MAP_UPDATE);
+            } else {
+                DEBUG_LOG("fork: marked child_pid_ns=%u as tracked", child_pid_ns);
+            }
         } else if (parent_pid_ns == witness_pid_ns_inum) {
             __u32 child_tid = get_tid_ns(child);
             struct witness_pid_ns_tid_key child_key = {
@@ -114,8 +118,12 @@ int handle_sched_process_fork(struct trace_event_raw_sched_process_fork* ctx) {
             struct witness_pid_ns_tid_val child_val = {
                 .nested_allowed = 1,
             };
-            bpf_map_update_elem(&witness_pid_ns_tid_allowlist, &child_key, &child_val, BPF_ANY);
-            DEBUG_LOG("fork: child_tid=%d ADDED to witness_pid_ns_tid_allowlist", child_tid);
+            if (bpf_map_update_elem(&witness_pid_ns_tid_allowlist, &child_key, &child_val, BPF_ANY) != 0) {
+                LOG("fork: ERROR witness_pid_ns_tid_allowlist update tid=%d", child_tid);
+                fail_lifecycle(LIFECYCLE_ERROR_MAP_UPDATE);
+            } else {
+                DEBUG_LOG("fork: child_tid=%d ADDED to witness_pid_ns_tid_allowlist", child_tid);
+            }
         }
     }
 
@@ -238,7 +246,11 @@ static __always_inline int handle_sys_enter_exec(void) {
         .ns_tid = ns_tid,
         .witness_tid = witness_tid,
     };
-    bpf_map_update_elem(&pending_execs, &global_tid, &pending, BPF_ANY);
+    if (bpf_map_update_elem(&pending_execs, &global_tid, &pending, BPF_ANY) != 0) {
+        LOG("exec: ERROR pending_execs update tid=%u", global_tid);
+        fail_lifecycle(LIFECYCLE_ERROR_MAP_UPDATE);
+        return 0;
+    }
 
     return 0;
 }
