@@ -47,7 +47,8 @@ static __always_inline int is_pid_ns_tracked(__u32 pid_ns_inum) {
     return v != NULL;
 }
 
-static __always_inline __u32 get_pid_ns(struct task_struct* task) {
+// return pid of a task as seen from it's own PID namespace
+static __always_inline __u32 get_ns_pid(struct task_struct* task) {
   struct task_struct* leader = BPF_CORE_READ(task, group_leader);
 
   unsigned int level = BPF_CORE_READ(leader, thread_pid, level);
@@ -113,7 +114,7 @@ static __always_inline int is_witness_pid_ns_tid_allowed(__u32 tid) {
     return 0;
 }
 
-static __always_inline int should_intercept(__u32 pid_ns_inum, __u32 netns_inum, __u32 tid,
+static __always_inline int should_intercept(__u32 pid_ns_inum, __u32 tid,
                                             __u64 cgroup_id, const char* comm) {
     DEBUG_LOG("should_intercept: ENTER pid_ns=%u tid=%d cgroup=%llu comm=%s", pid_ns_inum, tid, cgroup_id, comm);
 
@@ -167,6 +168,19 @@ static __always_inline __u32 get_netns_inum(struct task_struct* task) {
     return inum;
 }
 
+// checks whether an injected proxy in a network namespace is ready or not
+static __always_inline __u8 is_proxy_ready(struct proxy_state_key* pkey) {
+    if (pkey == NULL) {
+        return 0;
+    }
+
+    __u8* ps_ready = bpf_map_lookup_elem(&proxy_state_map, pkey);
+    if (ps_ready && *ps_ready == PROXY_READY) {
+        return 1;
+    }
+    return 0;
+}
+
 // netns_gate freezes a tracked task whose network namespace does not yet have
 // a ready proxy, and records a durable request for userspace to set one up.
 //
@@ -178,31 +192,14 @@ static __always_inline __u32 get_netns_inum(struct task_struct* task) {
 static __always_inline int netns_gate(struct task_struct* task, __u32 netns_inum, __u32 ns_tid) {
     // Fast path: a proxy is already serving this namespace.
     struct proxy_state_key pkey = {.netns_inum = netns_inum};
-    __u8* ready = bpf_map_lookup_elem(&proxy_state_map, &pkey);
-    if (ready && *ready == PROXY_READY) {
+    __u8 ready = is_proxy_ready(&pkey);
+    if (ready) {
         return 0;
     }
 
     // Compute the task's TID as seen from the witness PID namespace so that
     // userspace (which lives in the witness PID ns) can target it with kill().
-    __u32 witness_tid = (__u32)bpf_get_current_pid_tgid();
-
-    __u32 pid_ns = get_pid_ns_inum(task);
-    if (pid_ns == witness_pid_ns_inum) {
-        witness_tid = ns_tid;
-    } else {
-        struct pid* tp = BPF_CORE_READ(task, group_leader, thread_pid);
-        if (tp) {
-            __u32 key = 0;
-            __u32* wlevel_ptr = bpf_map_lookup_elem(&witness_pid_ns_level_map, &key);
-            if (wlevel_ptr) {
-                unsigned int task_level = BPF_CORE_READ(tp, level);
-                if (*wlevel_ptr <= task_level) {
-                    witness_tid = BPF_CORE_READ(tp, numbers[*wlevel_ptr].nr);
-                }
-            }
-        }
-    }
+    __u32 witness_tid = get_witness_tid(task);
 
     struct gate_key gkey = {
         .netns_inum = netns_inum,
@@ -218,8 +215,8 @@ static __always_inline int netns_gate(struct task_struct* task, __u32 netns_inum
     }
 
     // RE-CHECK readiness now that our entry is visible to any sweep.
-    ready = bpf_map_lookup_elem(&proxy_state_map, &pkey);
-    if (ready && *ready == PROXY_READY) {
+    ready = is_proxy_ready(&pkey);
+    if (ready) {
         // Userspace may have already finished sweeping, self-cancel so we do
         // not freeze a task no one will wake.
         bpf_map_delete_elem(&gate_map, &gkey);
@@ -241,20 +238,15 @@ static __always_inline int gate_if_unready(void) {
     }
 
     struct task_struct* task = (struct task_struct*)bpf_get_current_task();
-    __u32 pid_ns = get_pid_ns_inum(task);
+    __u32 pid_ns_inum = get_pid_ns_inum(task);
     __u32 netns_inum = get_netns_inum(task);
     __u32 ns_tid = get_tid_ns(task);
+    char comm[MAX_COMM_LEN];
+    bpf_get_current_comm(&comm, sizeof(comm));
+    __u64 cgroup_id = bpf_get_current_cgroup_id();
 
-    int authorized = 0;
-    if (pid_ns == witness_pid_ns_inum) {
-        if (is_witness_pid_ns_tid_allowed(ns_tid)) {
-            authorized = 1;
-        }
-    } else if (is_pid_ns_tracked(pid_ns)) {
-        authorized = 1;
-    }
-
-    if (!authorized) {
+    int should_intercept_result = should_intercept(pid_ns_inum, ns_tid, cgroup_id, comm);
+    if (!should_intercept_result) {
         return 0;
     }
 

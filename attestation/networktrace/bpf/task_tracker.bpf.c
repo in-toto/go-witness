@@ -189,7 +189,7 @@ int handle_sched_process_exit(struct trace_event_raw_sched_process_exit* ctx) {
     bpf_map_delete_elem(&gate_map, &gkey);
 
     if (is_pid_ns_tracked(pid_ns)) {
-        __u32 ns_pid = get_pid_ns(task);
+        __u32 ns_pid = get_ns_pid(task);
         if (ns_pid == 1 && tid == 1) {
             bpf_map_delete_elem(&tracked_pid_ns_map, &pid_ns);
             DEBUG_LOG("exit: removed tracked_pid_ns=%u (init exited)", pid_ns);

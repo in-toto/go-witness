@@ -54,15 +54,14 @@ int tcp_sockops(struct bpf_sock_ops* skops) {
     }
 
     __u32 tid = get_tid_ns(task);  // TID for allowlist check
-    __u32 pid = get_pid_ns(task);  // PID for metadata
+    __u32 pid = get_ns_pid(task);  // PID for metadata
     __u64 cgroup_id = bpf_get_current_cgroup_id();
-    __u32 netns_inum = get_netns_inum(task);
     __u32 pid_ns_inum = get_pid_ns_inum(task);
 
 
     DEBUG_LOG("sockops: CHECK pid_ns=%u tid=%d pid=%d cgroup=%llu comm=%s", pid_ns_inum, tid, pid, cgroup_id, comm);
 
-    int intercept_result = should_intercept(pid_ns_inum, netns_inum, tid, cgroup_id, comm);
+    int intercept_result = should_intercept(pid_ns_inum, tid, cgroup_id, comm);
     if (!intercept_result) {
         return 1;
     }
