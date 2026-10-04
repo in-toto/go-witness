@@ -28,7 +28,7 @@ integration-test:
 
 .PHONY: schema
 schema: ## Generate the attestor schema json files
-	docker run -v ./:/app -w /app --platform linux/amd64 cgr.dev/chainguard/go run ./schemagen/schema.go
+	docker run --rm -v ./:/app -w /app --platform linux/amd64 golang:$(shell awk '/^go / {print $$2}' go.mod) go run ./schemagen/schema.go
 
 help: ## Display this help screen
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
