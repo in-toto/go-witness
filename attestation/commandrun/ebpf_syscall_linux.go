@@ -24,6 +24,7 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	commandrunbpf "github.com/in-toto/go-witness/attestation/commandrun/bpf"
+	"golang.org/x/sys/unix"
 )
 
 // eBPF tracepoints for file and process tracing.
@@ -36,6 +37,14 @@ func loadSyscallEBPFTracer(cgroupID uint64, trackCgroup bool, daemonPIDs []int) 
 	spec, err := commandrunbpf.LoadFiletraceSyscall()
 	if err != nil {
 		return nil, fmt.Errorf("load spec: %w", err)
+	}
+
+	var pidNS unix.Stat_t
+	if err := unix.Stat("/proc/self/ns/pid", &pidNS); err != nil {
+		return nil, fmt.Errorf("stat witness pid namespace: %w", err)
+	}
+	if err := spec.Variables["witness_pidns_ino"].Set(pidNS.Ino); err != nil {
+		return nil, fmt.Errorf("set witness pid namespace ino: %w", err)
 	}
 
 	var objs commandrunbpf.FiletraceSyscallObjects
@@ -62,12 +71,20 @@ func loadSyscallEBPFTracer(cgroupID uint64, trackCgroup bool, daemonPIDs []int) 
 
 	// Cgroup programs
 	if trackCgroup {
-		tracepoints = append(tracepoints, struct {
-			group    string
-			name     string
-			program  *ebpf.Program
-			required bool
-		}{"cgroup", "cgroup_mkdir", objs.TraceCgroupMkdir, true})
+		tracepoints = append(tracepoints,
+			struct {
+				group    string
+				name     string
+				program  *ebpf.Program
+				required bool
+			}{"cgroup", "cgroup_mkdir", objs.TraceCgroupMkdir, true},
+			struct {
+				group    string
+				name     string
+				program  *ebpf.Program
+				required bool
+			}{"cgroup", "cgroup_rmdir", objs.TraceCgroupRmdir, true},
+		)
 	}
 
 	links := make([]link.Link, 0, len(tracepoints))
@@ -84,10 +101,23 @@ func loadSyscallEBPFTracer(cgroupID uint64, trackCgroup bool, daemonPIDs []int) 
 		links = append(links, l)
 	}
 
+	// Raw tracepoint: gives access to the child task_struct.
+	forkLink, err := link.AttachRawTracepoint(link.RawTracepointOptions{
+		Name:    "sched_process_fork",
+		Program: objs.TraceSchedProcessFork,
+	})
+	if err != nil {
+		closeLinks(links)
+		objs.Close()
+		return nil, fmt.Errorf("attach raw sched_process_fork: %w", err)
+	}
+	links = append(links, forkLink)
+
 	tracer := &loadedEBPFTracer{
 		events:        objs.Events,
 		targetCgroups: objs.TargetCgroups,
 		daemonTasks:   objs.DaemonTasks,
+		ringbufDrops:  objs.RingbufDrops,
 		close: func() error {
 			closeLinks(links)
 			return objs.Close()
