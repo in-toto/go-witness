@@ -31,12 +31,17 @@ import (
 
 func TestNewConnectionRecorder(t *testing.T) {
 	metadata := &bpf.ConnectionMetadata{
-		SockCookie: 12345,
-		PID:        1000,
-		CgroupID:   100,
-		Comm:       "test-process",
-		OrigIP:     net.ParseIP("192.168.1.1"),
-		OrigPort:   443,
+		SockCookie:       12345,
+		PID:              1000,
+		WitnessPID:       21000,
+		PIDNamespace:     4026533000,
+		NetworkNamespace: 4026533001,
+		CgroupID:         100,
+		Comm:             "test-process",
+		SourceIP:         net.ParseIP("127.0.0.1"),
+		SourcePort:       32123,
+		OrigIP:           net.ParseIP("192.168.1.1"),
+		OrigPort:         443,
 	}
 
 	payloadConfig := types.PayloadConfig{
@@ -53,6 +58,11 @@ func TestNewConnectionRecorder(t *testing.T) {
 	assert.Equal(t, uint32(1000), recorder.conn.Process.PID)
 	assert.Equal(t, "test-process", recorder.conn.Process.Comm)
 	assert.Equal(t, uint64(100), recorder.conn.Process.CgroupID)
+	assert.Equal(t, uint32(21000), recorder.conn.Process.WitnessPID)
+	assert.Equal(t, uint32(4026533000), recorder.conn.Process.PIDNamespace)
+	assert.Equal(t, uint32(4026533001), recorder.conn.Process.NetworkNamespace)
+	assert.True(t, recorder.conn.Source.IP.Equal(net.ParseIP("127.0.0.1")))
+	assert.Equal(t, uint16(32123), recorder.conn.Source.Port)
 	assert.True(t, recorder.conn.Destination.IP.Equal(net.ParseIP("192.168.1.1")))
 	assert.Equal(t, uint16(443), recorder.conn.Destination.Port)
 	assert.NotEmpty(t, recorder.conn.ID)
