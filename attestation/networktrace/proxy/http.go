@@ -277,23 +277,11 @@ func (h *HTTPProxy) setupHandlers(skipVerify bool) {
 	})
 }
 
-// HandleConnection handles an HTTP/HTTPS connection through goproxy
-func (h *HTTPProxy) HandleConnection(conn net.Conn, metadata *bpf.ConnectionMetadata) error {
-	// Create buffered reader for protocol detection
-	br := bufio.NewReader(conn)
-	return h.HandleBufferedConnection(conn, br, metadata)
-}
-
-// HandleBufferedConnection handles a connection with an existing buffered reader.
-// This allows the caller (e.g. TCPProxy) to peek at bytes for protocol detection
-// and then hand off the connection without losing buffered data.
-func (h *HTTPProxy) HandleBufferedConnection(conn net.Conn, br *bufio.Reader, metadata *bpf.ConnectionMetadata) error {
-	// Detect protocol (HTTP vs TLS)
-	proto, err := detectProtocol(br)
-	if err != nil {
-		return fmt.Errorf("detect protocol: %w", err)
-	}
-
+// HandleBufferedConnection handles a connection with an existing buffered
+// reader and an already-classified protocol ("tls" or "http"), as detected by
+// the TCP proxy's bounded detection. The buffered reader preserves any bytes
+// peeked during detection.
+func (h *HTTPProxy) HandleBufferedConnection(conn net.Conn, br *bufio.Reader, proto string, metadata *bpf.ConnectionMetadata) error {
 	// TODO: There is a race condition between the TCP proxy terminating and the HTTP request, response pool draining
 	// This can be mitigated by adding a wait group here or some other better place. As we rely on goproxy package, it
 	// might be that we can't get that fine control, so hooking higher might be required. Also, making sure that we don't
