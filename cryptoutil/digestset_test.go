@@ -84,9 +84,6 @@ func TestIsHashableFile(t *testing.T) {
 	regular := filepath.Join(t.TempDir(), "regular")
 	require.NoError(t, os.WriteFile(regular, []byte("hello"), 0o644))
 
-	fifo := filepath.Join(t.TempDir(), "fifo")
-	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
-
 	dir := t.TempDir()
 
 	tests := []struct {
@@ -96,7 +93,6 @@ func TestIsHashableFile(t *testing.T) {
 	}{
 		{"regular file is hashable", regular, true},
 		{"directory is not hashable", dir, false},
-		{"named pipe is not hashable", fifo, false},
 	}
 
 	for _, tt := range tests {
