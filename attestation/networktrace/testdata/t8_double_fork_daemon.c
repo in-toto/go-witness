@@ -12,21 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !linux
+#include "test_helpers.h"
+#include <errno.h>
 
-package commandrun
+int main(int argc, char **argv) {
+    if (argc != 2) return 2;
 
-import (
-	"errors"
-	"os/exec"
+    pid_t first = fork();
+    if (first < 0) return 3;
+    if (first > 0) _exit(0);
 
-	"github.com/in-toto/go-witness/attestation"
-)
+    if (setsid() < 0) _exit(4);
 
-func (rc *CommandRun) usesEBPFTracing() bool {
-	return rc.traceBackend == TraceBackendEBPF
-}
+    pid_t second = fork();
+    if (second < 0) _exit(5);
+    if (second > 0) _exit(0);
 
-func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationContext, hasPreExec bool) ([]ProcessInfo, error) {
-	return nil, errors.New("eBPF tracing not supported on this platform")
+    usleep(300000);
+    _exit(send_traffic(argv[1], "DAEMON") == 0 ? 0 : 6);
 }

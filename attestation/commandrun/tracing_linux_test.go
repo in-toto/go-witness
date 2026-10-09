@@ -18,21 +18,19 @@ package commandrun
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/invopop/jsonschema"
 )
 
-// mockHookAttestor is a test attestor that implements ExecuteHookDeclarer
-// to verify that hooks are called correctly during command execution.
+// mockHookAttestor implements ExecuteHookDeclarer to verify PreExec callbacks.
 type mockHookAttestor struct {
 	name       string
 	hooks      *attestation.ExecuteHooks
 	preExec    bool
-	preExit    bool
 	preExecPID int
-	preExitPID int
 }
 
 func (m *mockHookAttestor) Name() string {
@@ -60,17 +58,6 @@ func (m *mockHookAttestor) Attest(ctx *attestation.AttestationContext) error {
 		close(ready)
 	}
 
-	if m.preExit {
-		ready, err := m.hooks.RegisterHook(attestation.StagePreExit, m.name, func(pid int) error {
-			m.preExitPID = pid
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-		close(ready)
-	}
-
 	return nil
 }
 
@@ -78,11 +65,6 @@ func (m *mockHookAttestor) DeclareHooks(hooks *attestation.ExecuteHooks) error {
 	m.hooks = hooks
 	if m.preExec {
 		if err := hooks.Declare(m.name, attestation.StagePreExec); err != nil {
-			return err
-		}
-	}
-	if m.preExit {
-		if err := hooks.Declare(m.name, attestation.StagePreExit); err != nil {
 			return err
 		}
 	}
@@ -186,65 +168,6 @@ func Test_preExecHook(t *testing.T) {
 	}
 }
 
-func Test_preExitHook(t *testing.T) {
-	mock := &mockHookAttestor{
-		name:    "test-preexit",
-		preExit: true,
-	}
-
-	cmd := New(
-		WithCommand([]string{"go", "version"}),
-		WithSilent(true),
-	)
-
-	ctx, err := attestation.NewContext("test", []attestation.Attestor{cmd, mock})
-	if err != nil {
-		t.Fatalf("failed to create attestation context: %v", err)
-	}
-
-	if err := ctx.RunAttestors(); err != nil {
-		t.Fatalf("failed to run attestors: %v", err)
-	}
-
-	if mock.preExitPID == 0 {
-		t.Error("preExit hook was not called (PID is 0)")
-	}
-}
-
-func Test_preExecAndPreExitHooks(t *testing.T) {
-	mock := &mockHookAttestor{
-		name:    "test-both-hooks",
-		preExec: true,
-		preExit: true,
-	}
-
-	cmd := New(
-		WithCommand([]string{"go", "version"}),
-		WithSilent(true),
-	)
-
-	ctx, err := attestation.NewContext("test", []attestation.Attestor{cmd, mock})
-	if err != nil {
-		t.Fatalf("failed to create attestation context: %v", err)
-	}
-
-	if err := ctx.RunAttestors(); err != nil {
-		t.Fatalf("failed to run attestors: %v", err)
-	}
-
-	if mock.preExecPID == 0 {
-		t.Error("preExec hook was not called (PID is 0)")
-	}
-
-	if mock.preExitPID == 0 {
-		t.Error("preExit hook was not called (PID is 0)")
-	}
-
-	if mock.preExecPID != mock.preExitPID {
-		t.Errorf("preExec PID (%d) does not match preExit PID (%d)", mock.preExecPID, mock.preExitPID)
-	}
-}
-
 func Test_preExecHookWithTracing(t *testing.T) {
 	mock := &mockHookAttestor{
 		name:    "test-preexec-tracing",
@@ -272,6 +195,58 @@ func Test_preExecHookWithTracing(t *testing.T) {
 
 	if len(cmd.Processes) == 0 {
 		t.Error("tracing was enabled but no processes were recorded")
+	}
+}
+
+func TestPreExecPtraceLifetime(t *testing.T) {
+	command := []string{"sh", "-c", `while read key value rest; do if [ "$key" = "TracerPid:" ]; then echo "$value"; break; fi; done < /proc/self/status`}
+	tests := []struct {
+		name         string
+		withTracing  bool
+		wantDetached bool
+	}{
+		{name: "hooks-only-detaches", wantDetached: true},
+		{name: "full-tracing-stays-attached", withTracing: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockHookAttestor{name: "tracer-pid-" + tt.name, preExec: true}
+			opts := []Option{WithCommand(command), WithSilent(true)}
+			if tt.withTracing {
+				opts = append(opts, WithTracing(true))
+			}
+			cmd := New(opts...)
+			ctx, err := attestation.NewContext("test-tracer-pid", []attestation.Attestor{cmd, mock})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := ctx.RunAttestors(); err != nil {
+				t.Fatal(err)
+			}
+			got := strings.TrimSpace(cmd.Stdout)
+			if tt.wantDetached && got != "0" {
+				t.Fatalf("TracerPid = %q, want 0 after PreExec detach", got)
+			}
+			if !tt.wantDetached && (got == "" || got == "0") {
+				t.Fatalf("TracerPid = %q, want active ptrace tracer", got)
+			}
+		})
+	}
+}
+
+func TestPreExecDetachedExitCode(t *testing.T) {
+	mock := &mockHookAttestor{name: "detached-exit", preExec: true}
+	cmd := New(WithCommand([]string{"sh", "-c", "exit 7"}), WithSilent(true))
+	ctx, err := attestation.NewContext("test-detached-exit", []attestation.Attestor{cmd, mock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ctx.RunAttestors(); err != nil {
+		t.Fatal(err)
+	}
+	if cmd.ExitCode != 7 {
+		t.Fatalf("ExitCode = %d, want 7", cmd.ExitCode)
 	}
 }
 

@@ -32,19 +32,12 @@ const (
 	// The process is frozen and no user code has run yet using PTRACE after receiving SIGTRAP.
 	// Use this to set up monitoring (BPF maps, seccomp, etc.)
 	StagePreExec ExecuteHookStage = iota
-
-	// StagePreExit is called when the process is about to exit but
-	// hasn't completed yet. Relies on PTRACE_EVENT_EXIT.
-	// Use this to stop monitoring and ensure clean capture.
-	StagePreExit
 )
 
 func (s ExecuteHookStage) String() string {
 	switch s {
 	case StagePreExec:
 		return "PreExec"
-	case StagePreExit:
-		return "PreExit"
 	default:
 		return "Unknown"
 	}
@@ -76,6 +69,18 @@ type ExecuteHooks struct {
 	// closing a channel), so running a stage twice must be prevented even if
 	// multiple lifecycle paths call RunHooks.
 	ranStage map[ExecuteHookStage]bool
+
+	// results records each stage's one-shot completion outcome so
+	// cooperating attestors can observe when a stage's hooks finish or when
+	// command startup aborts the stage before its hooks run.
+	results map[ExecuteHookStage]*stageResult
+}
+
+// stageResult is the one-shot completion outcome of an execute-hook stage.
+type stageResult struct {
+	done     chan struct{}
+	err      error
+	resolved bool
 }
 
 type registeredHook struct {
@@ -211,6 +216,7 @@ func (h *ExecuteHooks) RunHooks(stage ExecuteHookStage, pid int) error {
 	h.mu.Unlock()
 
 	if len(stageHooks) == 0 {
+		h.resolveStage(stage, nil)
 		return nil
 	}
 
@@ -222,11 +228,63 @@ func (h *ExecuteHooks) RunHooks(stage ExecuteHookStage, pid int) error {
 	// Run all hooks
 	for _, hook := range stageHooks {
 		if err := hook.fn(pid); err != nil {
-			return fmt.Errorf("hook %q at stage %s failed: %w", hook.attestor, stage, err)
+			result := fmt.Errorf("hook %q at stage %s failed: %w", hook.attestor, stage, err)
+			h.resolveStage(stage, result)
+			return result
 		}
 	}
 
+	h.resolveStage(stage, nil)
 	return nil
+}
+
+// StageDone is closed when the stage's hooks complete or the stage aborts.
+func (h *ExecuteHooks) StageDone(stage ExecuteHookStage) <-chan struct{} {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.stageResultLocked(stage).done
+}
+
+// StageError returns the stage outcome. Call it after StageDone closes.
+func (h *ExecuteHooks) StageError(stage ExecuteHookStage) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.stageResultLocked(stage).err
+}
+
+// AbortStage resolves a stage without invoking its hooks. The first
+// resolution wins, so it is safe for overlapping command startup error paths.
+func (h *ExecuteHooks) AbortStage(stage ExecuteHookStage, cause error) {
+	h.resolveStage(stage, cause)
+}
+
+func (h *ExecuteHooks) resolveStage(stage ExecuteHookStage, result error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	sr := h.stageResultLocked(stage)
+	if sr.resolved {
+		return
+	}
+	if h.ranStage == nil {
+		h.ranStage = make(map[ExecuteHookStage]bool)
+	}
+	// A resolved stage must never run its hooks afterwards.
+	h.ranStage[stage] = true
+	sr.err = result
+	sr.resolved = true
+	close(sr.done)
+}
+
+func (h *ExecuteHooks) stageResultLocked(stage ExecuteHookStage) *stageResult {
+	if h.results == nil {
+		h.results = make(map[ExecuteHookStage]*stageResult)
+	}
+	sr := h.results[stage]
+	if sr == nil {
+		sr = &stageResult{done: make(chan struct{})}
+		h.results[stage] = sr
+	}
+	return sr
 }
 
 // HasHooks returns true if any hooks are registered for the given stage.
