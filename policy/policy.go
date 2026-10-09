@@ -409,6 +409,7 @@ func (step Step) checkFunctionaries(statements []source.CollectionVerificationRe
 		// Check that the statement contains a predicate type that we accept
 		if statement.Statement.PredicateType != attestation.CollectionType {
 			result.Rejected = append(result.Rejected, RejectedCollection{Collection: statement, Reason: fmt.Errorf("predicate type %v is not a collection predicate type", statement.Statement.PredicateType)})
+			continue
 		}
 
 		if len(statement.Verifiers) > 0 {
