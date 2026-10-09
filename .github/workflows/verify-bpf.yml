@@ -30,10 +30,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: Regenerate BPF objects and Go bindings
+      - name: Regenerate BPF objects and Go bindings, and check they match
         run: |
           make generate-bpf
-          if ! git diff --exit-code; then
-            echo "Generated BPF objects are not up to date with their sources, run 'make generate-bpf'" >&2
+          if [ -n "$(git status --porcelain -- attestation/)" ]; then
+            git status --porcelain -- attestation/ echo "BPF objects/bindings are out of date with their sources: run 'make generate-bpf' and commit the result." >&2
             exit 1
           fi

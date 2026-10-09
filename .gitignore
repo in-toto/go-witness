@@ -19,6 +19,8 @@ profile.cov
 .DS_Store
 
 # Generated BPF headers
+attestation/bpf-common/headers/vmlinux.h
+.bpf-cache/
 attestation/networktrace/bpf/compile_flags.txt
 
 !log/

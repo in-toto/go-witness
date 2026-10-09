@@ -42,26 +42,43 @@ lint: ## Run the linter
 check-aws-certs: ## Check the AWS public keys used to verify AWS IID documents
 	GOWORK=off go run -C ./attestation/aws-iid/check-certs/ . ../aws-certs.go
 
-# vmlinux.h current source:
-#   Ubuntu 24.04 LTS kernel, linux-image-unsigned-6.8.0-147-generic (amd64)
-#   https://launchpad.net/ubuntu/+archive/primary/+files/linux-image-unsigned-6.8.0-147-generic_6.8.0-147.147_amd64.deb
-#   sha256 8f1975936dd8820c9442c2ee7f1d48a5083f316548b3345b14703c8a42c79171
-# (bpftool v7.5.0, debian:trixie)
-VMLINUX_H := ./attestation/bpf-common/headers/vmlinux.h
-
-# Pinned BPF toolchain and platform to generate byte-identical .o files that are checked on CI.
+# ── Pinned inputs for BPF generation ─────────────────────────────────────────
+# Everything that affects the generated objects/bindings is pinned here, so the
+# output is identical on any machine. Change these only deliberately.
+#
+# Platform: both images run as linux/amd64 everywhere (natively on x86,
+# emulated elsewhere), so every machine runs the same binaries.
+BPF_PLATFORM ?= linux/amd64
+# Toolchain: clang/LLVM, Go, bpf2go's libbpf headers and the bpftool used to
+# write vmlinux.h.
 BPF_BUILDER_IMAGE ?= ghcr.io/cilium/ebpf-builder:1790757212@sha256:f2dad347fb941c1b2cc86ae51697155e2afb020cafb9680fff4f6540069f10f9
 BPF_CLANG ?= clang-22
+# Kernel types: vmlinux.h is generated from this kernel's BTF (not committed).
+# lvh kernel image for Linux 6.12.111; its config is alongside the BTF at
+# /data/kernels/6.12/boot/config-6.12.111.
+BPF_KERNEL_IMAGE ?= quay.io/lvh-images/kernel-images:6.12-20260928.013030@sha256:26264311dce48e31e0103fcdaaeb1aebfa288db1a27fe3ef3d5619d0ffa628eb
+BPF_KERNEL_BTF ?= /data/kernels/6.12/boot/btf-6.12.111
+
 CONTAINER_ENGINE ?= $(if $(shell command -v docker),docker,podman)
+VMLINUX_H := attestation/bpf-common/headers/vmlinux.h
+BPF_CACHE := .bpf-cache
+BPF_RUN = $(CONTAINER_ENGINE) run --rm --platform $(BPF_PLATFORM) \
+	--env GOFLAGS=-buildvcs=false \
+	--env BPF2GO_CC=$(BPF_CLANG) --env BPF_CFLAGS="$(BPF_CFLAGS)" \
+	-v "$(CURDIR)":/src -w /src \
+	$(BPF_BUILDER_IMAGE)
+
+.PHONY: vmlinux-h
+vmlinux-h: ## Generate vmlinux.h from the pinned kernel's BTF (needs docker or podman)
+	@mkdir -p $(BPF_CACHE) $(dir $(VMLINUX_H))
+	cid=$$($(CONTAINER_ENGINE) create --platform $(BPF_PLATFORM) $(BPF_KERNEL_IMAGE) /bin/true) && \
+		$(CONTAINER_ENGINE) cp $$cid:$(BPF_KERNEL_BTF) $(BPF_CACHE)/vmlinux.btf; rc=$$?; \
+		$(CONTAINER_ENGINE) rm $$cid >/dev/null; exit $$rc
+	$(BPF_RUN) bpftool btf dump file $(BPF_CACHE)/vmlinux.btf format c > $(VMLINUX_H)
 
 .PHONY: generate-bpf
-generate-bpf: ## Regenerate all BPF objects and Go bindings with the pinned toolchain (needs docker or podman)
-	$(CONTAINER_ENGINE) run --rm --platform linux/amd64 \
-		--env GOFLAGS=-buildvcs=false \
-		--env BPF2GO_CC=$(BPF_CLANG) --env BPF_CFLAGS="$(BPF_CFLAGS)" \
-		-v "$(CURDIR)":/src -w /src \
-		$(BPF_BUILDER_IMAGE) \
-		go generate ./attestation/commandrun/bpf/... ./attestation/networktrace/bpf/...
+generate-bpf: vmlinux-h ## Regenerate all BPF objects and Go bindings with the pinned toolchain and kernel (needs docker or podman)
+	$(BPF_RUN) go generate ./attestation/commandrun/bpf/... ./attestation/networktrace/bpf/...
 
 .PHONY: generate-bpf-debug
 generate-bpf-debug: ## generate with BPF debug logging. Don't commit.
