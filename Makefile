@@ -23,8 +23,13 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 test: ## Run the go unit tests
 	go test -v -coverprofile=profile.cov -covermode=atomic ./...
 
+
 integration-test:
 	go test -v -coverprofile=profile.cov -covermode=atomic -tags=integration ./...
+
+.PHONY: coverage
+coverage: ## Show the coverage
+	go tool cover -html=profile.cov
 
 .PHONY: schema
 schema: ## Generate the attestor schema json files
