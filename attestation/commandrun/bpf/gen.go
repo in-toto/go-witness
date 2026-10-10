@@ -16,4 +16,4 @@
 
 package bpf
 
-//go:generate sh -c "go tool bpf2go -cc clang -no-strip -target bpfel,bpfeb -go-package bpf filetraceSyscall filetrace_syscall.bpf.c -- -Wall -Werror -I ../../bpf-common/headers $BPF_CFLAGS"
+//go:generate sh -c "go tool bpf2go -no-strip -target bpfel,bpfeb -go-package bpf filetraceSyscall filetrace_syscall.bpf.c -- -Wall -Werror -I ../../bpf-common/headers $BPF_CFLAGS"

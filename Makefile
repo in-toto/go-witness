@@ -42,27 +42,44 @@ lint: ## Run the linter
 check-aws-certs: ## Check the AWS public keys used to verify AWS IID documents
 	GOWORK=off go run -C ./attestation/aws-iid/check-certs/ . ../aws-certs.go
 
-VMLINUX_H := ./attestation/bpf-common/headers/vmlinux.h
+# ── Pinned inputs for BPF generation ─────────────────────────────────────────
+# Everything that affects the generated objects/bindings is pinned here, so the
+# output is identical on any machine. Change these only deliberately.
+#
+# Platform: both images run as linux/amd64 everywhere (natively on x86,
+# emulated elsewhere), so every machine runs the same binaries.
+BPF_PLATFORM ?= linux/amd64
+# Toolchain: clang/LLVM, Go, bpf2go's libbpf headers and the bpftool used to
+# write vmlinux.h.
+BPF_BUILDER_IMAGE ?= ghcr.io/cilium/ebpf-builder:1790757212@sha256:f2dad347fb941c1b2cc86ae51697155e2afb020cafb9680fff4f6540069f10f9
+BPF_CLANG ?= clang-22
+# Kernel types: vmlinux.h is generated from this kernel's BTF (not committed).
+# lvh kernel image for Linux 6.12.111; its config is alongside the BTF at
+# /data/kernels/6.12/boot/config-6.12.111.
+BPF_KERNEL_IMAGE ?= quay.io/lvh-images/kernel-images:6.12-20260928.013030@sha256:26264311dce48e31e0103fcdaaeb1aebfa288db1a27fe3ef3d5619d0ffa628eb
+BPF_KERNEL_BTF ?= /data/kernels/6.12/boot/btf-6.12.111
 
-.PHONY: generate-vmlinux
-generate-vmlinux: $(VMLINUX_H)
+CONTAINER_ENGINE ?= $(if $(shell command -v docker),docker,podman)
+VMLINUX_H := attestation/bpf-common/headers/vmlinux.h
+BPF_CACHE := .bpf-cache
+BPF_RUN = $(CONTAINER_ENGINE) run --rm --platform $(BPF_PLATFORM) \
+	--env GOFLAGS=-buildvcs=false \
+	--env BPF2GO_CC=$(BPF_CLANG) --env BPF_CFLAGS="$(BPF_CFLAGS)" \
+	-v "$(CURDIR)":/src -w /src \
+	$(BPF_BUILDER_IMAGE)
 
-$(VMLINUX_H):
-	@echo "Generating vmlinux.h from kernel BTF..."
-	@command -v bpftool >/dev/null 2>&1 || { echo "Error: bpftool is required. Install with: apt install linux-tools-common linux-tools-$(uname -r)"; exit 1; }
-	mkdir -p ./attestation/bpf-common/headers && bpftool btf dump file /sys/kernel/btf/vmlinux format c > ./attestation/bpf-common/headers/vmlinux.h
+.PHONY: vmlinux-h
+vmlinux-h: ## Generate vmlinux.h from the pinned kernel's BTF (needs docker or podman)
+	@mkdir -p $(BPF_CACHE) $(dir $(VMLINUX_H))
+	cid=$$($(CONTAINER_ENGINE) create --platform $(BPF_PLATFORM) $(BPF_KERNEL_IMAGE) /bin/true) && \
+		$(CONTAINER_ENGINE) cp $$cid:$(BPF_KERNEL_BTF) $(BPF_CACHE)/vmlinux.btf; rc=$$?; \
+		$(CONTAINER_ENGINE) rm $$cid >/dev/null; exit $$rc
+	$(BPF_RUN) bpftool btf dump file $(BPF_CACHE)/vmlinux.btf format c > $(VMLINUX_H)
 
-.PHONY: generate-commandrun-bpf
-generate-commandrun-bpf: generate-vmlinux ## Generate BPF bytecode and Go bindings for command-run file tracing
-	@echo "Generating command-run BPF code (requires clang and llvm)..."
-	go generate -tags linux ./attestation/commandrun/bpf/...
+.PHONY: generate-bpf
+generate-bpf: vmlinux-h ## Regenerate all BPF objects and Go bindings with the pinned toolchain and kernel (needs docker or podman)
+	$(BPF_RUN) go generate ./attestation/commandrun/bpf/... ./attestation/networktrace/bpf/...
 
-.PHONY: generate-networktrace-bpf
-generate-networktrace-bpf: generate-vmlinux ## Generate BPF bytecode and Go bindings for network trace attestor
-	@echo "Generating BPF code (requires clang and llvm)..."
-	go generate ./attestation/networktrace/bpf/...
-
-.PHONY: generate-networktrace-bpf-debug
-generate-networktrace-bpf-debug: generate-vmlinux ## Generate networktrace BPF bytecode with debug logging enabled
-	@echo "Generating BPF code with DEBUG logging (requires clang and llvm)..."
-	BPF_CFLAGS="-DBPF_DEBUG" go generate ./attestation/networktrace/bpf/...
+.PHONY: generate-bpf-debug
+generate-bpf-debug: ## generate with BPF debug logging. Don't commit.
+	$(MAKE) generate-bpf BPF_CFLAGS=-DBPF_DEBUG
