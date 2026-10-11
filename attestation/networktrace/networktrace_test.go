@@ -153,6 +153,15 @@ func assertNoAttestorErrors(t *testing.T, ctx *attestation.AttestationContext) {
 	}
 }
 
+// Point config's cert/keys to a temp dir instead of a root-owned CA in the package dir.
+func withTempCA(t *testing.T, cfg types.Config) types.Config {
+	t.Helper()
+	dir := t.TempDir()
+	cfg.CACertPath = filepath.Join(dir, "ca_cert.pem")
+	cfg.CAKeyPath = filepath.Join(dir, "ca_key.pem")
+	return cfg
+}
+
 func newCmd(withTracing bool, command []string) *commandrun.CommandRun {
 	opts := []commandrun.Option{
 		commandrun.WithCommand(command),
@@ -512,7 +521,7 @@ func TestIntegrationSIGKILLException(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			skipIfNotRoot(t)
 
-			config := types.DefaultConfig()
+			config := withTempCA(t, types.DefaultConfig())
 			config.ProxyPort = testProxyPort + 4
 			networkAttestor := NewWithConfig(config)
 
@@ -743,8 +752,6 @@ func TestIntegrationCurlHTTPS(t *testing.T) {
 				ProxyPort:        testProxyPort + 6,
 				ProxyBindIPv4:    "127.0.0.1",
 				GenerateCA:       true,
-				CACertPath:       types.DefaultCaCertPath,
-				CAKeyPath:        types.DefaultCaKeyPath,
 				SkipVerify:       true,
 				Payload: types.PayloadConfig{
 					RecordPayload:     true,
@@ -754,16 +761,13 @@ func TestIntegrationCurlHTTPS(t *testing.T) {
 				EnableHTTPInspection: true,
 			}
 
+			config = withTempCA(t, config)
 			networkAttestor := NewWithConfig(config)
 			log.SetLogger(log.ConsoleLogger{})
 
-			t.Cleanup(func() {
-				os.RemoveAll(filepath.Dir(types.DefaultCaCertPath))
-			})
-
 			curlCmd := fmt.Sprintf(
 				"curl -s --cacert %s --resolve localhost:%d:127.0.0.1 https://localhost:%d/",
-				types.DefaultCaCertPath, serverPort, serverPort,
+				config.CACertPath, serverPort, serverPort,
 			)
 
 			cmd := newCmd(withTracing, []string{"sh", "-c", curlCmd})
@@ -867,8 +871,6 @@ func TestIntegrationRealWorldHTTPS(t *testing.T) {
 						ProxyPort:        testProxyPort + 10 + uint16(i),
 						ProxyBindIPv4:    "127.0.0.1",
 						GenerateCA:       true,
-						CACertPath:       types.DefaultCaCertPath,
-						CAKeyPath:        types.DefaultCaKeyPath,
 						SkipVerify:       false,
 						Payload: types.PayloadConfig{
 							RecordPayload:     true,
@@ -878,16 +880,13 @@ func TestIntegrationRealWorldHTTPS(t *testing.T) {
 						EnableHTTPInspection: true,
 					}
 
+					config = withTempCA(t, config)
 					networkAttestor := NewWithConfig(config)
 					log.SetLogger(log.ConsoleLogger{})
 
-					t.Cleanup(func() {
-						os.RemoveAll(filepath.Dir(types.DefaultCaCertPath))
-					})
-
 					curlCmd := fmt.Sprintf(
 						"curl -sS --cacert %s %s -o /dev/null -w '%%{http_code}'",
-						types.DefaultCaCertPath, tt.url,
+						config.CACertPath, tt.url,
 					)
 
 					cmd := newCmd(withTracing, []string{"sh", "-c", curlCmd})
@@ -1227,7 +1226,7 @@ func TestIntegrationDoubleForkDaemon(t *testing.T) {
 
 func TestIntegrationCommandStartFailure(t *testing.T) {
 	skipIfNotRoot(t)
-	config := types.DefaultConfig()
+	config := withTempCA(t, types.DefaultConfig())
 	config.ProxyPort = testProxyPort + 25
 	networkAttestor := NewWithConfig(config)
 	cmd := commandrun.New(
@@ -1265,7 +1264,7 @@ func TestIntegrationEBPFBackendNetworkTrace(t *testing.T) {
 	tracerFile := filepath.Join(t.TempDir(), "tracer-pid")
 	require.NoError(t, os.WriteFile(input, []byte("EBPF_NETWORK"), 0o600))
 
-	config := types.DefaultConfig()
+	config := withTempCA(t, types.DefaultConfig())
 	config.ProxyPort = testProxyPort + 26
 	config.Payload.RecordPayload = true
 	networkAttestor := NewWithConfig(config)
@@ -1293,7 +1292,7 @@ func TestIntegrationSIGKILLWithSurvivingOrphan(t *testing.T) {
 	server := newTestTCPServer(t, port, []byte("PONG"))
 	defer server.wait()
 	pidFile := filepath.Join(t.TempDir(), "root.pid")
-	config := types.DefaultConfig()
+	config := withTempCA(t, types.DefaultConfig())
 	config.ProxyPort = testProxyPort + 27
 	config.Payload.RecordPayload = true
 	networkAttestor := NewWithConfig(config)
