@@ -305,8 +305,12 @@ func (ds *DigestSet) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func isHashableFile(f *os.File) (bool, error) {
-	stat, err := f.Stat()
+// isHashableFile reports whether file is safe to read and hash: a regular
+// file, or a symlink that resolves to one. Checked via fstat on the already
+// -open fd (not a separate stat on the path), so there's no TOCTOU window
+// between this check and the caller's read.
+func isHashableFile(file *os.File) (bool, error) {
+	stat, err := file.Stat()
 	if err != nil {
 		return false, err
 	}
