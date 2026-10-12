@@ -377,7 +377,11 @@ func (p *ptraceContext) runTrace() error {
 					switch eventCode {
 					case unix.PTRACE_EVENT_CLONE:
 						// A new thread of an existing process.
-						newTIDMsg, _ := unix.PtraceGetEventMsg(pid)
+						newTIDMsg, err := unix.PtraceGetEventMsg(pid)
+						if err != nil {
+							log.Debugf("(tracing) failed to read new TID from clone event of pid %d: %v", pid, err)
+							break
+						}
 						newTID := int(newTIDMsg)
 						if _, known := trackedTIDs[newTID]; !known {
 							trackedTIDs[newTID] = struct{}{}
@@ -385,7 +389,11 @@ func (p *ptraceContext) runTrace() error {
 						p.tgidOf[newTID] = p.tgidFor(pid)
 					case unix.PTRACE_EVENT_FORK, unix.PTRACE_EVENT_VFORK:
 						// New process
-						newTIDMsg, _ := unix.PtraceGetEventMsg(pid)
+						newTIDMsg, err := unix.PtraceGetEventMsg(pid)
+						if err != nil {
+							log.Debugf("(tracing) failed to read new PID from fork event of pid %d: %v", pid, err)
+							break
+						}
 						newTID := int(newTIDMsg)
 						if _, known := trackedTIDs[newTID]; !known {
 							trackedTIDs[newTID] = struct{}{}
