@@ -1,0 +1,39 @@
+# Copyright 2026 The Witness Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Verify BPF
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "release-*"]
+  pull_request:
+permissions:
+  contents: read
+
+jobs:
+  # Rebuild the committed BPF objects with the pinned toolchain and fail if they differ.
+  verify-bpf:
+    name: Verify generated BPF objects
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Regenerate BPF objects and Go bindings, and check they match
+        run: |
+          make generate-bpf
+          if [ -n "$(git status --porcelain -- attestation/)" ]; then
+            git status --porcelain -- attestation/ echo "BPF objects/bindings are out of date with their sources: run 'make generate-bpf' and commit the result." >&2
+            exit 1
+          fi
