@@ -27,6 +27,6 @@ func (rc *CommandRun) usesEBPFTracing() bool {
 	return rc.traceBackend == TraceBackendEBPF
 }
 
-func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationContext, hasPreExec, hasPreExit bool) ([]ProcessInfo, error) {
+func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationContext, hasPreExec bool) ([]ProcessInfo, error) {
 	return nil, errors.New("eBPF tracing not supported on this platform")
 }

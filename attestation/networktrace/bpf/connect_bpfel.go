@@ -23,6 +23,28 @@ type connectCommAllowlistKey struct {
 	Comm [16]int8
 }
 
+type connectControlVal struct {
+	_               structs.HostLayout
+	TracingDisabled uint64
+	LiveTasks       uint64
+	LifecycleStatus uint64
+	LifecycleError  uint64
+	TerminalTsNs    uint64
+}
+
+type connectGateKey struct {
+	_         structs.HostLayout
+	NetnsInum uint32
+	Tid       uint32
+}
+
+type connectGateVal struct {
+	_        structs.HostLayout
+	HostTid  uint32
+	Pad      uint32
+	StopTsNs uint64
+}
+
 type connectOrigDstKey struct {
 	_          structs.HostLayout
 	SockCookie uint64
@@ -34,36 +56,41 @@ type connectOrigDstKeyV6 struct {
 }
 
 type connectOrigDstVal struct {
-	_        structs.HostLayout
-	OrigIp   uint32
-	OrigPort uint16
-	Pad      uint16
-	CgroupId uint64
-	Pid      uint32
-	Pad2     uint32
-	Comm     [16]int8
+	_          structs.HostLayout
+	OrigIp     uint32
+	OrigPort   uint16
+	Pad        uint16
+	CgroupId   uint64
+	Pid        uint32
+	WitnessPid uint32
+	PidNsInum  uint32
+	NetnsInum  uint32
+	Comm       [16]int8
 }
 
 type connectOrigDstValV6 struct {
-	_        structs.HostLayout
-	OrigIp   [16]uint8
-	OrigPort uint16
-	Pad      uint16
-	Pad1     uint32
-	CgroupId uint64
-	Pid      uint32
-	Pad2     uint32
-	Comm     [16]int8
+	_          structs.HostLayout
+	OrigIp     [16]uint8
+	OrigPort   uint16
+	Pad        uint16
+	Pad1       uint32
+	CgroupId   uint64
+	Pid        uint32
+	WitnessPid uint32
+	PidNsInum  uint32
+	NetnsInum  uint32
+	Comm       [16]int8
 }
 
-type connectTidAllowlistKey struct {
-	_   structs.HostLayout
-	Tid uint32
+type connectPendingExecVal struct {
+	_          structs.HostLayout
+	NsTid      uint32
+	WitnessTid uint32
 }
 
-type connectTidAllowlistVal struct {
-	_             structs.HostLayout
-	NestedAllowed uint8
+type connectProxyStateKey struct {
+	_         structs.HostLayout
+	NetnsInum uint32
 }
 
 type connectTupleKey struct {
@@ -89,6 +116,16 @@ type connectTupleKeyV6 struct {
 type connectTupleVal struct {
 	_            structs.HostLayout
 	ClientCookie uint64
+}
+
+type connectWitnessPidNsTidKey struct {
+	_   structs.HostLayout
+	Tid uint32
+}
+
+type connectWitnessPidNsTidVal struct {
+	_             structs.HostLayout
+	NestedAllowed uint8
 }
 
 // loadConnect returns the embedded CollectionSpec for connect.
@@ -141,23 +178,29 @@ type connectProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type connectMapSpecs struct {
-	CgroupAllowlist    *ebpf.MapSpec `ebpf:"cgroup_allowlist"`
-	CommAllowlist      *ebpf.MapSpec `ebpf:"comm_allowlist"`
-	OrigDstMap         *ebpf.MapSpec `ebpf:"orig_dst_map"`
-	OrigDstMapV6       *ebpf.MapSpec `ebpf:"orig_dst_map_v6"`
-	PendingExecs       *ebpf.MapSpec `ebpf:"pending_execs"`
-	TidAllowlist       *ebpf.MapSpec `ebpf:"tid_allowlist"`
-	TupleToCookieMap   *ebpf.MapSpec `ebpf:"tuple_to_cookie_map"`
-	TupleToCookieMapV6 *ebpf.MapSpec `ebpf:"tuple_to_cookie_map_v6"`
+	CgroupAllowlist          *ebpf.MapSpec `ebpf:"cgroup_allowlist"`
+	CommAllowlist            *ebpf.MapSpec `ebpf:"comm_allowlist"`
+	ControlMap               *ebpf.MapSpec `ebpf:"control_map"`
+	GateMap                  *ebpf.MapSpec `ebpf:"gate_map"`
+	OrigDstMap               *ebpf.MapSpec `ebpf:"orig_dst_map"`
+	OrigDstMapV6             *ebpf.MapSpec `ebpf:"orig_dst_map_v6"`
+	PendingExecs             *ebpf.MapSpec `ebpf:"pending_execs"`
+	ProxyStateMap            *ebpf.MapSpec `ebpf:"proxy_state_map"`
+	TrackedPidNsMap          *ebpf.MapSpec `ebpf:"tracked_pid_ns_map"`
+	TrackedTasks             *ebpf.MapSpec `ebpf:"tracked_tasks"`
+	TupleToCookieMap         *ebpf.MapSpec `ebpf:"tuple_to_cookie_map"`
+	TupleToCookieMapV6       *ebpf.MapSpec `ebpf:"tuple_to_cookie_map_v6"`
+	WitnessPidNsLevelMap     *ebpf.MapSpec `ebpf:"witness_pid_ns_level_map"`
+	WitnessPidNsTidAllowlist *ebpf.MapSpec `ebpf:"witness_pid_ns_tid_allowlist"`
 }
 
 // connectVariableSpecs contains global variables before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type connectVariableSpecs struct {
-	HostNetnsInum *ebpf.VariableSpec `ebpf:"host_netns_inum"`
-	ProxyIp       *ebpf.VariableSpec `ebpf:"proxy_ip"`
-	ProxyPort     *ebpf.VariableSpec `ebpf:"proxy_port"`
+	ProxyIp          *ebpf.VariableSpec `ebpf:"proxy_ip"`
+	ProxyPort        *ebpf.VariableSpec `ebpf:"proxy_port"`
+	WitnessPidNsInum *ebpf.VariableSpec `ebpf:"witness_pid_ns_inum"`
 }
 
 // connectObjects contains all objects after they have been loaded into the kernel.
@@ -180,26 +223,38 @@ func (o *connectObjects) Close() error {
 //
 // It can be passed to loadConnectObjects or ebpf.CollectionSpec.LoadAndAssign.
 type connectMaps struct {
-	CgroupAllowlist    *ebpf.Map `ebpf:"cgroup_allowlist"`
-	CommAllowlist      *ebpf.Map `ebpf:"comm_allowlist"`
-	OrigDstMap         *ebpf.Map `ebpf:"orig_dst_map"`
-	OrigDstMapV6       *ebpf.Map `ebpf:"orig_dst_map_v6"`
-	PendingExecs       *ebpf.Map `ebpf:"pending_execs"`
-	TidAllowlist       *ebpf.Map `ebpf:"tid_allowlist"`
-	TupleToCookieMap   *ebpf.Map `ebpf:"tuple_to_cookie_map"`
-	TupleToCookieMapV6 *ebpf.Map `ebpf:"tuple_to_cookie_map_v6"`
+	CgroupAllowlist          *ebpf.Map `ebpf:"cgroup_allowlist"`
+	CommAllowlist            *ebpf.Map `ebpf:"comm_allowlist"`
+	ControlMap               *ebpf.Map `ebpf:"control_map"`
+	GateMap                  *ebpf.Map `ebpf:"gate_map"`
+	OrigDstMap               *ebpf.Map `ebpf:"orig_dst_map"`
+	OrigDstMapV6             *ebpf.Map `ebpf:"orig_dst_map_v6"`
+	PendingExecs             *ebpf.Map `ebpf:"pending_execs"`
+	ProxyStateMap            *ebpf.Map `ebpf:"proxy_state_map"`
+	TrackedPidNsMap          *ebpf.Map `ebpf:"tracked_pid_ns_map"`
+	TrackedTasks             *ebpf.Map `ebpf:"tracked_tasks"`
+	TupleToCookieMap         *ebpf.Map `ebpf:"tuple_to_cookie_map"`
+	TupleToCookieMapV6       *ebpf.Map `ebpf:"tuple_to_cookie_map_v6"`
+	WitnessPidNsLevelMap     *ebpf.Map `ebpf:"witness_pid_ns_level_map"`
+	WitnessPidNsTidAllowlist *ebpf.Map `ebpf:"witness_pid_ns_tid_allowlist"`
 }
 
 func (m *connectMaps) Close() error {
 	return _ConnectClose(
 		m.CgroupAllowlist,
 		m.CommAllowlist,
+		m.ControlMap,
+		m.GateMap,
 		m.OrigDstMap,
 		m.OrigDstMapV6,
 		m.PendingExecs,
-		m.TidAllowlist,
+		m.ProxyStateMap,
+		m.TrackedPidNsMap,
+		m.TrackedTasks,
 		m.TupleToCookieMap,
 		m.TupleToCookieMapV6,
+		m.WitnessPidNsLevelMap,
+		m.WitnessPidNsTidAllowlist,
 	)
 }
 
@@ -207,9 +262,9 @@ func (m *connectMaps) Close() error {
 //
 // It can be passed to loadConnectObjects or ebpf.CollectionSpec.LoadAndAssign.
 type connectVariables struct {
-	HostNetnsInum *ebpf.Variable `ebpf:"host_netns_inum"`
-	ProxyIp       *ebpf.Variable `ebpf:"proxy_ip"`
-	ProxyPort     *ebpf.Variable `ebpf:"proxy_port"`
+	ProxyIp          *ebpf.Variable `ebpf:"proxy_ip"`
+	ProxyPort        *ebpf.Variable `ebpf:"proxy_port"`
+	WitnessPidNsInum *ebpf.Variable `ebpf:"witness_pid_ns_inum"`
 }
 
 // connectPrograms contains all programs after they have been loaded into the kernel.

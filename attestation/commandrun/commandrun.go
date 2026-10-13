@@ -195,7 +195,7 @@ func (rc *CommandRun) IsExperimental() bool {
 }
 
 // CommandRun saves the execute hooks using the same mechanism, even though
-// it doesn't declare any hooks itself. It is the hook runner. Maybe a hack.
+// it doesn't declare any hooks itself. It is the hook runner.
 func (rc *CommandRun) DeclareHooks(hooks *attestation.ExecuteHooks) error {
 	rc.executeHooks = hooks
 	return nil
@@ -227,59 +227,49 @@ func (rc *CommandRun) runCmd(ctx *attestation.AttestationContext) error {
 	c.Stdout = stdoutWriter
 	c.Stderr = stderrWriter
 
-	// Wait for any declared hooks to be registered
+	// Wait for any declared hooks to be registered.
 	if err := rc.executeHooks.WaitForDeclaredHooks(30 * time.Second); err != nil {
 		return fmt.Errorf("failed waiting for hook registration: %w", err)
 	}
-
-	// Pre-compute hook flags once to avoid repeated mutex operations
 	hasPreExec := rc.executeHooks.HasHooks(attestation.StagePreExec)
-	hasPreExit := rc.executeHooks.HasHooks(attestation.StagePreExit)
-	needsHookTracing := hasPreExec || hasPreExit
-	needsPtraceTracing := needsHookTracing || (rc.enableTracing && !rc.usesEBPFTracing())
-
-	// Keep ptrace only for hook-driven execution. Plain command-run tracing can
-	// use the eBPF file observer without thread pinning or ptrace signal handling.
-	if needsPtraceTracing {
-		// Locking the thread before enabling tracing and starting the command execution (fork and exec)
-		// Only the parent thread that called fork/clone can issue the subsequent tracing commands
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		enableTracing(c)
-	}
 
 	var err error
-
-	if rc.enableTracing && rc.usesEBPFTracing() {
-		rc.Processes, err = rc.traceWithEBPF(c, ctx, hasPreExec, hasPreExit)
-	} else {
-		if err := c.Start(); err != nil {
-			// Ensure cooperating attestors blocked on PreExit are released even
-			// when the process never started. RunHooks is idempotent per stage.
-			if hasPreExit {
-				_ = rc.executeHooks.RunHooks(attestation.StagePreExit, 0)
+	switch {
+	case rc.enableTracing && rc.usesEBPFTracing():
+		rc.Processes, err = rc.traceWithEBPF(c, ctx, hasPreExec)
+	case rc.enableTracing:
+		// Full ptrace tracing must remain on the OS thread that started the
+		// tracee. Networktrace lifecycle is independent from this tracer.
+		runtime.LockOSThread()
+		enableTracing(c)
+		if startErr := c.Start(); startErr != nil {
+			if hasPreExec {
+				rc.executeHooks.AbortStage(attestation.StagePreExec, startErr)
 			}
-			return err
+			runtime.UnlockOSThread()
+			return startErr
 		}
+		rc.Processes, err = rc.trace(c, ctx, hasPreExec)
+		runtime.UnlockOSThread()
 
-		// Safety net: guarantee PreExit hooks run exactly once for this command,
-		// regardless of which execution path is taken or how it returns. The tracer
-		// normally runs PreExit at the precise moment the process is exiting; this
-		// deferred call (idempotent via RunHooks) covers any early-return/error
-		// path so cooperating attestors (e.g. networktrace) never strand.
-		if hasPreExit {
-			defer func() { _ = rc.executeHooks.RunHooks(attestation.StagePreExit, c.Process.Pid) }()
-		}
-
-		if rc.enableTracing {
-			rc.Processes, err = rc.trace(c, ctx, hasPreExec, hasPreExit)
-		} else if needsHookTracing {
-			err = rc.runWithHooks(c, hasPreExec, hasPreExit)
-		} else {
+		// The ptrace loop reaps every traced child with raw wait4, so this
+		// Wait cannot observe the process (it reports ECHILD). Call it
+		// anyway: Cmd.Wait joins os/exec's internal stdout/stderr copier
+		// goroutines, which is the happens-before edge the buffer reads below
+		// need. Without it the goroutines can still be writing when
+		// stdoutBuffer.String() runs, which the race detector flags even
+		// though the process has exited.
+		_ = c.Wait()
+	case hasPreExec:
+		err = rc.runWithPreExec(c)
+	default:
+		if err = c.Start(); err == nil {
 			err = c.Wait()
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				rc.ExitCode = exitErr.ExitCode()
-			}
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			rc.ExitCode = exitErr.ExitCode()
+		} else if err == nil && c.ProcessState != nil {
+			rc.ExitCode = c.ProcessState.ExitCode()
 		}
 	}
 

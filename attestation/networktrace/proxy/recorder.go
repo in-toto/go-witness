@@ -57,9 +57,16 @@ func NewConnectionRecorder(metadata *bpf.ConnectionMetadata, protocol string, co
 			Protocol:  protocol,
 			StartTime: time.Now(),
 			Process: types.ProcessInfo{
-				PID:      metadata.PID,
-				Comm:     metadata.Comm,
-				CgroupID: metadata.CgroupID,
+				PID:              metadata.PID,
+				WitnessPID:       metadata.WitnessPID,
+				PIDNamespace:     metadata.PIDNamespace,
+				NetworkNamespace: metadata.NetworkNamespace,
+				Comm:             metadata.Comm,
+				CgroupID:         metadata.CgroupID,
+			},
+			Source: types.Endpoint{
+				IP:   metadata.SourceIP,
+				Port: metadata.SourcePort,
 			},
 			Destination: types.Endpoint{
 				IP:   metadata.OrigIP,

@@ -221,6 +221,10 @@ func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) er
 		clientConn.Close()
 		return fmt.Errorf("get connection metadata: %w", err)
 	}
+	if source, ok := clientConn.RemoteAddr().(*net.TCPAddr); ok {
+		metadata.SourceIP = source.IP
+		metadata.SourcePort = uint16(source.Port)
+	}
 
 	log.Infof("New connection: %s (cookie=%d/0x%x)", metadata, sockCookie, sockCookie)
 
@@ -320,68 +324,105 @@ func (p *TCPProxy) recordConnection(metadata *bpf.ConnectionMetadata, c2sData, s
 	log.Infof("Connection recorded: %s, sent=%d, received=%d", result.ID, result.BytesSent, result.BytesReceived)
 }
 
-// isWellKnownHTTPPort returns true for ports commonly used by HTTP/HTTPS
-func isWellKnownHTTPPort(port uint16) bool {
+const (
+	// firstByteWindow is the default patience for a client's very first
+	// byte before relaying transparently. Apart from known HTTP(s) port,
+	// silent clients are overwhelmingly server-first protocols (SMTP, FTP,
+	// MySQL) or idle pre-connects, and the origin is only dialed after this
+	// sniff returns so they must not be charged the full confirmation
+	// budget.
+	firstByteWindow = 200 * time.Millisecond
+
+	// confirmWindow bounds the protocol confirmation peeks once a first byte
+	// has arrived (i.e. the client speaks first). Both supported protocols
+	// are client-speaks-first, so only a slow or paused first flight ever
+	// uses this budget; unknown protocols exit at their first diverging
+	// byte. It must never be unbounded: a client that sends a short header
+	// and then waits for a reply (e.g. the Gradle worker protocol) would
+	// otherwise deadlock against an original destination the proxy has not
+	// dialed yet.
+	confirmWindow = 2 * time.Second
+)
+
+// firstByteBudget returns how long to wait for a client's first byte. The
+// destination port is only a timing hint, classification stays purely
+// content-based. On conventional HTTP(S) ports server-first protocols do not
+// live and slow-starting TLS/HTTP clients are common, so patience is
+// the full confirmWindow there; everywhere else it is firstByteWindow. Any
+// bounded window can still be outwaited deliberately; the hint only restores
+// recall for benign slow starters.
+func firstByteBudget(port uint16) time.Duration {
 	switch port {
+	// TODO: After adding a model to skip localhost connections, it should be discussed
+	// whether requests to these ports should always be MITMed as they are common
+	// HTTP(S) ports. That would prevent a slow client from avoiding the protocol detection window.
 	case 80, 443, 8080, 8443:
-		return true
-	default:
-		return false
+		return confirmWindow
 	}
+	return firstByteWindow
 }
 
-// tryRouteToHTTPProxy attempts to route the connection to the HTTP proxy.
-// For well-known HTTP/HTTPS ports it routes immediately (zero latency).
-// For other ports it peeks at the first bytes to detect TLS/HTTP protocol.
-// Returns (true, nil, nil) if the connection was handed off to the HTTP proxy.
-// Returns (false, wrappedConn, nil) if the connection should be handled as raw TCP.
-// wrappedConn preserves any bytes that were peeked during protocol detection.
-func (p *TCPProxy) tryRouteToHTTPProxy(clientConn net.Conn, metadata *bpf.ConnectionMetadata) (bool, net.Conn, error) {
-	// Fast path: well-known ports — route without peeking
-	if isWellKnownHTTPPort(metadata.OrigPort) {
-		log.Infof("[TCP PROXY] Well-known HTTP/S port %d, routing to HTTP proxy", metadata.OrigPort)
-		if err := p.httpProxy.HandleConnection(clientConn, metadata); err != nil {
-			return false, clientConn, fmt.Errorf("HTTP proxy: %w", err)
-		}
-		return true, nil, nil
+// sniffProtocol peeks the first byte for client-first protocols (HTPP, TLS) and if it's server first,
+// it's out of scope of interception. After reading the first byte with the first byte budget, it parses
+// the client connection to classify the protocol.
+func sniffProtocol(conn net.Conn, br *bufio.Reader, port uint16) string {
+	_ = conn.SetReadDeadline(time.Now().Add(firstByteBudget(port)))
+	if _, err := br.Peek(1); err != nil {
+		_ = conn.SetReadDeadline(time.Time{})
+		return "" // silent client: relay transparently
 	}
 
-	// Slow path: peek to detect protocol on non-standard ports
+	// A first byte arrived, so the client speaks first: only slow or paused
+	// first flights ever spend this budget.
+	_ = conn.SetReadDeadline(time.Now().Add(confirmWindow))
+	proto := detectProtocol(br)
+	_ = conn.SetReadDeadline(time.Time{})
+	return proto
+}
+
+// tryRouteToHTTPProxy sniffs the connection's first bytes to decide whether
+// it is HTTP, TLS, or the HTTP/2 cleartext preface, and hands HTTP/TLS traffic
+// to the HTTP MITM proxy.
+// Returns (true, nil, nil) if the connection was handed off to the HTTP proxy.
+// Returns (false, wrappedConn, nil) if the connection should be handled as
+// raw TCP; wrappedConn preserves any bytes buffered while sniffing.
+// Unknown protocols, silent clients, truncated first flights, and clients
+// whose first bytes miss the first-byte budget all take the passthrough path:
+// the proxy never holds a connection hostage waiting for classification
+// evidence it may never get.
+func (p *TCPProxy) tryRouteToHTTPProxy(clientConn net.Conn, metadata *bpf.ConnectionMetadata) (bool, net.Conn, error) {
 	br := bufio.NewReader(clientConn)
 	wrapped := &bufferedConn{Conn: clientConn, br: br}
 
-	_ = clientConn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
-	_, peekErr := br.Peek(1)
-	_ = clientConn.SetReadDeadline(time.Time{})
-
-	if peekErr != nil {
-		// No data within timeout not HTTP/TLS (likely raw TCP)
-		return false, wrapped, nil
+	switch proto := sniffProtocol(clientConn, br, metadata.OrigPort); proto {
+	case "tls", "http":
+		log.Infof("[TCP PROXY] Detected %s protocol on port %d, routing to HTTP proxy", proto, metadata.OrigPort)
+		if err := p.httpProxy.HandleBufferedConnection(clientConn, br, proto, metadata); err != nil {
+			return false, wrapped, fmt.Errorf("HTTP proxy (%s): %w", proto, err)
+		}
+		return true, nil, nil
+	case "h2c":
+		// TODO: goproxy http/2 support needs to be verified
+		log.Infof("[TCP PROXY] HTTP/2 cleartext preface on port %d: not MITM-able, relaying raw", metadata.OrigPort)
+	default:
+		log.Infof("[TCP PROXY] No HTTP/TLS evidence on port %d, relaying raw (unparsed)", metadata.OrigPort)
 	}
-
-	proto, err := detectProtocol(br)
-	if err != nil || (proto != "tls" && proto != "http") {
-		// Not a recognized protocol — fall back to raw TCP with preserved bytes
-		return false, wrapped, nil
-	}
-
-	log.Infof("[TCP PROXY] Detected %s protocol on port %d, routing to HTTP proxy", proto, metadata.OrigPort)
-	if err := p.httpProxy.HandleBufferedConnection(clientConn, br, metadata); err != nil {
-		return false, wrapped, fmt.Errorf("HTTP proxy (%s): %w", proto, err)
-	}
-	return true, nil, nil
+	return false, wrapped, nil
 }
 
 func (p *TCPProxy) getConnectionMetadata(sockCookie uint64, isIPv6 bool) (*bpf.ConnectionMetadata, error) {
+	// Atomically consume (lookup + delete) so the entry is handled exactly once
+	// and a recycled socket cookie can never read another connection's stale
+	// metadata.
 	if isIPv6 {
-		metadata, err := p.maps.LookupOrigDstV6(sockCookie)
+		metadata, err := p.maps.ConsumeOrigDstV6(sockCookie)
 		if err != nil {
 			return nil, fmt.Errorf("lookup IPv6 original destination: %w", err)
 		}
 		return metadata, nil
 	}
 
-	metadata, err := p.maps.LookupOrigDst(sockCookie)
+	metadata, err := p.maps.ConsumeOrigDst(sockCookie)
 	if err != nil {
 		return nil, fmt.Errorf("lookup IPv4 original destination: %w", err)
 	}

@@ -26,10 +26,12 @@ import (
 func enableTracing(c *exec.Cmd) {
 }
 
-func (rc *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext, hasPreExec, hasPreExit bool) ([]ProcessInfo, error) {
+func (rc *CommandRun) trace(c *exec.Cmd, actx *attestation.AttestationContext, hasPreExec bool) ([]ProcessInfo, error) {
 	return nil, errors.New("tracing not supported on this platform")
 }
 
-func (rc *CommandRun) runWithHooks(c *exec.Cmd, hasPreExec, hasPreExit bool) error {
-	return errors.New("tracing not supported on this platform")
+func (rc *CommandRun) runWithPreExec(c *exec.Cmd) error {
+	err := errors.New("PreExec hooks require ptrace, which is not supported on this platform")
+	rc.executeHooks.AbortStage(attestation.StagePreExec, err)
+	return err
 }

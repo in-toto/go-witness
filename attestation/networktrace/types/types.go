@@ -46,9 +46,12 @@ func DefaultPayloadConfig() PayloadConfig {
 
 // ProcessInfo identifies the process that made the connection
 type ProcessInfo struct {
-	PID      uint32 `json:"pid"`
-	Comm     string `json:"comm"`
-	CgroupID uint64 `json:"cgroup_id,omitempty"`
+	PID              uint32 `json:"pid"`
+	WitnessPID       uint32 `json:"witness_pid"`
+	PIDNamespace     uint32 `json:"pid_namespace"`
+	NetworkNamespace uint32 `json:"network_namespace"`
+	Comm             string `json:"comm"`
+	CgroupID         uint64 `json:"cgroup_id,omitempty"`
 }
 
 // Endpoint represents a network endpoint (source or destination)
@@ -170,7 +173,6 @@ type Connection struct {
 	Process ProcessInfo `json:"process"`
 
 	// Network endpoints
-	// TODO: Update bpf maps to store source endpoint as well
 	Source      Endpoint `json:"source"`
 	Destination Endpoint `json:"destination"`
 

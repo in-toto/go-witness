@@ -20,45 +20,118 @@ import (
 	"bufio"
 	"crypto/tls"
 	"encoding/binary"
-	"errors"
 	"fmt"
-	"io"
 
 	"github.com/in-toto/go-witness/attestation/networktrace/types"
 )
 
 // Protocol detection and TLS utilities for transparent HTTPS proxying
 
-// detectProtocol peeks at connection bytes to determine protocol
-func detectProtocol(br *bufio.Reader) (string, error) {
-	// Peek at the first 24 bytes (enough for TLS, HTTP detection)
-	header, err := br.Peek(24)
-	if err != nil && !errors.Is(err, bufio.ErrBufferFull) && err != io.EOF {
-		return "", fmt.Errorf("peek connection: %w", err)
-	}
+// h2cPreface is the HTTP/2 cleartext connection preface (RFC 9113 section 3.4).
+const h2cPreface = "PRI * HTTP/2.0"
 
-	if len(header) < 5 {
-		return "unknown", nil
-	}
+// httpMethodPrefixes is the fixed table of HTTP/1.x request-line method
+// prefixes this proxy MITMs. A table miss means passthrough: matching generic
+// token shapes would misroute non-HTTP protocols (e.g. Redis "PING") into
+// goproxy, which would answer them with an error response and kill the
+// connection.
+var httpMethodPrefixes = []string{
+	"GET ", "HEAD ", "POST ", "PUT ", "DELETE ",
+	"CONNECT ", "OPTIONS ", "TRACE ", "PATCH ",
+	"PROPFIND ", "REPORT ",
+}
 
-	// Check for TLS: ContentType (0x16=Handshake) + Version (0x03 0x00-0x03)
-	if header[0] == 0x16 && header[1] == 0x03 &&
-		(header[2] == 0x00 || header[2] == 0x01 || header[2] == 0x02 || header[2] == 0x03) {
-		return "tls", nil
-	}
+// protoNode is a node in the prefix tree (trie) of request prefixes this
+// proxy recognizes. It is built once at init from httpMethodPrefixes and
+// h2cPreface, so detection allocates nothing per connection and each peeked
+// byte costs one lookup over the node's few edges (at most 8 at the root)
+// instead of a scan of the whole table. trie does prefix matching efficiently.
+// O(n) where n is the length of the word to be searched.
+type protoNode struct {
+	edges  []protoEdge
+	accept string // "http" or "h2c" when a complete prefix ends at this node
+}
 
-	// Check for HTTP methods
-	headerStr := string(header)
-	methods := []string{"GET ", "POST", "PUT ", "HEAD", "DELE", "OPTI", "PATC", "TRAC", "CONN"}
-	for _, method := range methods {
-		if len(headerStr) >= len(method) && headerStr[:len(method)] == method {
-			return "http", nil
+type protoEdge struct {
+	b    byte
+	node *protoNode
+}
+
+func (n *protoNode) child(b byte) *protoNode {
+	for _, e := range n.edges {
+		if e.b == b {
+			return e.node
 		}
 	}
+	return nil
+}
 
-	// TODO: Verify support for HTTP/2 detection if needed
+func (n *protoNode) insert(prefix, accept string) {
+	cur := n
+	for i := range len(prefix) {
+		next := cur.child(prefix[i])
+		if next == nil {
+			next = &protoNode{}
+			cur.edges = append(cur.edges, protoEdge{b: prefix[i], node: next})
+		}
+		cur = next
+	}
+	cur.accept = accept
+}
 
-	return "unknown", nil
+var protoTrie = func() *protoNode {
+	root := &protoNode{}
+	for _, m := range httpMethodPrefixes {
+		root.insert(m, "http")
+	}
+	root.insert(h2cPreface, "h2c")
+	return root
+}()
+
+// detectProtocol classifies a connection's first bytes as "tls", "http", or
+// "h2c" (HTTP/2 cleartext preface). It is best-effort by design: unknown
+// protocols, idle clients, first bytes arriving after the caller's read
+// deadline, and truncated first flights all return "", the caller must then
+// fall back to transparent TCP passthrough, never hold the connection open
+// waiting for more evidence.
+func detectProtocol(br *bufio.Reader) string {
+	first, err := br.Peek(1)
+	if err != nil {
+		return ""
+	}
+
+	if first[0] == 0x16 { // TLS record: ContentType=Handshake
+		v, err := br.Peek(2)
+		if err != nil || v[1] != 0x03 {
+			return "" // not a TLS major version: diverged at byte 2
+		}
+		h, err := br.Peek(5)
+		if err == nil && h[2] <= 0x04 {
+			return "tls" // 5-byte record header confirmed (legacy version 0x0300-0x0304)
+		}
+		return "" // truncated or unknown legacy version
+	}
+
+	// Walk the prefix tree one peeked byte at a time. A byte with no root
+	// edge (e.g. the Gradle "ac" magic) exits immediately, any later
+	// divergence ends the walk at that byte. matched keeps the longest
+	// complete prefix seen so far.
+	node := protoTrie.child(first[0])
+	matched := ""
+	for i := 2; node != nil; i++ {
+		if node.accept != "" {
+			matched = node.accept
+		}
+		if len(node.edges) == 0 {
+			break // leaf: nothing longer can match
+		}
+		h, err := br.Peek(i)
+		if err != nil {
+			break // truncated or idle: keep what already completed
+		}
+		node = node.child(h[i-1])
+	}
+	return matched
 }
 
 // parseSNIExtension parses the SNI extension data

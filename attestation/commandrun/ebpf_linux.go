@@ -105,7 +105,7 @@ func (rc *CommandRun) usesEBPFTracing() bool {
 // - Create per-run cgroup.
 // - Load selected BPF program, drain the ring-bugger that stores open/exec/exit events.
 // - Process events to populate ProcessInfo and OpenedFiles.
-func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationContext, hasPreExec, hasPreExit bool) ([]ProcessInfo, error) {
+func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationContext, hasPreExec bool) ([]ProcessInfo, error) {
 	cgroupFile, cgroupID, err := prepareCommandRunTraceCgroup()
 	if err != nil {
 		return nil, err
@@ -167,36 +167,33 @@ func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationCo
 		}
 	}()
 
-	if err := c.Start(); err != nil {
-		reader.Close()
-		readerWg.Wait()
-		pctx.finishDigestWorkers()
-		if hasPreExit {
-			_ = rc.executeHooks.RunHooks(attestation.StagePreExit, c.Process.Pid)
+	var waitErr error
+	if hasPreExec {
+		waitErr = rc.runWithPreExec(c)
+		if c.Process == nil {
+			_ = reader.Close()
+			readerWg.Wait()
+			pctx.finishDigestWorkers()
+			return nil, waitErr
 		}
-		return nil, err
-	}
-
-	if hasPreExit {
-		defer func() { _ = rc.executeHooks.RunHooks(attestation.StagePreExit, c.Process.Pid) }()
+	} else {
+		if err := c.Start(); err != nil {
+			_ = reader.Close()
+			readerWg.Wait()
+			pctx.finishDigestWorkers()
+			return nil, err
+		}
+		waitErr = c.Wait()
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			rc.ExitCode = exitErr.ExitCode()
+		} else if waitErr == nil && c.ProcessState != nil {
+			rc.ExitCode = c.ProcessState.ExitCode()
+		}
 	}
 
 	pctx.mu.Lock()
 	pctx.getProcInfo(c.Process.Pid)
 	pctx.mu.Unlock()
-
-	var waitErr error
-	if hasPreExec || hasPreExit {
-		waitErr = rc.runWithHooks(c, hasPreExec, hasPreExit)
-	} else {
-		waitErr = c.Wait()
-		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			rc.ExitCode = exitErr.ExitCode()
-		}
-		if waitErr == nil && c.ProcessState != nil {
-			rc.ExitCode = c.ProcessState.ExitCode()
-		}
-	}
 
 	// Process completion does not mean userspace has drained every event already
 	// queued in the ring buffer. Wait until the reader processes the main task's

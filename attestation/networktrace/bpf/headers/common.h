@@ -29,10 +29,30 @@
 #define SOCK_DGRAM 2
 #endif
 
+#ifndef SIGSTOP
+#define SIGSTOP 19
+#endif
+
 // Default Proxy configuration
 // Userspace can override the volatile variables
 #define PROXY_PORT_TCP 8888
 #define PROXY_IP 0x0100007F  // 127.0.0.1 in network byte order (big endian)
+
+#define PROXY_NOT_READY 0
+#define PROXY_READY 1
+
+#define LIFECYCLE_NOT_STARTED 0
+#define LIFECYCLE_RUNNING 1
+#define LIFECYCLE_TRANSITIONING 2
+#define LIFECYCLE_EXITED 3
+#define LIFECYCLE_FAILED 4
+
+#define LIFECYCLE_ERROR_NONE 0
+#define LIFECYCLE_ERROR_TASK_IDENTITY 1
+#define LIFECYCLE_ERROR_TASK_INSERT 2
+#define LIFECYCLE_ERROR_EXEC_MIGRATION 3
+#define LIFECYCLE_ERROR_COUNTER_UNDERFLOW 4
+#define LIFECYCLE_ERROR_MAP_UPDATE 5
 
 #define LOG(fmt, ...) bpf_printk(fmt, ##__VA_ARGS__)
 
