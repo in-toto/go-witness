@@ -12,7 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.34
 	github.com/aws/aws-sdk-go-v2/service/codebuild v1.68.17
 	github.com/aws/aws-sdk-go-v2/service/kms v1.52.2
-	github.com/cilium/ebpf v0.20.0
+	github.com/cilium/ebpf v0.22.0
 	github.com/digitorus/pkcs7 v0.0.0-20250730155240-ffadbf3f398c
 	github.com/digitorus/timestamp v0.0.0-20250524132541-c45532741eea
 	github.com/edwarnicke/gitoid v0.0.0-20220710194850-1be5bfda1f9d
@@ -37,17 +37,17 @@ require (
 	github.com/sigstore/fulcio v1.8.8
 	github.com/spdx/tools-golang v0.5.7
 	github.com/spf13/viper v1.21.0
-	github.com/spiffe/go-spiffe/v2 v2.6.0
+	github.com/spiffe/go-spiffe/v2 v2.7.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/vault v0.40.0
 	github.com/zricethezav/gitleaks/v8 v8.30.1
 	go.step.sm/crypto v0.81.1
 	go.yaml.in/yaml/v3 v3.0.4
-	golang.org/x/mod v0.37.0
-	golang.org/x/sys v0.46.0
+	golang.org/x/mod v0.38.0
+	golang.org/x/sys v0.47.0
 	google.golang.org/api v0.286.0
-	google.golang.org/grpc v1.82.1
+	google.golang.org/grpc v1.83.2
 	k8s.io/api v0.35.7
 	k8s.io/apimachinery v0.35.7
 	k8s.io/client-go v0.35.6
@@ -153,7 +153,7 @@ require (
 	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
@@ -178,10 +178,10 @@ require (
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/moby/go-archive v0.2.0 // indirect
-	github.com/moby/patternmatcher v0.6.0 // indirect
-	github.com/moby/sys/sequential v0.6.0 // indirect
-	github.com/moby/sys/user v0.4.0 // indirect
+	github.com/moby/go-archive v0.3.0 // indirect
+	github.com/moby/patternmatcher v0.6.1 // indirect
+	github.com/moby/sys/sequential v0.7.0 // indirect
+	github.com/moby/sys/user v0.4.1 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -239,7 +239,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go4.org v0.0.0-20260112195520-a5071408f32f // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260610212136-7ab31c22f7ad // indirect
@@ -271,11 +271,11 @@ require (
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/yashtewari/glob-intersection v0.2.0 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
-	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/term v0.44.0 // indirect
-	golang.org/x/text v0.39.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/term v0.45.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/genproto v0.0.0-20260406210006-6f92a3bedf2d // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 	gopkg.in/warnings.v0 v0.1.2 // indirect
