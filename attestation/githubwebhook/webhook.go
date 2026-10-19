@@ -38,7 +38,7 @@ func RepositoryFromPayload(payload map[string]any) (Repository, error) {
 
 	repoData, ok := rd.(map[string]any)
 	if !ok {
-		return repo, fmt.Errorf("repository data in payload was unexpected type: %T", repoData)
+		return repo, fmt.Errorf("repository data in payload was unexpected type: %T", rd)
 	}
 
 	name, ok := repoData["name"].(string)
@@ -72,7 +72,7 @@ func SenderFromPayload(payload map[string]any) (Sender, error) {
 
 	senderData, ok := sd.(map[string]any)
 	if !ok {
-		return sender, fmt.Errorf("sender data in payload was unexpected type: %T", senderData)
+		return sender, fmt.Errorf("sender data in payload was unexpected type: %T", sd)
 	}
 
 	login, ok := senderData["login"].(string)
@@ -184,7 +184,7 @@ func CommitsFromPayload(payload map[string]any) ([]Commit, error) {
 	for _, c := range commitsData {
 		commitData, ok := c.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("commit data is unexpected type: %T", cd)
+			return nil, fmt.Errorf("commit data is unexpected type: %T", c)
 		}
 
 		commit := Commit{}
@@ -214,16 +214,14 @@ func AuthorFromCommitData(commitData map[string]any) (Author, error) {
 	}
 
 	email, ok := authorData["email"].(string)
-	if !ok {
+	if !ok || email == "" {
 		return author, fmt.Errorf("author email missing in commit data")
 	}
 
 	author.Email = email
-	username, ok := authorData["username"].(string)
-	if !ok {
-		return author, fmt.Errorf("author username missing in commit data")
+	if username, ok := authorData["username"].(string); ok {
+		author.Username = username
 	}
 
-	author.Username = username
 	return author, nil
 }

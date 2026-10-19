@@ -120,11 +120,25 @@ func TestAddPushSubjects(t *testing.T) {
 	if _, ok := toHash["commit:c2:author:username:bob"]; !ok {
 		t.Fatalf("expected toHash to contain author username entry")
 	}
-	if _, ok := toHash["commit:c2:author:email:bob"]; !ok {
+	if _, ok := toHash["commit:c2:author:email:b@example.com"]; !ok {
 		t.Fatalf("expected toHash to contain author email entry")
 	}
 	if _, ok := subjects["commit:c2"]; !ok {
 		t.Fatalf("expected subjects to contain commit:c2")
+	}
+}
+
+func TestAuthorFromCommitDataAllowsMissingUsername(t *testing.T) {
+	payload := map[string]any{"author": map[string]any{"email": "b@example.com"}}
+	author, err := AuthorFromCommitData(payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if author.Email != "b@example.com" {
+		t.Fatalf("expected email to be preserved: %+v", author)
+	}
+	if author.Username != "" {
+		t.Fatalf("expected username to be empty when omitted: %+v", author)
 	}
 }
 

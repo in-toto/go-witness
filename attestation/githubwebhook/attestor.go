@@ -26,6 +26,7 @@ import (
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
+	"github.com/in-toto/go-witness/registry"
 	"github.com/invopop/jsonschema"
 )
 
@@ -40,7 +41,47 @@ var _ attestation.Subjecter = &Attestor{}
 func init() {
 	attestation.RegisterAttestation(Name, Type, RunType, func() attestation.Attestor {
 		return New()
-	})
+	},
+		registry.StringConfigOption[attestation.Attestor](
+			"payload",
+			"Raw GitHub webhook payload body to attest.",
+			"",
+			func(a attestation.Attestor, payload string) (attestation.Attestor, error) {
+				ghA, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a githubwebhook attestor", a)
+				}
+				WithBody([]byte(payload))(ghA)
+				return ghA, nil
+			},
+		),
+		registry.StringConfigOption[attestation.Attestor](
+			"secret",
+			"GitHub webhook secret used to verify the payload signature.",
+			"",
+			func(a attestation.Attestor, secret string) (attestation.Attestor, error) {
+				ghA, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a githubwebhook attestor", a)
+				}
+				WithSecret([]byte(secret))(ghA)
+				return ghA, nil
+			},
+		),
+		registry.StringConfigOption[attestation.Attestor](
+			"signature",
+			"GitHub webhook signature received in the X-Hub-Signature-256 header.",
+			"",
+			func(a attestation.Attestor, sig string) (attestation.Attestor, error) {
+				ghA, ok := a.(*Attestor)
+				if !ok {
+					return a, fmt.Errorf("unexpected attestor type: %T is not a githubwebhook attestor", a)
+				}
+				WithReceivedSignature(sig)(ghA)
+				return ghA, nil
+			},
+		),
+	)
 }
 
 type Attestor struct {
@@ -71,7 +112,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	}
 
 	if len(a.receivedSig) == 0 {
-		return fmt.Errorf("recieved signature is required")
+		return fmt.Errorf("received signature is required")
 	}
 
 	if err := validateWebhook(a.body, string(a.receivedSig), a.secret); err != nil {
@@ -173,8 +214,12 @@ func addPushSubjects(payload map[string]any, toHash map[string]string, subjects 
 	}
 
 	for _, commit := range commits {
-		toHash[fmt.Sprintf("commit:%v:author:username:%v", commit.Id, commit.Author.Username)] = commit.Author.Username
-		toHash[fmt.Sprintf("commit:%v:author:email:%v", commit.Id, commit.Author.Username)] = commit.Author.Email
+		if commit.Author.Username != "" {
+			toHash[fmt.Sprintf("commit:%v:author:username:%v", commit.Id, commit.Author.Username)] = commit.Author.Username
+		}
+		if commit.Author.Email != "" {
+			toHash[fmt.Sprintf("commit:%v:author:email:%v", commit.Id, commit.Author.Email)] = commit.Author.Email
+		}
 		subjects[fmt.Sprintf("commit:%v", commit.Id)] = cryptoutil.DigestSet{
 			cryptoutil.DigestValue{Hash: crypto.SHA1, GitOID: false}: commit.Id,
 		}

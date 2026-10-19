@@ -28,9 +28,9 @@ func WithSecret(secret []byte) Option {
 	}
 }
 
-func WithRecievedSignature(recievedSig string) Option {
+func WithReceivedSignature(receivedSig string) Option {
 	return func(a *Attestor) {
-		a.receivedSig = recievedSig
+		a.receivedSig = receivedSig
 	}
 }
 
