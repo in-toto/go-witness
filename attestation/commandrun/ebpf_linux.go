@@ -21,17 +21,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
-	"github.com/google/uuid"
 	"github.com/in-toto/go-witness/attestation"
 	"github.com/in-toto/go-witness/cryptoutil"
 	"github.com/in-toto/go-witness/log"
@@ -47,54 +46,28 @@ const (
 
 type digestJob struct {
 	pid  int
+	key  string // OpenedFiles key (as stored in the attestation)
 	path string
 }
 
-type fileOpenEvent struct {
-	EventType uint32
-	PID       uint32
-	TID       uint32
-	Dfd       int32
-	Error     int64
-	Path      [256]byte
+// rootID identifies a process's root directory: its mount and inode.
+type rootID struct {
+	mntID uint32
+	ino   uint64
 }
-
-// loadedEBPFTracer is the generic contract between a BPF backend and this
-// runner: an events map to read and a close function for links/objects.
-type loadedEBPFTracer struct {
-	events        *ebpf.Map
-	targetCgroups *ebpf.Map
-	close         func() error
-}
-
-func (t *loadedEBPFTracer) addCgroup(cgroupID uint64) error {
-	if t.targetCgroups == nil {
-		return fmt.Errorf("target cgroups map is not loaded")
-	}
-	var enabled uint8 = 1
-	return t.targetCgroups.Put(cgroupID, enabled)
-}
-
-const (
-	eventTypeOpen  = 1
-	eventTypeExec  = 2
-	eventTypeExit  = 3
-	eventTypeError = 4
-)
-
-const (
-	errorTypePendingOpenUpdate  = 1
-	errorTypePendingOpenMissing = 2
-)
 
 type ebpfTraceContext struct {
-	hash       []cryptoutil.DigestValue
-	processes  map[int]*ProcessInfo
-	exited     map[int]struct{}
-	exitNotify chan struct{}
-	digestJobs chan digestJob
-	digestWg   sync.WaitGroup
-	mu         sync.Mutex
+	hash        []cryptoutil.DigestValue
+	processes   map[int]*ProcessInfo
+	exited      map[int]struct{}
+	exitNotify  chan struct{}
+	digestJobs  chan digestJob
+	digestWg    sync.WaitGroup
+	mu          sync.Mutex
+	cgroupPaths map[uint64]string
+	// Open fds to every root seen in open events, so files can be hashed
+	// under it after the processes using it have exited.
+	rootFDs map[rootID]int
 }
 
 func (rc *CommandRun) usesEBPFTracing() bool {
@@ -106,10 +79,16 @@ func (rc *CommandRun) usesEBPFTracing() bool {
 // - Load selected BPF program, drain the ring-bugger that stores open/exec/exit events.
 // - Process events to populate ProcessInfo and OpenedFiles.
 func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationContext, hasPreExec bool) ([]ProcessInfo, error) {
-	cgroupFile, cgroupID, err := prepareCommandRunTraceCgroup()
+	cgroupFile, cgroupID, cgroupPath, err := prepareCommandRunTraceCgroup()
 	if err != nil {
 		return nil, err
 	}
+
+	defer func() {
+		if err := os.Remove(cgroupPath); err != nil {
+			log.Debugf("command-run: could not remove trace cgroup %s: %v", cgroupPath, err)
+		}
+	}()
 	defer cgroupFile.Close()
 
 	if c.SysProcAttr == nil {
@@ -119,17 +98,20 @@ func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationCo
 	c.SysProcAttr.CgroupFD = int(cgroupFile.Fd())
 
 	pctx := &ebpfTraceContext{
-		hash:       actx.Hashes(),
-		processes:  make(map[int]*ProcessInfo),
-		exited:     make(map[int]struct{}),
-		exitNotify: make(chan struct{}, 1),
+		hash:        actx.Hashes(),
+		processes:   make(map[int]*ProcessInfo),
+		exited:      make(map[int]struct{}),
+		exitNotify:  make(chan struct{}, 1),
+		cgroupPaths: map[uint64]string{},
+		rootFDs:     map[rootID]int{},
 	}
+	defer pctx.closeRootFDs()
 
 	// Load eBPF tracing programs.
 	var loaded *loadedEBPFTracer
 	switch rc.traceBackend {
 	case TraceBackendEBPF:
-		loaded, err = loadSyscallEBPFTracer(cgroupID)
+		loaded, err = loadSyscallEBPFTracer(cgroupID, rc.trackCgroup, rc.daemonPIDs)
 	default:
 		return nil, fmt.Errorf("unknown EBPF backend: %s", rc.traceBackend)
 	}
@@ -137,6 +119,30 @@ func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationCo
 		return nil, fmt.Errorf("load command-run eBPF file tracer: %w", err)
 	}
 	defer func() { _ = loaded.close() }()
+
+	// Populate information for daemon PIDs since we don't see an EVENT_TYPE_EXEC for these.
+	for _, pid := range rc.daemonPIDs {
+		statusBytes, _ := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+		cmdlineBytes, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		exePath, _ := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+
+		pctx.mu.Lock()
+		procInfo := pctx.getProcInfo(pid, pid)
+		if ppid, err := getPPIDFromStatus(statusBytes); err == nil {
+			procInfo.ParentPID = ppid
+		}
+		for line := range strings.SplitSeq(string(statusBytes), "\n") {
+			if comm, found := strings.CutPrefix(line, "Name:"); found {
+				procInfo.Comm = strings.TrimSpace(comm)
+				break
+			}
+		}
+		procInfo.Cmdline = argvToCmdline(cmdlineBytes)
+		procInfo.Program = exePath
+		pctx.mu.Unlock()
+
+		pctx.populateMetadataForProc(pid)
+	}
 
 	log.Infof("Using tracer: %s for command-run", rc.traceBackend)
 
@@ -151,61 +157,67 @@ func (rc *CommandRun) traceWithEBPF(c *exec.Cmd, actx *attestation.AttestationCo
 
 	var readErr error
 	readerDone := make(chan struct{})
-	var readerWg sync.WaitGroup
-	readerWg.Add(1)
 	go func() {
-		defer readerWg.Done()
 		defer close(readerDone)
 		if err := pctx.readEvents(reader); err != nil {
-			// Internal tracing errors mean the attestation may be incomplete.
-			// Stop the command and propagate the error instead of finishing with missing events.
+			// Record any errors in reading events here to avoid racing over c.Process
+			// since this goroutine runs concurrently with c.Start()
 			readErr = err
 			log.Errorf("command-run eBPF trace error: %v", err)
-			if c.Process != nil {
-				_ = c.Process.Kill()
-			}
 		}
 	}()
+
+	// Shut down in order: stop the reader first, so nothing sends on
+	// digestJobs after finishDigestWorkers closes it. Runs at most once.
+	stop := sync.OnceFunc(func() {
+		_ = reader.Close()
+		<-readerDone
+		pctx.finishDigestWorkers()
+	})
+	defer stop()
 
 	var waitErr error
 	if hasPreExec {
 		waitErr = rc.runWithPreExec(c)
 		if c.Process == nil {
-			_ = reader.Close()
-			readerWg.Wait()
-			pctx.finishDigestWorkers()
 			return nil, waitErr
 		}
 	} else {
 		if err := c.Start(); err != nil {
-			_ = reader.Close()
-			readerWg.Wait()
-			pctx.finishDigestWorkers()
 			return nil, err
 		}
+
+		// Stop the command if tracing failed, instead of finishing with missing
+		// events.
+		go func() {
+			<-readerDone
+			if readErr != nil {
+				_ = c.Process.Kill()
+			}
+		}()
+
 		waitErr = c.Wait()
-		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			rc.ExitCode = exitErr.ExitCode()
-		} else if waitErr == nil && c.ProcessState != nil {
-			rc.ExitCode = c.ProcessState.ExitCode()
-		}
+		rc.ExitCode = exitCodeFromErr(waitErr, c)
 	}
 
 	pctx.mu.Lock()
-	pctx.getProcInfo(c.Process.Pid)
+	pctx.getProcInfo(c.Process.Pid, c.Process.Pid)
 	pctx.mu.Unlock()
 
 	// Process completion does not mean userspace has drained every event already
 	// queued in the ring buffer. Wait until the reader processes the main task's
-	// sched_process_exit event; earlier open events precede it in the buffer.
+	// sched_process_exit event
 	exitSeen := pctx.waitForExit(c.Process.Pid, readerDone)
 
-	_ = reader.Close()
-	readerWg.Wait()
-	pctx.finishDigestWorkers()
+	stop()
 
 	if readErr != nil {
 		return pctx.procInfoArray(), readErr
+	}
+
+	// Fail if ringbuffer failed to reserve space for an event.
+	if err := loaded.checkRingbufDrops(); err != nil {
+		return pctx.procInfoArray(), err
 	}
 
 	if !exitSeen {
@@ -248,10 +260,23 @@ func (p *ebpfTraceContext) readEvents(reader *ringbuf.Reader) error {
 			return formatEBPFTraceError(event)
 		}
 
+		if event.EventType == eventTypeCgroupMkdir {
+			path := cleanCString(event.payload())
+			p.mu.Lock()
+			p.cgroupPaths[event.CgroupID] = path
+			p.mu.Unlock()
+			log.Debugf("command-run: tracking cgroup %d (%s), created by host pid %d", event.CgroupID, path, event.HostPID)
+			continue
+		}
+
+		// Task is outside witness's PID namespace; /proc can't be used to resolve its files.
+		if event.HostPID == 0 {
+			continue
+		}
+
+		// Use Host coded PID/TIDs.
 		var shouldEnrich bool
-		var exitedPID int
-		pid := int(event.PID)
-		var digestPath string
+		pid := int(event.HostPID)
 
 		var procInfo *ProcessInfo
 
@@ -259,59 +284,73 @@ func (p *ebpfTraceContext) readEvents(reader *ringbuf.Reader) error {
 
 		switch event.EventType {
 		case eventTypeOpen:
-			pid = int(event.TID)
-			procInfo = p.getProcInfo(pid)
+			procInfo = p.getProcInfo(pid, int(event.PID))
+			procInfo.CgroupID = event.CgroupID
 
-			path := cleanCString(event.Path[:])
+			if event.DataLen > 0 {
+				key, hashPath := p.openEventPaths(pid, &event)
+				if !skipDigestPath(key) {
+					if _, exists := procInfo.OpenedFiles[key]; !exists {
+						procInfo.OpenedFiles[key] = nil
 
-			if path != "" {
-				openPath := resolveOpenPath(int(event.PID), int(event.Dfd), path)
-				if _, exists := procInfo.OpenedFiles[openPath]; !exists {
-					procInfo.OpenedFiles[openPath] = nil
-					digestPath = openPath
+						// Enqueue a digest job for the given (pid, key, path).
+						// Digest calculation can block on disk I/O, so keep the ring-buffer
+						// reader moving.
+						select {
+						case p.digestJobs <- digestJob{pid: pid, key: key, path: hashPath}:
+						default:
+						}
+					}
+				}
+			}
+
+		case eventTypeOpenRaw:
+			// BPF couldn't resolve the fd, so this is the path as passed to
+			// open. Recorded without a digest.
+			procInfo = p.getProcInfo(pid, int(event.PID))
+			procInfo.CgroupID = event.CgroupID
+			key := cleanCString(event.payload())
+			if key != "" && !skipDigestPath(key) {
+				if _, exists := procInfo.OpenedFiles[key]; !exists {
+					procInfo.OpenedFiles[key] = nil
 				}
 			}
 
 		case eventTypeExec:
-			procInfo = p.getProcInfo(pid)
+			procInfo = p.getProcInfo(pid, int(event.PID))
+			procInfo.CgroupID = event.CgroupID
+			program, argv, _ := bytes.Cut(event.payload(), []byte{0})
 			// Fallback from the eBPF event. Might be overwritten by /proc data later.
-			if program := cleanCString(event.Path[:]); program != "" {
-				procInfo.Program = program
-				procInfo.Comm = filepath.Base(program)
+			if len(program) > 0 {
+				procInfo.Program = string(program)
+				procInfo.Comm = filepath.Base(procInfo.Program)
 			}
+			procInfo.Cmdline = argvToCmdline(argv)
 			shouldEnrich = true
+
 		case eventTypeExit:
 			procInfo = p.processes[pid]
-			if procInfo != nil {
-				shouldEnrich = true
-			}
-			exitedPID = pid
-		}
 
-		p.mu.Unlock()
+		case eventTypeGroupExit:
+			procInfo = p.processes[pid]
 
-		if digestPath != "" {
-			// Digest calculation can block on disk I/O. Queue it after the
-			// event update so the ring-buffer reader keeps moving.
-			p.enqueueDigestJob(digestJob{pid: pid, path: digestPath})
-		}
+			// Mark a PID as exited and send an exitNotify.
+			p.exited[pid] = struct{}{}
 
-		if shouldEnrich {
-			// /proc enrichment is attestation-schema work, not BPF plumbing.
-			// Keep it out of the locked event update path.
-			p.populateMetadataForProc(pid, event.EventType == eventTypeExec)
-		}
-
-		if exitedPID != 0 {
-			p.mu.Lock()
-			p.exited[exitedPID] = struct{}{}
-			p.mu.Unlock()
-
-			// One notification is enough to wake the waiter, which rechecks the set.
 			select {
 			case p.exitNotify <- struct{}{}:
 			default:
 			}
+		}
+
+		if procInfo != nil && procInfo.ParentPID == 0 {
+			procInfo.ParentPID = int(event.HostPPID)
+		}
+
+		p.mu.Unlock()
+
+		if shouldEnrich {
+			p.populateMetadataForProc(pid)
 		}
 	}
 }
@@ -348,39 +387,49 @@ func (p *ebpfTraceContext) waitForExit(pid int, readerDone <-chan struct{}) bool
 	}
 }
 
-func cleanCString(data []byte) string {
-	data = bytes.TrimLeft(data, "\x00")
-	if i := bytes.IndexByte(data, 0); i >= 0 {
-		data = data[:i]
+// openEventPaths returns the OpenedFiles key and the path to hash for an open
+// event. The key is the path BPF resolved, and it is hashed under the
+// process's root via an fd held open since that root was first seen.
+func (p *ebpfTraceContext) openEventPaths(pid int, event *fileOpenEvent) (key, hashPath string) {
+	parts := strings.Split(strings.TrimRight(string(event.payload()), "\x00"), "\x00")
+	slices.Reverse(parts)
+	key = "/" + strings.Join(parts, "/")
+
+	if fd, ok := p.rootFD(pid, rootID{event.RootMntID, event.RootIno}); ok {
+		return key, fmt.Sprintf("/proc/self/fd/%d%s", fd, key)
 	}
-	return strings.TrimSpace(string(data))
+	return key, filepath.Join(fmt.Sprintf("/proc/%d/root", pid), key)
 }
 
-func resolveOpenPath(pid, dfd int, path string) string {
-	if filepath.IsAbs(path) {
-		return path
+// rootFD returns an fd for the root identified by id, opening it from pid's
+// /proc entry the first time that root is seen.
+func (p *ebpfTraceContext) rootFD(pid int, id rootID) (int, bool) {
+	if fd, ok := p.rootFDs[id]; ok {
+		return fd, true
 	}
 
-	procPath := fmt.Sprintf("/proc/%d/fd/%d", pid, dfd)
-	if dfd == unix.AT_FDCWD {
-		procPath = fmt.Sprintf("/proc/%d/cwd", pid)
+	fd, err := unix.Open(fmt.Sprintf("/proc/%d/root", pid), unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return 0, false
 	}
-
-	if base, err := os.Readlink(procPath); err == nil {
-		return filepath.Join(base, path)
+	// pid may have exited (and the pid been reused) or changed root since the
+	// event, so only keep the fd if it is the root the event was resolved in.
+	var stx unix.Statx_t
+	if err := unix.Statx(fd, "", unix.AT_EMPTY_PATH, unix.STATX_INO|unix.STATX_MNT_ID, &stx); err != nil ||
+		stx.Mnt_id != uint64(id.mntID) || stx.Ino != id.ino {
+		_ = unix.Close(fd)
+		return 0, false
 	}
-
-	return path
+	p.rootFDs[id] = fd
+	return fd, true
 }
 
-func formatEBPFTraceError(event fileOpenEvent) error {
-	switch event.Error {
-	case errorTypePendingOpenUpdate:
-		return fmt.Errorf("command-run eBPF trace failed to store pending open for pid %d tid %d", event.PID, event.TID)
-	case errorTypePendingOpenMissing:
-		return fmt.Errorf("command-run eBPF trace missing pending open for pid %d tid %d", event.PID, event.TID)
-	default:
-		return fmt.Errorf("command-run eBPF trace failed to capture opened filename for pid %d tid %d: %d", event.PID, event.TID, event.Error)
+func (p *ebpfTraceContext) closeRootFDs() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for id, fd := range p.rootFDs {
+		_ = unix.Close(fd)
+		delete(p.rootFDs, id)
 	}
 }
 
@@ -391,7 +440,12 @@ func (p *ebpfTraceContext) startDigestWorkers(count int) {
 	p.digestJobs = make(chan digestJob, commandRunDigestJobBuffer)
 	for range count {
 		p.digestWg.Add(1)
-		go p.digestWorker()
+		go func() {
+			defer p.digestWg.Done()
+			for job := range p.digestJobs {
+				p.digestOne(job)
+			}
+		}()
 	}
 }
 
@@ -400,44 +454,48 @@ func (p *ebpfTraceContext) finishDigestWorkers() {
 	p.digestWg.Wait()
 }
 
-// enqueueDigestJob is non-blocking by design. Dropping a digest job is less bad
-// than stalling the ring-buffer reader and losing later file events.
-func (p *ebpfTraceContext) enqueueDigestJob(job digestJob) {
-	select {
-	case p.digestJobs <- job:
-	default:
+func (p *ebpfTraceContext) digestOne(job digestJob) {
+	digest, err := cryptoutil.CalculateDigestSetFromFile(job.path, p.hash)
+	if errors.Is(err, fs.ErrNotExist) {
+		// Opened by the process, but gone (or its /proc entry is) by now. Keep
+		// it with an empty digest: the open itself is still evidence.
+		log.Debugf("command-run: keeping file without digest, no longer reachable: %s", job.path)
+		return
 	}
-}
-
-func (p *ebpfTraceContext) digestWorker() {
-	defer p.digestWg.Done()
-	for job := range p.digestJobs {
-		digest, err := cryptoutil.CalculateDigestSetFromFile(job.path, p.hash)
-		if err != nil {
-			continue
-		}
-
+	if err != nil {
+		log.Debugf("command-run: marking unhashable file for removal: %s", job.path)
+		// Not a regular file (e.g. FIFO, socket, directory).
 		p.mu.Lock()
 		if procInfo := p.processes[job.pid]; procInfo != nil {
-			if procInfo.OpenedFiles[job.path] == nil {
-				procInfo.OpenedFiles[job.path] = digest
+			if procInfo.OpenedFiles[job.key] == nil {
+				procInfo.OpenedFiles[job.key] = cryptoutil.DigestSet{}
 			}
 		}
 		p.mu.Unlock()
+		return
 	}
+
+	p.mu.Lock()
+	if procInfo := p.processes[job.pid]; procInfo != nil {
+		if procInfo.OpenedFiles[job.key] == nil {
+			procInfo.OpenedFiles[job.key] = digest
+		}
+	}
+	p.mu.Unlock()
 }
 
 // getProcInfo and the helpers below translate raw trace events into the
 // command-run attestation schema. Generic BPF helpers are kept at the bottom of
 // this file.
-func (p *ebpfTraceContext) getProcInfo(pid int) *ProcessInfo {
-	procInfo, ok := p.processes[pid]
+func (p *ebpfTraceContext) getProcInfo(hostKey, nsID int) *ProcessInfo {
+	procInfo, ok := p.processes[hostKey]
 	if !ok {
 		procInfo = &ProcessInfo{
-			ProcessID:   pid,
-			OpenedFiles: make(map[string]cryptoutil.DigestSet),
+			ProcessID:     nsID,
+			HostProcessID: hostKey,
+			OpenedFiles:   make(map[string]cryptoutil.DigestSet),
 		}
-		p.processes[pid] = procInfo
+		p.processes[hostKey] = procInfo
 	}
 
 	return procInfo
@@ -451,21 +509,16 @@ func (p *ebpfTraceContext) procInfoArray() []ProcessInfo {
 
 	processes := make([]ProcessInfo, 0, len(p.processes))
 	for _, procInfo := range p.processes {
-		// Drop obvious helper/kernel-worker style tasks that ptrace flow
-		// typically does not materialize as command-run processes.
-		if strings.HasPrefix(procInfo.Comm, "iou-sqp-") {
-			continue
-		}
-		// Filter rows produced by transient/bad metadata states.
-		if procInfo.Program != "" && !strings.HasPrefix(procInfo.Program, "/") {
-			if procInfo.Comm == "" && procInfo.Cmdline == "" && len(procInfo.OpenedFiles) == 0 {
-				continue
+		// Prune files marked unhashable (empty digest)
+		// Files that were hashable but gone before hashing are kept (nil digest)
+		for key, digest := range procInfo.OpenedFiles {
+			if digest != nil && len(digest) == 0 {
+				delete(procInfo.OpenedFiles, key)
 			}
 		}
-		// Minimal normalization: if program is missing but comm has a simple
-		// executable-like token, promote comm to program for ptrace-like output.
-		if procInfo.Program == "" && procInfo.Comm != "" && !strings.Contains(procInfo.Comm, " ") {
-			procInfo.Program = procInfo.Comm
+
+		if path := p.cgroupPaths[procInfo.CgroupID]; path != "" {
+			procInfo.CgroupPath = path
 		}
 		processes = append(processes, *procInfo)
 	}
@@ -475,38 +528,16 @@ func (p *ebpfTraceContext) procInfoArray() []ProcessInfo {
 
 // Enrich ProcessInfo from /proc. These reads are best
 // effort because exec/exit events can race with process teardown.
-func (p *ebpfTraceContext) populateMetadataForProc(pid int, overwrite bool) {
-	statusBytes, _ := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
-	cmdlineBytes, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	exePath, _ := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+func (p *ebpfTraceContext) populateMetadataForProc(pid int) {
+	cgroupBytes, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
+	cgroupPath := parseCgroupPath(cgroupBytes)
 
-	var ppid int
-	if len(statusBytes) > 0 {
-		if parsedPPID, err := getPPIDFromStatus(statusBytes); err == nil {
-			ppid = parsedPPID
-		}
-	}
-	comm := ""
-	if len(statusBytes) > 0 {
-		for line := range strings.SplitSeq(string(statusBytes), "\n") {
-			if command, found := strings.CutPrefix(line, "Name:"); found {
-				comm = strings.TrimSpace(command)
-				break
-			}
-		}
-	}
-	cmdline := ""
-	if len(cmdlineBytes) > 0 {
-		parts := strings.Split(strings.TrimRight(string(cmdlineBytes), "\x00"), "\x00")
-		if len(parts) > 0 && parts[0] != "" {
-			cmdline = strings.Join(parts, " ")
-		}
-	}
 	var exeDigest cryptoutil.DigestSet
-	if exePath != "" {
-		if digest, err := cryptoutil.CalculateDigestSetFromFile(exePath, p.hash); err == nil {
-			exeDigest = digest
-		}
+	// Hash through the magic link, not the readlink result: the link opens the
+	// running binary even in another mount namespace. Fails once the process
+	// has exited, which is acceptable.
+	if digest, err := cryptoutil.CalculateDigestSetFromFile(fmt.Sprintf("/proc/%d/exe", pid), p.hash); err == nil {
+		exeDigest = digest
 	}
 
 	p.mu.Lock()
@@ -515,50 +546,11 @@ func (p *ebpfTraceContext) populateMetadataForProc(pid int, overwrite bool) {
 	if !ok {
 		return
 	}
-	if procInfo.ParentPID == 0 && ppid > 0 {
-		procInfo.ParentPID = ppid
+
+	if procInfo.CgroupPath == "" && cgroupPath != "" {
+		procInfo.CgroupPath = cgroupPath
 	}
-	if (overwrite || procInfo.Comm == "") && comm != "" {
-		procInfo.Comm = comm
-	}
-	if (overwrite || procInfo.Cmdline == "") && cmdline != "" {
-		procInfo.Cmdline = cmdline
-	}
-	if (overwrite || procInfo.Program == "") && exePath != "" {
-		procInfo.Program = exePath
-	}
-	if (overwrite || procInfo.ExeDigest == nil) && exeDigest != nil {
+	if exeDigest != nil {
 		procInfo.ExeDigest = exeDigest
-	}
-}
-
-// Generic eBPF plumbing. cgroup id is used to filter for commands being traced.
-func prepareCommandRunTraceCgroup() (*os.File, uint64, error) {
-	// Create a randomly generated cgroup path to support parallel witness runs
-	cgroupPath := fmt.Sprintf("%s-%s", commandRunTraceCgroupPath, uuid.NewString())
-
-	if err := os.MkdirAll(cgroupPath, 0o755); err != nil {
-		return nil, 0, fmt.Errorf("create command-run trace cgroup: %w", err)
-	}
-
-	file, err := os.Open(cgroupPath)
-	if err != nil {
-		return nil, 0, fmt.Errorf("open command-run trace cgroup: %w", err)
-	}
-
-	var stat unix.Stat_t
-	if err := unix.Stat(cgroupPath, &stat); err != nil {
-		file.Close()
-		return nil, 0, fmt.Errorf("stat command-run trace cgroup: %w", err)
-	}
-
-	return file, stat.Ino, nil
-}
-
-func closeLinks(links []link.Link) {
-	for _, l := range links {
-		if l != nil {
-			_ = l.Close()
-		}
 	}
 }

@@ -18,8 +18,6 @@ type filetraceSyscallPendingOpen struct {
 	Filename uint64
 	Dfd      int32
 	_        [4]byte
-	Error    int64
-	Path     [256]int8
 }
 
 // loadFiletraceSyscall returns the embedded CollectionSpec for filetraceSyscall.
@@ -64,6 +62,8 @@ type filetraceSyscallSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type filetraceSyscallProgramSpecs struct {
+	TraceCgroupMkdir      *ebpf.ProgramSpec `ebpf:"trace_cgroup_mkdir"`
+	TraceCgroupRmdir      *ebpf.ProgramSpec `ebpf:"trace_cgroup_rmdir"`
 	TraceOpen             *ebpf.ProgramSpec `ebpf:"trace_open"`
 	TraceOpenExit         *ebpf.ProgramSpec `ebpf:"trace_open_exit"`
 	TraceOpenat           *ebpf.ProgramSpec `ebpf:"trace_openat"`
@@ -72,14 +72,17 @@ type filetraceSyscallProgramSpecs struct {
 	TraceOpenatExit       *ebpf.ProgramSpec `ebpf:"trace_openat_exit"`
 	TraceSchedProcessExec *ebpf.ProgramSpec `ebpf:"trace_sched_process_exec"`
 	TraceSchedProcessExit *ebpf.ProgramSpec `ebpf:"trace_sched_process_exit"`
+	TraceSchedProcessFork *ebpf.ProgramSpec `ebpf:"trace_sched_process_fork"`
 }
 
 // filetraceSyscallMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type filetraceSyscallMapSpecs struct {
+	DaemonTasks   *ebpf.MapSpec `ebpf:"daemon_tasks"`
 	Events        *ebpf.MapSpec `ebpf:"events"`
 	PendingOpens  *ebpf.MapSpec `ebpf:"pending_opens"`
+	RingbufDrops  *ebpf.MapSpec `ebpf:"ringbuf_drops"`
 	TargetCgroups *ebpf.MapSpec `ebpf:"target_cgroups"`
 }
 
@@ -87,6 +90,7 @@ type filetraceSyscallMapSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type filetraceSyscallVariableSpecs struct {
+	WitnessPidnsIno *ebpf.VariableSpec `ebpf:"witness_pidns_ino"`
 }
 
 // filetraceSyscallObjects contains all objects after they have been loaded into the kernel.
@@ -109,15 +113,19 @@ func (o *filetraceSyscallObjects) Close() error {
 //
 // It can be passed to loadFiletraceSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type filetraceSyscallMaps struct {
+	DaemonTasks   *ebpf.Map `ebpf:"daemon_tasks"`
 	Events        *ebpf.Map `ebpf:"events"`
 	PendingOpens  *ebpf.Map `ebpf:"pending_opens"`
+	RingbufDrops  *ebpf.Map `ebpf:"ringbuf_drops"`
 	TargetCgroups *ebpf.Map `ebpf:"target_cgroups"`
 }
 
 func (m *filetraceSyscallMaps) Close() error {
 	return _FiletraceSyscallClose(
+		m.DaemonTasks,
 		m.Events,
 		m.PendingOpens,
+		m.RingbufDrops,
 		m.TargetCgroups,
 	)
 }
@@ -126,12 +134,15 @@ func (m *filetraceSyscallMaps) Close() error {
 //
 // It can be passed to loadFiletraceSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type filetraceSyscallVariables struct {
+	WitnessPidnsIno *ebpf.Variable `ebpf:"witness_pidns_ino"`
 }
 
 // filetraceSyscallPrograms contains all programs after they have been loaded into the kernel.
 //
 // It can be passed to loadFiletraceSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type filetraceSyscallPrograms struct {
+	TraceCgroupMkdir      *ebpf.Program `ebpf:"trace_cgroup_mkdir"`
+	TraceCgroupRmdir      *ebpf.Program `ebpf:"trace_cgroup_rmdir"`
 	TraceOpen             *ebpf.Program `ebpf:"trace_open"`
 	TraceOpenExit         *ebpf.Program `ebpf:"trace_open_exit"`
 	TraceOpenat           *ebpf.Program `ebpf:"trace_openat"`
@@ -140,10 +151,13 @@ type filetraceSyscallPrograms struct {
 	TraceOpenatExit       *ebpf.Program `ebpf:"trace_openat_exit"`
 	TraceSchedProcessExec *ebpf.Program `ebpf:"trace_sched_process_exec"`
 	TraceSchedProcessExit *ebpf.Program `ebpf:"trace_sched_process_exit"`
+	TraceSchedProcessFork *ebpf.Program `ebpf:"trace_sched_process_fork"`
 }
 
 func (p *filetraceSyscallPrograms) Close() error {
 	return _FiletraceSyscallClose(
+		p.TraceCgroupMkdir,
+		p.TraceCgroupRmdir,
 		p.TraceOpen,
 		p.TraceOpenExit,
 		p.TraceOpenat,
@@ -152,6 +166,7 @@ func (p *filetraceSyscallPrograms) Close() error {
 		p.TraceOpenatExit,
 		p.TraceSchedProcessExec,
 		p.TraceSchedProcessExit,
+		p.TraceSchedProcessFork,
 	)
 }
 
