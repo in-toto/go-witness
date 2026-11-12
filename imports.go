@@ -20,6 +20,7 @@ import (
 	_ "github.com/in-toto/go-witness/attestation/aws-codebuild"
 	_ "github.com/in-toto/go-witness/attestation/aws-iid"
 	_ "github.com/in-toto/go-witness/attestation/commandrun"
+	_ "github.com/in-toto/go-witness/attestation/configuration"
 	_ "github.com/in-toto/go-witness/attestation/docker"
 	_ "github.com/in-toto/go-witness/attestation/environment"
 	_ "github.com/in-toto/go-witness/attestation/gcp-iit"

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/Attestor",
+  "$defs": {
+    "Attestor": {
+      "properties": {
+        "command_line": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resolved": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ResolvedValue"
+          },
+          "type": "object"
+        },
+        "config_path": {
+          "type": "string"
+        },
+        "config_digest": {
+          "$ref": "#/$defs/DigestSet"
+        },
+        "config_content": {
+          "type": "object"
+        },
+        "attestors": {
+          "additionalProperties": {
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "working_directory": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "DigestSet": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "ResolvedValue": {
+      "properties": {
+        "value": true,
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "value"
+      ]
+    }
+  }
+}

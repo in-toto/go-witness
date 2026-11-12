@@ -43,9 +43,10 @@ const (
 // This is a hacky way to create a compile time error in case the attestor
 // doesn't implement the expected interfaces.
 var (
-	_ attestation.Attestor  = &Attestor{}
-	_ attestation.Subjecter = &Attestor{}
-	_ attestation.Producer  = &Attestor{}
+	_ attestation.Attestor   = &Attestor{}
+	_ attestation.Subjecter  = &Attestor{}
+	_ attestation.Producer   = &Attestor{}
+	_ attestation.Configurer = &Attestor{}
 )
 
 type ProductAttestor interface {
@@ -167,6 +168,13 @@ func New(opts ...Option) *Attestor {
 	}
 
 	return a
+}
+
+func (a *Attestor) Configuration() map[string]any {
+	return map[string]any{
+		"include-glob": a.includeGlob,
+		"exclude-glob": a.excludeGlob,
+	}
 }
 
 func (a *Attestor) Schema() *jsonschema.Schema {
