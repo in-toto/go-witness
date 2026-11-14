@@ -19,8 +19,8 @@
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
 
-/* Cgroup allowlist populated by userspace. Every program uses it to ignore
- * processes outside the cgroups being traced.
+/* Cgroup allowlist populated by userspace. The build command being traced
+ * is run within this.
  */
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
@@ -29,6 +29,17 @@ struct {
 	__type(value, __u8);
 } target_cgroups SEC(".maps");
 
+/* TGIDs of daemons and their descendants, as seen from witness's PID namespace. */
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 8192);
+	__type(key, __u32);
+	__type(value, __u8);
+} daemon_tasks SEC(".maps");
+
+/* Identity of witness's own PID namespace. */
+const volatile __u64 witness_pidns_ino = 0;
+
 /* Shared ring-buffer payload consumed by ebpf_linux.go. Keep this layout in
  * sync with fileOpenEvent on the Go side.
  */
@@ -36,16 +47,28 @@ struct file_open_event {
 	__u32 event_type;
 	__u32 pid;
 	__u32 tid;
-	__s32 dfd;
-	__s64 error;
-	char path[256];
+	__u32 host_pid;
+	__u32 host_tid;
+	__u32 host_ppid;
+	__u64 cgroup_id;
+	__u32 data_len;
+	__u32 root_mnt_id;
+	__u64 root_ino; // For open events, the task's root ino used to resolve relative paths.
+	__s64 error;     // For error events, an error_type, or a negative errno.
+	char data[4096]; // For open and cgroup mkdir: Store path, For exec: store <program>\0[argv...]
 };
+
+#define EXEC_PART 2048 /* cap on each of exec's filename and argv */
+#define EXEC_PART_MAX (EXEC_PART - 1)
 
 enum event_type {
 	EVENT_TYPE_OPEN = 1,
 	EVENT_TYPE_EXEC = 2,
 	EVENT_TYPE_EXIT = 3,
 	EVENT_TYPE_ERROR = 4,
+	EVENT_TYPE_CGROUP_MKDIR = 5,
+	EVENT_TYPE_GROUP_EXIT = 6,
+	EVENT_TYPE_OPEN_RAW = 7, // data is the `path` as passed to open(), not resolved
 };
 
 enum error_type {
@@ -69,17 +92,78 @@ struct {
 	__uint(max_entries, 1 << 29);
 } events SEC(".maps");
 
-static __always_inline int commandrun_in_target_cgroup() {
-	__u64 cgroup_id = bpf_get_current_cgroup_id();
-	__u8 *enabled = bpf_map_lookup_elem(&target_cgroups, &cgroup_id);
-	return enabled != 0;
+/* Count of events lost due to errors with reserving space in the ringbuffer.
+ * Such errors cannot be carried through the ringbuffer itself so a side-channel
+ * is needed.
+ *
+ * Userspace asserts this value to be 0 for successful traces.
+ */
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u64);
+} ringbuf_drops SEC(".maps");
+
+/* Return PIDs as seen from witness's PID namespace
+ * (replaces bpf_get_ns_current_pid_tgid()).
+ */
+static __always_inline __u32 witness_ns_nr(struct pid *pid) {
+	__u32 level = BPF_CORE_READ(pid, level);
+
+	for (__u32 i = 0; i <= 32; i++) {
+		if (i > level) {
+			break;
+		}
+		struct pid_namespace *ns = BPF_CORE_READ(pid, numbers[i].ns);
+		if (BPF_CORE_READ(ns, ns.inum) == witness_pidns_ino) {
+			return BPF_CORE_READ(pid, numbers[i].nr);
+		}
+	}
+	return 0;
 }
 
-/* Return the current task's TGID/TID as seen from its innermost PID namespace,
- * packed in the same format as bpf_get_current_pid_tgid().
- *
- * Needed for when witness is running in a container to avoid reporting host-POV PIDs.
- */
+static __always_inline __u32 witness_ns_tgid(struct task_struct *task) {
+	return witness_ns_nr(BPF_CORE_READ(task, group_leader, thread_pid));
+}
+
+static __always_inline __u32 witness_ns_tid(struct task_struct *task) {
+	return witness_ns_nr(BPF_CORE_READ(task, thread_pid));
+}
+
+static __always_inline __u32 current_witness_ns_tgid(void) {
+	return witness_ns_tgid((struct task_struct *)bpf_get_current_task());
+}
+
+static __always_inline int is_daemon_task(void) {
+	__u32 tgid = current_witness_ns_tgid();
+	return tgid && bpf_map_lookup_elem(&daemon_tasks, &tgid) != 0;
+}
+
+static __always_inline int commandrun_should_trace() {
+	__u64 cgroup_id = bpf_get_current_cgroup_id();
+	if (bpf_map_lookup_elem(&target_cgroups, &cgroup_id)) {
+		return 1;
+	}
+	
+	return is_daemon_task();
+}
+
+/* Called during fork/exec to mark child processes and tasks of daemon PIDs. */
+static __always_inline void propagate_daemon_task(__u32 parent_tgid, __u32 pid) {
+	if (!pid || bpf_map_lookup_elem(&daemon_tasks, &pid)) {
+		return;
+	}
+
+	if (!bpf_map_lookup_elem(&daemon_tasks, &parent_tgid)) {
+		return;
+	}
+
+	__u8 enabled = 1;
+	bpf_map_update_elem(&daemon_tasks, &pid, &enabled, BPF_ANY);
+}
+
+/* Return the current task's TGID/TID as seen from the innermost PID namespace */
 static __always_inline __u64 get_ns_pidtgid(void) {
 	struct task_struct *task =
 	    (struct task_struct *)bpf_get_current_task();
@@ -98,28 +182,59 @@ static __always_inline __u64 get_ns_pidtgid(void) {
 	return ((__u64)tgid << 32) | tid;
 }
 
+/* Populates both the namespace-local and host-real PID/TID pairs and host PPID on an
+ * event.
+ */
+static __always_inline void set_event_pids(struct file_open_event *event) {
+	__u64 ns_pid_tgid = get_ns_pidtgid();
+	event->pid = ns_pid_tgid >> 32;
+	event->tid = ns_pid_tgid;
+
+	// Resolve PID/TID relative to witness's pid namespace; 0 if invisible there.
+	struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+	event->host_pid = witness_ns_tgid(task);
+	event->host_tid = witness_ns_tid(task);
+
+	struct task_struct *parent = BPF_CORE_READ(task, real_parent);
+	event->host_ppid = parent ? witness_ns_tgid(parent) : 0;
+}
+
+/* Reserves and initializes an event. 
+ *
+ * A full ring buffer is counted in ringbuf_drops and returns NULL.
+ */
+static __always_inline struct file_open_event *reserve_event(enum event_type type) {
+	struct file_open_event *event =
+	    bpf_ringbuf_reserve(&events, sizeof(*event), 0);
+	if (!event) {
+		__u32 key = 0;
+		__u64 *drops = bpf_map_lookup_elem(&ringbuf_drops, &key);
+		if (drops) {
+			__sync_fetch_and_add(drops, 1);
+		}
+		return NULL;
+	}
+
+	event->event_type = type;
+	set_event_pids(event);
+	event->cgroup_id = bpf_get_current_cgroup_id();
+	event->error = 0;
+	event->data_len = 0;
+
+	return event;
+}
+
 /* Internal failures are stored as special Error events so that the buffer-draining
  * code can fail the attestor. This ensures that we do not silently swallow errors
  * that might cause the attestor to be incomplete.
  */
 static __always_inline void submit_error_event(__s64 error) {
-	if (!commandrun_in_target_cgroup()) {
-		return;
-	}
-
-	struct file_open_event *event =
-	    bpf_ringbuf_reserve(&events, sizeof(*event), 0);
+	struct file_open_event *event = reserve_event(EVENT_TYPE_ERROR);
 	if (!event) {
 		return;
 	}
 
-	__u64 pid_tgid = get_ns_pidtgid();
-	event->event_type = EVENT_TYPE_ERROR;
-	event->pid = pid_tgid >> 32;
-	event->tid = pid_tgid;
-	event->dfd = 0;
 	event->error = error;
-	event->path[0] = '\0';
 	bpf_ringbuf_submit(event, 0);
 }
 

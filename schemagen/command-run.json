@@ -50,6 +50,15 @@
         "parentpid": {
           "type": "integer"
         },
+        "hostprocessid": {
+          "type": "integer"
+        },
+        "cgroupid": {
+          "type": "integer"
+        },
+        "cgrouppath": {
+          "type": "string"
+        },
         "programdigest": {
           "$ref": "#/$defs/DigestSet"
         },

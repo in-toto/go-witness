@@ -24,20 +24,27 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	commandrunbpf "github.com/in-toto/go-witness/attestation/commandrun/bpf"
+	"golang.org/x/sys/unix"
 )
 
-// File tracing for command-run using syscall tracepoints. Tracepoints are attached to both
-// sys_entry and sys_exit for open* and exec/exit which emit these events through a shared
-// ring buffer.
-// open* are used for tracking OpenedFiles, exec/exit to track lifecycle events.
-//
+// eBPF tracepoints for file and process tracing.
 // Args:
 //
-//	cgroupID:	cgroup for "/sys/fs/cgroup/witness-tracing" used to filter for events of interest.
-func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
+//	cgroupID:    cgroup for "/sys/fs/cgroup/witness-tracing" used to filter for events of interest.
+//	trackCgroup: attach cgroup tracing programs.
+//	daemonPIDs:  host PIDs of daemons.
+func loadSyscallEBPFTracer(cgroupID uint64, trackCgroup bool, daemonPIDs []int) (*loadedEBPFTracer, error) {
 	spec, err := commandrunbpf.LoadFiletraceSyscall()
 	if err != nil {
 		return nil, fmt.Errorf("load spec: %w", err)
+	}
+
+	var pidNS unix.Stat_t
+	if err := unix.Stat("/proc/self/ns/pid", &pidNS); err != nil {
+		return nil, fmt.Errorf("stat witness pid namespace: %w", err)
+	}
+	if err := spec.Variables["witness_pidns_ino"].Set(pidNS.Ino); err != nil {
+		return nil, fmt.Errorf("set witness pid namespace ino: %w", err)
 	}
 
 	var objs commandrunbpf.FiletraceSyscallObjects
@@ -45,8 +52,8 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 		return nil, fmt.Errorf("load objects: %w", err)
 	}
 
-	links := make([]link.Link, 0, 8)
-	for _, tp := range []struct {
+	// Default programs
+	tracepoints := []struct {
 		group    string
 		name     string
 		program  *ebpf.Program
@@ -60,7 +67,28 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 		{"syscalls", "sys_exit_openat2", objs.TraceOpenat2Exit, false},
 		{"sched", "sched_process_exec", objs.TraceSchedProcessExec, true},
 		{"sched", "sched_process_exit", objs.TraceSchedProcessExit, true},
-	} {
+	}
+
+	// Cgroup programs
+	if trackCgroup {
+		tracepoints = append(tracepoints,
+			struct {
+				group    string
+				name     string
+				program  *ebpf.Program
+				required bool
+			}{"cgroup", "cgroup_mkdir", objs.TraceCgroupMkdir, true},
+			struct {
+				group    string
+				name     string
+				program  *ebpf.Program
+				required bool
+			}{"cgroup", "cgroup_rmdir", objs.TraceCgroupRmdir, true},
+		)
+	}
+
+	links := make([]link.Link, 0, len(tracepoints))
+	for _, tp := range tracepoints {
 		l, err := link.Tracepoint(tp.group, tp.name, tp.program, nil)
 		if err != nil {
 			if !tp.required && errors.Is(err, os.ErrNotExist) {
@@ -73,9 +101,23 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 		links = append(links, l)
 	}
 
+	// Raw tracepoint: gives access to the child task_struct.
+	forkLink, err := link.AttachRawTracepoint(link.RawTracepointOptions{
+		Name:    "sched_process_fork",
+		Program: objs.TraceSchedProcessFork,
+	})
+	if err != nil {
+		closeLinks(links)
+		objs.Close()
+		return nil, fmt.Errorf("attach raw sched_process_fork: %w", err)
+	}
+	links = append(links, forkLink)
+
 	tracer := &loadedEBPFTracer{
 		events:        objs.Events,
 		targetCgroups: objs.TargetCgroups,
+		daemonTasks:   objs.DaemonTasks,
+		ringbufDrops:  objs.RingbufDrops,
 		close: func() error {
 			closeLinks(links)
 			return objs.Close()
@@ -84,6 +126,13 @@ func loadSyscallEBPFTracer(cgroupID uint64) (*loadedEBPFTracer, error) {
 	if err := tracer.addCgroup(cgroupID); err != nil {
 		_ = tracer.close()
 		return nil, fmt.Errorf("add target cgroup: %w", err)
+	}
+
+	for _, pid := range daemonPIDs {
+		if err := tracer.addDaemonPID(pid); err != nil {
+			_ = tracer.close()
+			return nil, fmt.Errorf("add daemon pid %d: %w", pid, err)
+		}
 	}
 
 	return tracer, nil
