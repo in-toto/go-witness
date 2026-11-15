@@ -85,7 +85,7 @@ func (a *Attestor) Attest(ctx *attestation.AttestationContext) error {
 	a.Lockfiles = []LockfileInfo{}
 
 	for _, pattern := range lockfilePatterns {
-		matches, err := filepath.Glob(pattern)
+		matches, err := filepath.Glob(filepath.Join(ctx.WorkingDir(), pattern))
 		if err != nil {
 			return fmt.Errorf("error searching for %s: %w", pattern, err)
 		}

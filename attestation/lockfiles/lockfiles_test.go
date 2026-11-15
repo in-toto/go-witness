@@ -91,6 +91,36 @@ func TestAttestor_Attest(t *testing.T) {
 	}
 }
 
+func TestAttestor_AttestUsesWorkingDir(t *testing.T) {
+	workingDir := t.TempDir()
+	content := "test content for go.sum"
+	if err := os.WriteFile(filepath.Join(workingDir, "go.sum"), []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	ctx, err := attestation.NewContext("test", []attestation.Attestor{}, attestation.WithWorkingDir(workingDir))
+	if err != nil {
+		t.Fatalf("Failed to create attestation context: %v", err)
+	}
+
+	attestor := &Attestor{}
+	if err := attestor.Attest(ctx); err != nil {
+		t.Fatalf("Attest failed: %v", err)
+	}
+
+	if len(attestor.Lockfiles) != 1 {
+		t.Fatalf("Expected 1 lockfile, but got %d", len(attestor.Lockfiles))
+	}
+
+	if attestor.Lockfiles[0].Filename != "go.sum" {
+		t.Errorf("Incorrect lockfile name. Got %s, want go.sum", attestor.Lockfiles[0].Filename)
+	}
+
+	if attestor.Lockfiles[0].Content != content {
+		t.Errorf("Lockfile content mismatch. Got %s, want %s", attestor.Lockfiles[0].Content, content)
+	}
+}
+
 func TestAttestor_Name(t *testing.T) {
 	attestor := &Attestor{}
 	if name := attestor.Name(); name != "lockfiles" {
