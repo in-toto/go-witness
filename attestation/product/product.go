@@ -63,6 +63,8 @@ type ProductAttestor interface {
 }
 
 func init() {
+	initMimeTypes()
+
 	attestation.RegisterAttestation(ProductName, ProductType, ProductRunType, func() attestation.Attestor { return New() },
 		registry.StringConfigOption(
 			"include-glob",
@@ -281,32 +283,29 @@ func IsCycloneDXJson(buf []byte) bool {
 	return bytes.Contains(header, []byte(`"bomFormat":"CycloneDX"`)) || bytes.Contains(header, []byte(`"bomFormat": "CycloneDX"`))
 }
 
-func getFileContentType(fileName string) (string, error) {
-	// Add SPDX JSON detector
+func initMimeTypes() {
 	mimetype.Lookup("application/json").Extend(func(buf []byte, limit uint32) bool {
 		return IsSPDXJson(buf)
 	}, "application/spdx+json", ".spdx.json")
 
-	// Add CycloneDx JSON detector
 	mimetype.Lookup("application/json").Extend(func(buf []byte, limit uint32) bool {
 		return IsCycloneDXJson(buf)
 	}, "application/vnd.cyclonedx+json", ".cdx.json")
 
-	// Add CycloneDx XML detector
 	mimetype.Lookup("text/xml").Extend(func(buf []byte, limit uint32) bool {
 		return bytes.HasPrefix(buf, []byte(`<?xml version="1.0" encoding="UTF-8"?><bom xmlns="http://cyclonedx.org/schema/bom/`))
 	}, "application/vnd.cyclonedx+xml", ".cdx.xml")
 
-	// Add Vex JSON detector
 	mimetype.Lookup("application/json").Extend(func(buf []byte, limit uint32) bool {
 		return bytes.HasPrefix(buf, []byte(`{"@context":"https://openvex.dev/ns`))
 	}, "application/vex+json", ".vex.json")
 
-	// Add sha256 digest detector
 	mimetype.Lookup("text/plain").Extend(func(buf []byte, limit uint32) bool {
 		return bytes.HasPrefix(buf, []byte(`sha256:`))
 	}, "text/sha256+text", ".sha256")
+}
 
+func getFileContentType(fileName string) (string, error) {
 	contentType, err := mimetype.DetectFile(fileName)
 	if err != nil {
 		return "", err
